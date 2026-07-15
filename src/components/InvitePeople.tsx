@@ -59,15 +59,18 @@ export function InvitePeople({ inviteLink, canInvite, onInvite }: Props) {
   }
 
   return (
-    <div className="invite-people">
+    <div className="flex flex-col gap-2">
+      {/* This is the primary action in the footer — sharing the link is how
+          anyone else gets in. It previously rendered as unstyled text, which
+          read as disabled. */}
       <button
         type="button"
-        className="btn-copy-invite"
+        className={`btn btn-sm w-full ${copied ? 'btn-success' : 'btn-primary'}`}
         data-testid="copy-invite"
         onClick={() => void copyLink()}
         title="Copy the invite link for people already invited"
       >
-        {copied ? 'Invite link copied' : 'Copy invite link'}
+        {copied ? '✓ Invite link copied' : 'Copy invite link'}
       </button>
 
       {/* Sharing the link is open to everyone — it only admits people already on
@@ -75,7 +78,7 @@ export function InvitePeople({ inviteLink, canInvite, onInvite }: Props) {
       {canInvite && !open && (
         <button
           type="button"
-          className="btn-invite-people"
+          className="btn btn-outline btn-sm w-full"
           data-testid="invite-people-toggle"
           onClick={() => setOpen(true)}
         >
@@ -84,25 +87,33 @@ export function InvitePeople({ inviteLink, canInvite, onInvite }: Props) {
       )}
 
       {canInvite && open && (
-        <form className="invite-form" onSubmit={submit}>
-          <label>
-            <span>Emails to invite</span>
+        <form className="flex flex-col gap-2" onSubmit={submit}>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-base-content/70">
+              Emails to invite
+            </span>
             <input
               type="text"
-              placeholder="carol@company.com, dan@company.com"
+              className="input input-bordered input-sm w-full"
+              placeholder="carol@company.com"
               value={emails}
               onChange={e => setEmails(e.target.value)}
               data-testid="invite-emails"
               autoFocus
             />
           </label>
-          <div className="invite-form-actions">
-            <button type="submit" className="btn-primary" disabled={busy} data-testid="invite-submit">
-              {busy ? 'Inviting…' : 'Add to workspace'}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              className="btn btn-primary btn-sm flex-1"
+              disabled={busy}
+              data-testid="invite-submit"
+            >
+              {busy ? 'Inviting…' : 'Add'}
             </button>
             <button
               type="button"
-              className="btn-secondary"
+              className="btn btn-ghost btn-sm"
               onClick={() => {
                 setOpen(false)
                 setError(null)
@@ -111,21 +122,24 @@ export function InvitePeople({ inviteLink, canInvite, onInvite }: Props) {
               Cancel
             </button>
           </div>
-          <p className="invite-hint">
+          <p className="text-[0.65rem] leading-relaxed text-base-content/50">
             They'll appear in the invite link immediately — copy it and send it to them.
           </p>
         </form>
       )}
 
       {!canInvite && (
-        <p className="invite-hint" data-testid="invite-creator-only">
-          Only the workspace creator can add people, from the device they created it on. Share the
-          invite link with anyone already invited.
+        <p
+          className="text-[0.65rem] leading-relaxed text-base-content/45"
+          data-testid="invite-creator-only"
+        >
+          Only the creator can add people, from the device they created the workspace on. Share the
+          link above with anyone already invited.
         </p>
       )}
 
       {error && (
-        <p className="invite-error" data-testid="invite-error">
+        <p className="text-[0.68rem] text-error" data-testid="invite-error">
           {error}
         </p>
       )}

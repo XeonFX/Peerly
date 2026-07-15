@@ -1,5 +1,16 @@
 import type { ConnectionStatus as Status } from '../types'
 
+/**
+ * Status colours come from the theme rather than hex literals, so the dot always
+ * agrees with the alerts and buttons that report the same conditions.
+ */
+const STATUS_TONE: Record<Status | 'error', string> = {
+  connecting: 'text-warning',
+  ready: 'text-base-content/50',
+  connected: 'text-success',
+  error: 'text-error',
+}
+
 type Props = {
   relayOnline: boolean
   connectionStatus: Status
@@ -39,10 +50,11 @@ export function ConnectionStatus({
 
   return (
     <span
-      className={`connection-status status-${statusClass}`}
+      className={`flex items-center gap-1.5 text-[0.7rem] font-semibold ${STATUS_TONE[statusClass]}`}
       data-testid={testId}
     >
-      ● {label}
+      <span aria-hidden="true">●</span>
+      {label}
     </span>
   )
 }

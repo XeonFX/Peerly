@@ -37,15 +37,27 @@ function VideoTile({
   const hasVideo = stream.getVideoTracks().some(t => t.enabled)
 
   return (
-    <div className="video-tile">
+    <div className="relative aspect-video overflow-hidden rounded-lg bg-base-300">
       {hasVideo ? (
-        <video ref={videoRef} autoPlay playsInline muted={muted} />
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={muted}
+          className="h-full w-full object-cover"
+        />
       ) : (
-        <div className="video-placeholder" style={{ background: safeColor(color, '#333') }}>
+        <div
+          className="flex h-full w-full items-center justify-center text-2xl font-bold text-white"
+          style={{ background: safeColor(color, '#333') }}
+        >
           <span>{label.charAt(0).toUpperCase()}</span>
         </div>
       )}
-      <span className="video-label">{label}{muted ? ' (you)' : ''}</span>
+      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[0.65rem] text-white">
+        {label}
+        {muted ? ' (you)' : ''}
+      </span>
     </div>
   )
 }
@@ -64,13 +76,15 @@ export function VideoCall({
   const peerNames = Object.fromEntries(peers.map(p => [p.id, p.name]))
 
   return (
-    <div className="video-call-overlay">
-      <div className="video-call-header">
-        <h3>Video call</h3>
-        <span className="call-count">{Object.keys(peerStreams).length + (localStream ? 1 : 0)} participants</span>
+    <div className="video-call-overlay shrink-0 border-b border-base-300/70 bg-base-200/60 p-3 backdrop-blur">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Video call</h3>
+        <span className="text-xs text-base-content/50">
+          {Object.keys(peerStreams).length + (localStream ? 1 : 0)} participants
+        </span>
       </div>
 
-      <div className="video-grid">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {localStream && (
           <VideoTile
             stream={localStream}
@@ -89,22 +103,26 @@ export function VideoCall({
         ))}
       </div>
 
-      <div className="video-controls">
+      <div className="mt-3 flex items-center justify-center gap-2">
         <button
-          className={`control-btn ${!videoEnabled ? 'off' : ''}`}
+          className={`btn btn-sm btn-circle ${videoEnabled ? 'btn-ghost' : 'btn-error'}`}
           onClick={onToggleVideo}
           title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+          aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+          aria-pressed={!videoEnabled}
         >
-          {videoEnabled ? '📹' : '🚫📹'}
+          <span aria-hidden="true">{videoEnabled ? '📹' : '🚫'}</span>
         </button>
         <button
-          className={`control-btn ${!audioEnabled ? 'off' : ''}`}
+          className={`btn btn-sm btn-circle ${audioEnabled ? 'btn-ghost' : 'btn-error'}`}
           onClick={onToggleAudio}
           title={audioEnabled ? 'Mute' : 'Unmute'}
+          aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
+          aria-pressed={!audioEnabled}
         >
-          {audioEnabled ? '🎤' : '🔇'}
+          <span aria-hidden="true">{audioEnabled ? '🎤' : '🔇'}</span>
         </button>
-        <button className="control-btn end-call" onClick={onEnd}>
+        <button className="btn btn-sm btn-error" onClick={onEnd}>
           End call
         </button>
       </div>

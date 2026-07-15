@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { isEmailAllowed } from '../collab/allowList'
-import { isE2eAuthBypass } from '../collab/e2eAuth'
 import { APP_NAME, appBuildLabel } from '../config'
 import {
   decodeInviteFromHash,
@@ -215,8 +214,6 @@ export function JoinScreen({ onJoined }: Props) {
     }
   }
 
-  const identityReady = isE2eAuthBypass() || signedIn !== null
-
   const identitySection = (
     <IdentityLoginButtons
       authManager={authManagerRef.current}
@@ -232,60 +229,109 @@ export function JoinScreen({ onJoined }: Props) {
     />
   )
 
+  const inviteBanner = activeInvite ? (
+    <div
+      className="rounded-box border border-primary/30 bg-primary/10 px-4 py-3 text-center"
+      data-testid="invite-summary"
+    >
+      <p className="text-sm text-base-content/70">You've been invited to</p>
+      <p className="text-base font-semibold text-base-content">{activeInvite.workspaceName}</p>
+    </div>
+  ) : null
+
+  // Nothing actionable is rendered until the user has a verified identity:
+  // every path from here (create, join, reopen) needs one, and showing forms
+  // that cannot be submitted only invites people to fill them in and fail.
+  if (!signedIn) {
+    return (
+      <div className="join-screen flex min-h-full items-center justify-center p-4">
+        <div className="join-card w-full max-w-md space-y-5">
+          <header className="space-y-2 text-center">
+            <div className="join-logo flex items-center justify-center gap-2">
+              <span className="logo-icon text-3xl" aria-hidden="true">
+                ⚡
+              </span>
+              <h1 className="text-3xl font-semibold tracking-tight">{APP_NAME}</h1>
+            </div>
+            <p className="text-sm text-base-content/60">
+              Serverless team collaboration — chat, video, and files, peer-to-peer.
+            </p>
+          </header>
+
+          {/* Shown before sign-in on purpose: tell people what they are being
+              asked to sign in *for*. */}
+          {inviteBanner}
+
+          <div className="card border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
+            <div className="card-body gap-4 p-5">
+              <p className="text-center text-sm font-medium text-base-content/80">
+                Sign in to continue
+              </p>
+              {identitySection}
+              {error && (
+                <div role="alert" className="alert alert-error" data-testid="error-banner">
+                  <span className="text-sm">{error}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <p className="text-center text-xs leading-relaxed text-base-content/50">
+            Only invited accounts can connect. Peers verify each other's identity before any data
+            flows.
+          </p>
+          <p
+            className="text-center font-mono text-[0.7rem] text-base-content/35"
+            data-testid="app-version"
+          >
+            {appBuildLabel()}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="join-screen">
-      <div className="join-card">
-        <div className="join-logo">
-          <span className="logo-icon">⚡</span>
-          <h1>{APP_NAME}</h1>
-        </div>
-        <p className="join-subtitle">
-          Serverless team collaboration — chat, video, and files over peer-to-peer WebRTC.
-        </p>
+    <div className="join-screen flex min-h-full items-center justify-center p-4">
+      <div className="join-card w-full max-w-md space-y-5">
+        <header className="space-y-2 text-center">
+          <div className="join-logo flex items-center justify-center gap-2">
+            <span className="logo-icon text-2xl" aria-hidden="true">
+              ⚡
+            </span>
+            <h1 className="text-2xl font-semibold tracking-tight">{APP_NAME}</h1>
+          </div>
+        </header>
 
-        <div className="join-tabs">
-          <button
-            type="button"
-            className={activeMode === 'create' ? 'active' : ''}
-            onClick={() => setMode('create')}
-            data-testid="create-workspace-tab"
-          >
-            Create workspace
-          </button>
-          <button
-            type="button"
-            className={activeMode === 'join' ? 'active' : ''}
-            onClick={() => setMode('join')}
-            data-testid="join-workspace-tab"
-          >
-            Join with invite
-          </button>
-        </div>
-
+        {/* Who you are, first — it decides which workspaces appear below. */}
         {identitySection}
 
-        {signedIn && myWorkspaces.length > 0 && (
-          <div className="workspace-picker" data-testid="workspace-picker">
-            <span className="workspace-picker-title">Your workspaces</span>
-            <ul className="workspace-list">
+        {inviteBanner}
+
+        {myWorkspaces.length > 0 && (
+          <section className="space-y-2" data-testid="workspace-picker">
+            <h2 className="text-xs font-medium uppercase tracking-wider text-base-content/50">
+              Your workspaces
+            </h2>
+            <ul className="space-y-1.5">
               {myWorkspaces.map(workspace => (
-                <li key={workspace.workspaceId}>
+                <li key={workspace.workspaceId} className="flex items-stretch gap-1.5">
                   <button
                     type="button"
-                    className="workspace-item"
+                    className="flex flex-1 items-center justify-between gap-3 rounded-box border border-base-300 bg-base-200 px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-base-300 disabled:opacity-60"
                     data-testid={`open-workspace-${workspace.workspaceName}`}
                     disabled={busy}
                     onClick={() => void handleOpenStored(workspace)}
                   >
-                    <span className="workspace-item-name">{workspace.workspaceName}</span>
-                    <span className="workspace-item-meta">
+                    <span className="truncate text-sm font-medium">{workspace.workspaceName}</span>
+                    <span className="shrink-0 text-xs text-base-content/50">
                       {workspace.allowList.emails.length} member
                       {workspace.allowList.emails.length === 1 ? '' : 's'}
                     </span>
                   </button>
                   <button
                     type="button"
-                    className="btn-forget-workspace"
+                    className="btn btn-ghost btn-square btn-sm text-base-content/40 hover:text-error"
                     title="Remove from this list (does not affect the workspace)"
                     aria-label={`Forget ${workspace.workspaceName}`}
                     data-testid={`forget-workspace-${workspace.workspaceName}`}
@@ -299,120 +345,133 @@ export function JoinScreen({ onJoined }: Props) {
                 </li>
               ))}
             </ul>
-          </div>
+          </section>
         )}
 
-        {activeMode === 'create' ? (
-          <form onSubmit={handleCreate} className="join-form">
-            <label>
-              <span>Workspace name</span>
-              <input
-                type="text"
-                placeholder="My team"
-                value={workspaceName}
-                onChange={e => setWorkspaceName(e.target.value)}
-                data-testid="workspace-name"
-                autoFocus
-              />
-            </label>
+        <div className="card border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
+          <div className="card-body gap-4 p-5">
+            <div role="tablist" className="tabs tabs-boxed join-tabs bg-base-300/50">
+              <button
+                type="button"
+                role="tab"
+                className={`tab flex-1 ${activeMode === 'create' ? 'tab-active' : ''}`}
+                onClick={() => setMode('create')}
+                data-testid="create-workspace-tab"
+              >
+                Create workspace
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`tab flex-1 ${activeMode === 'join' ? 'tab-active' : ''}`}
+                onClick={() => setMode('join')}
+                data-testid="join-workspace-tab"
+              >
+                Join with invite
+              </button>
+            </div>
 
-            <label>
-              <span>Invite teammates (emails, optional)</span>
-              <input
-                type="text"
-                placeholder="alice@company.com, bob@company.com"
-                value={guestEmails}
-                onChange={e => setGuestEmails(e.target.value)}
-                data-testid="guest-emails"
-              />
-            </label>
+            {activeMode === 'create' ? (
+              <form onSubmit={handleCreate} className="join-form space-y-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-base-content/70">
+                    Workspace name
+                  </span>
+                  <input
+                    type="text"
+                    className="input input-bordered w-full"
+                    placeholder="My team"
+                    value={workspaceName}
+                    onChange={e => setWorkspaceName(e.target.value)}
+                    data-testid="workspace-name"
+                    autoFocus
+                  />
+                </label>
 
-            {isE2eAuthBypass() && !signedIn && (
-              <label>
-                <span>Your email (test mode)</span>
-                <input
-                  type="email"
-                  placeholder="alice@e2e.test"
-                  data-testid="e2e-email"
-                  defaultValue="alice@e2e.test"
-                />
-              </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-base-content/70">
+                    Invite teammates <span className="text-base-content/40">(optional)</span>
+                  </span>
+                  <input
+                    type="text"
+                    className="input input-bordered w-full"
+                    placeholder="alice@company.com, bob@company.com"
+                    value={guestEmails}
+                    onChange={e => setGuestEmails(e.target.value)}
+                    data-testid="guest-emails"
+                  />
+                </label>
+
+                <p className="text-xs leading-relaxed text-base-content/50">
+                  You'll get a secret invite link to share. You can add more people later.
+                </p>
+
+                <button
+                  type="submit"
+                  className="btn btn-primary w-full"
+                  data-testid="join-submit"
+                  disabled={busy}
+                >
+                  {busy ? 'Working…' : 'Create workspace'}
+                </button>
+
+                {createdInviteLink && (
+                  <div className="invite-link-box space-y-1.5" data-testid="invite-link-box">
+                    <span className="text-xs font-medium text-base-content/70">Invite link</span>
+                    <div className="join w-full">
+                      <input
+                        className="input input-bordered join-item w-full font-mono text-xs"
+                        readOnly
+                        value={createdInviteLink}
+                        data-testid="invite-link"
+                        onFocus={e => e.currentTarget.select()}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-primary join-item"
+                        data-testid="copy-created-invite"
+                        onClick={() => void navigator.clipboard.writeText(createdInviteLink)}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </form>
+            ) : (
+              <form onSubmit={handleJoin} className="join-form space-y-3">
+                {!activeInvite && (
+                  <p className="text-xs leading-relaxed text-base-content/50">
+                    Open an invite link from your workspace creator — it looks like{' '}
+                    <code className="rounded bg-base-300 px-1 py-0.5 font-mono">
+                      https://…/#invite=…
+                    </code>
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  className="btn btn-primary w-full"
+                  data-testid="join-submit"
+                  disabled={busy || !activeInvite}
+                >
+                  {busy ? 'Joining…' : 'Join workspace'}
+                </button>
+              </form>
             )}
 
-            <p className="password-hint">
-              After signing in, a secret invite link is generated automatically — share it with
-              teammates you listed.
-            </p>
-
-            <button
-              type="submit"
-              className="btn-primary"
-              data-testid="join-submit"
-              disabled={busy || !identityReady}
-            >
-              {busy ? 'Working…' : 'Create workspace'}
-            </button>
-
-            {createdInviteLink && (
-              <div className="invite-link-box" data-testid="invite-link">
-                <span>Invite link</span>
-                <input readOnly value={createdInviteLink} onFocus={e => e.target.select()} />
+            {error && (
+              <div role="alert" className="alert alert-error" data-testid="error-banner">
+                <span className="text-sm">{error}</span>
               </div>
             )}
-          </form>
-        ) : (
-          <form onSubmit={handleJoin} className="join-form">
-            {activeInvite ? (
-              <>
-                <p className="invite-summary" data-testid="invite-summary">
-                  Joining <strong>{activeInvite.workspaceName}</strong>
-                </p>
-                <p className="password-hint">
-                  Sign in with an account on the workspace invite list, then join.
-                </p>
-              </>
-            ) : (
-              <p className="password-hint">
-                Open an invite link from your workspace creator (it looks like{' '}
-                <code>https://…/#invite=…</code>).
-              </p>
-            )}
+          </div>
+        </div>
 
-            {isE2eAuthBypass() && !signedIn && (
-              <label>
-                <span>Your email (test mode)</span>
-                <input
-                  type="email"
-                  placeholder="bob@e2e.test"
-                  data-testid="e2e-email"
-                  defaultValue="bob@e2e.test"
-                />
-              </label>
-            )}
-
-            <button
-              type="submit"
-              className="btn-primary"
-              data-testid="join-submit"
-              disabled={busy || !activeInvite || !identityReady}
-            >
-              {busy ? 'Joining…' : 'Join workspace'}
-            </button>
-          </form>
-        )}
-
-        {error && (
-          <p className="error-banner" data-testid="error-banner">
-            {error}
-          </p>
-        )}
-
-        <p className="join-hint">
-          Workspace access is enforced cryptographically: only invited accounts can connect, and
-          peers verify each other's identity before any data flows.
-        </p>
-
-        <p className="join-version" data-testid="app-version">
+        <p
+          className="text-center font-mono text-[0.7rem] text-base-content/35"
+          data-testid="app-version"
+        >
           {appBuildLabel()}
         </p>
       </div>

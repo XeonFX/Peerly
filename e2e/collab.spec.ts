@@ -106,6 +106,23 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(page.getByTestId('copy-invite')).toBeVisible()
   })
 
+  // The workspace id doubles as the Trystero encryption password. It used to be
+  // printed in the sidebar ("Room: <id>") and on the profile page, putting the
+  // workspace secret on screen for anyone screen-sharing or looking over a
+  // shoulder. It must not appear in the rendered page at all.
+  test('the workspace secret is never displayed in the UI', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+
+    const leaked = async () =>
+      page.evaluate(id => document.body.innerText.includes(id), E2E_WORKSPACE_ID)
+
+    expect(await leaked()).toBe(false)
+
+    // Including the profile page, which listed it under "Workspace info".
+    await openProfile(page)
+    expect(await leaked()).toBe(false)
+  })
+
   test('signaling is online after join', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await waitForRelay(page)
@@ -130,7 +147,13 @@ test.describe('Peerly P2P collaboration', () => {
   test('invalid invite link cannot join', async ({ page }) => {
     await installFreshSession(page)
     await page.goto('/#invite=not-valid-base64!!!')
+
+    // A malformed invite must not be presented as a workspace to join...
+    await expect(page.getByTestId('signin-e2e')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('invite-summary')).not.toBeVisible()
+
+    // ...and signing in must not produce a joinable one either.
+    await e2eSignIn(page, { email: 'alice@e2e.test' })
     await page.getByTestId('join-workspace-tab').click()
     await expect(page.getByTestId('join-submit')).toBeDisabled()
   })
@@ -629,7 +652,10 @@ test.describe('Peerly P2P collaboration', () => {
       await expect(alice.getByTestId('connection-status')).toContainText('Connected', {
         timeout: 15_000,
       })
-      await expect(alice.getByText(`Room: ${E2E_WORKSPACE_ID}`)).toBeVisible()
+      // Previously asserted the sidebar printed `Room: <workspaceId>` — which was
+      // the workspace's encryption secret on screen. The workspace name proves
+      // we are still in the same workspace without displaying the secret.
+      await expect(alice.locator('.workspace-name')).toContainText('test-ws')
     })
   })
 

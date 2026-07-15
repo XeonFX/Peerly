@@ -15,9 +15,17 @@ type Props = {
   workspaceProtected?: boolean
   onToggleFiles: () => void
   showFiles: boolean
+  /** Opens the off-canvas sidebar; only rendered where the sidebar is hidden. */
+  onOpenSidebar?: () => void
 }
 
-export function ChannelPanel({ channel, workspaceProtected, onToggleFiles, showFiles }: Props) {
+export function ChannelPanel({
+  channel,
+  workspaceProtected,
+  onToggleFiles,
+  showFiles,
+  onOpenSidebar,
+}: Props) {
   const { connectionError, connectionNotice, isReady } = useConnectionSlice()
   const { messages, sendMessage, sendFile, fileError } = useChatSlice()
   const {
@@ -39,9 +47,20 @@ export function ChannelPanel({ channel, workspaceProtected, onToggleFiles, showF
 
   return (
     <>
-      <header className="channel-header">
-        <div className="channel-info">
-          <h2>
+      <header className="flex shrink-0 items-center gap-2 border-b border-base-300/70 px-3 py-2.5 sm:px-5">
+        {onOpenSidebar && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm btn-square mr-1 lg:hidden"
+            onClick={onOpenSidebar}
+            aria-label="Open workspace menu"
+            data-testid="open-sidebar"
+          >
+            ☰
+          </button>
+        )}
+        <div className="min-w-0 flex-1">
+          <h2 className="flex min-w-0 items-center gap-2 text-base font-bold">
             {channel.kind === 'dm' ? (
               <>
                 <Avatar
@@ -50,57 +69,85 @@ export function ChannelPanel({ channel, workspaceProtected, onToggleFiles, showF
                   avatar={dmAvatar}
                   size="md"
                 />
-                <span className="dm-title">{title}</span>
+                <span className="dm-title truncate">{title}</span>
               </>
             ) : (
               <>
-                <span className="channel-hash">#</span>
-                {channel.name}
+                <span className="text-base-content/40" aria-hidden="true">
+                  #
+                </span>
+                <span className="truncate">{channel.name}</span>
               </>
             )}
           </h2>
-          {channel.description ? <p>{channel.description}</p> : null}
+          {/* Context, not navigation — the first thing to drop on a phone. */}
+          {channel.description ? (
+            <p className="hidden truncate text-xs text-base-content/45 sm:block">
+              {channel.description}
+            </p>
+          ) : null}
         </div>
-        <div className="channel-actions">
+
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
-            className={`btn-action ${inCall ? 'active' : ''}`}
+            className={`btn btn-sm ${inCall ? 'btn-primary' : 'btn-ghost'}`}
             onClick={inCall ? endCall : startCall}
             data-testid="video-call-button"
+            aria-label={inCall ? 'End call' : 'Start video call'}
           >
-            {inCall ? '📞 In call' : '📹 Start video call'}
+            <span aria-hidden="true">{inCall ? '📞' : '📹'}</span>
+            <span className="hidden sm:inline">{inCall ? 'In call' : 'Start video call'}</span>
           </button>
           <button
-            className={`btn-action ${showFiles ? 'active' : ''}`}
+            className={`btn btn-sm ${showFiles ? 'btn-active' : 'btn-ghost'}`}
             onClick={onToggleFiles}
+            aria-label="Toggle shared files"
+            aria-pressed={showFiles}
           >
-            📁 Files
+            <span aria-hidden="true">📁</span>
+            <span className="hidden sm:inline">Files</span>
           </button>
         </div>
       </header>
 
       {workspaceProtected && (
-        <div className="info-banner">🔒 Invite-only workspace — verified identities</div>
+        <div className="shrink-0 border-b border-info/20 bg-info/10 px-3 py-1.5 text-xs text-info sm:px-5">
+          🔒 Invite-only workspace — verified identities
+        </div>
       )}
 
       {connectionNotice && (
-        <div className="info-banner" data-testid="info-banner">
+        <div
+          className="shrink-0 border-b border-info/20 bg-info/10 px-3 py-1.5 text-xs text-info sm:px-5"
+          data-testid="info-banner"
+        >
           {connectionNotice}
         </div>
       )}
 
       {connectionError && (
-        <div className="error-banner" data-testid="error-banner">
+        <div
+          className="shrink-0 border-b border-error/25 bg-error/10 px-3 py-1.5 text-xs text-error sm:px-5"
+          data-testid="error-banner"
+        >
           {connectionError}
         </div>
       )}
 
       {fileError && (
-        <div className="error-banner" data-testid="file-error">
+        <div
+          className="shrink-0 border-b border-error/25 bg-error/10 px-3 py-1.5 text-xs text-error sm:px-5"
+          data-testid="file-error"
+        >
           {fileError}
         </div>
       )}
 
-      {mediaError && <div className="error-banner">{mediaError}</div>}
+      {mediaError && (
+        <div className="shrink-0 border-b border-error/25 bg-error/10 px-3 py-1.5 text-xs text-error sm:px-5">
+          {mediaError}
+        </div>
+      )}
 
       {inCall && (
         <VideoCall

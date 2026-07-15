@@ -1,46 +1,86 @@
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+@import 'tailwindcss';
+@plugin "daisyui" {
+  themes: peerly --default;
 }
 
-:root {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color: #d1d2d3;
-  background-color: #1a1d21;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/**
+ * The Peerly theme.
+ *
+ * Colours are carried over from the previous hand-written CSS rather than
+ * picked fresh, so the app stays recognisably itself: emerald (#2eb67d) was
+ * already the primary action colour and cyan (#36c5f0) the accent — they were
+ * just applied inconsistently, which is how "Copy invite link" ended up looking
+ * like disabled text. Defining them once here means every DaisyUI component
+ * derives from the same palette instead of styling itself.
+ */
+@plugin "daisyui/theme" {
+  name: 'peerly';
+  default: true;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: oklch(19% 0.006 150); /* app background */
+  --color-base-200: oklch(23% 0.006 150); /* raised surfaces: sidebar, cards */
+  --color-base-300: oklch(29% 0.008 150); /* borders, hover */
+  --color-base-content: oklch(91% 0.01 150);
+
+  --color-primary: oklch(64% 0.13 162); /* emerald — brand action colour */
+  --color-primary-content: oklch(98% 0.01 162);
+
+  --color-secondary: oklch(29% 0.008 150);
+  --color-secondary-content: oklch(91% 0.01 150);
+
+  --color-accent: oklch(73% 0.13 220); /* cyan — links, active channel */
+  --color-accent-content: oklch(18% 0.02 220);
+
+  --color-neutral: oklch(26% 0.006 150);
+  --color-neutral-content: oklch(89% 0.01 150);
+
+  --color-info: oklch(73% 0.13 220);
+  --color-info-content: oklch(18% 0.02 220);
+  --color-success: oklch(64% 0.13 162);
+  --color-success-content: oklch(98% 0.01 162);
+  --color-warning: oklch(78% 0.14 85);
+  --color-warning-content: oklch(20% 0.03 85);
+  --color-error: oklch(62% 0.19 20);
+  --color-error-content: oklch(98% 0.01 20);
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
 }
 
-html,
-body,
-#root {
-  height: 100%;
-  overflow: hidden;
+@theme {
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-button {
-  font-family: inherit;
-  cursor: pointer;
-  border: none;
-  background: none;
-}
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-input {
-  font-family: inherit;
-}
+  body {
+    @apply bg-base-100 text-base-content font-sans antialiased;
+    text-rendering: optimizeLegibility;
+    /* Ambient glow in the brand colours; every screen sits on this, so panels
+       that should feel "raised" only need translucency, not their own art. */
+    background-image:
+      radial-gradient(80rem 50rem at 20% -10%, oklch(45% 0.09 162 / 0.13), transparent 55%),
+      radial-gradient(70rem 45rem at 105% 115%, oklch(50% 0.1 220 / 0.1), transparent 55%);
+    background-attachment: fixed;
+  }
 
-a {
-  color: #36c5f0;
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
+  /* Keyboard users must be able to see where they are. DaisyUI handles focus on
+     its own components; this covers anything custom. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary;
+  }
 }

@@ -42,6 +42,8 @@ function WorkspaceShell({
   showFiles,
   canInvite,
   onInvite,
+  sidebarOpen,
+  onSidebarOpenChange,
   onChannelSelect,
   onChannelsUpdated,
   onProfileSelect,
@@ -55,6 +57,8 @@ function WorkspaceShell({
   showFiles: boolean
   canInvite: boolean
   onInvite: (emails: string[]) => Promise<void>
+  sidebarOpen: boolean
+  onSidebarOpenChange: (open: boolean) => void
   onChannelSelect: (id: string) => void
   onChannelsUpdated: () => void
   onProfileSelect: () => void
@@ -62,7 +66,7 @@ function WorkspaceShell({
   onToggleFiles: () => void
 }) {
   const { announceChannel } = useWorkspaceSlice()
-  const { connectionStatus, relayOnline, rtcPeerCount, roomId, relayUrls } = useConnectionSlice()
+  const { connectionStatus, relayOnline, rtcPeerCount, relayUrls } = useConnectionSlice()
   const { sharedFiles, transfers, unreadByChannel } = useChatSlice()
   const { selfId, profile, peers } = useProfileSlice()
   const channel = getChannelById(channels, activeChannel)
@@ -82,9 +86,25 @@ function WorkspaceShell({
     onChannelSelect(dm.id)
   }
 
+  // Selecting anything on a phone should reveal what you selected.
+  const selectAndClose = (id: string) => {
+    onChannelSelect(id)
+    onSidebarOpenChange(false)
+  }
+
   return (
-    <div className="workspace">
+    <div className="flex h-full overflow-hidden">
+      {/* Backdrop for the off-canvas sidebar; inert on desktop where it is static. */}
+      {sidebarOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-30 cursor-pointer bg-black/55 lg:hidden"
+          aria-label="Close workspace menu"
+          onClick={() => onSidebarOpenChange(false)}
+        />
+      )}
       <Sidebar
+        open={sidebarOpen}
         workspace={session.workspaceName}
         inviteLink={encodeInviteLink({
           v: 1,
@@ -103,17 +123,19 @@ function WorkspaceShell({
         connectionStatus={connectionStatus}
         relayOnline={relayOnline}
         rtcPeerCount={rtcPeerCount}
-        roomId={roomId}
         relayUrls={relayUrls}
-        onChannelSelect={onChannelSelect}
+        onChannelSelect={selectAndClose}
         onAddChannel={handleAddChannel}
         onStartDirectMessage={handleStartDirectMessage}
-        onProfileSelect={onProfileSelect}
+        onProfileSelect={() => {
+          onProfileSelect()
+          onSidebarOpenChange(false)
+        }}
         onLeave={onLeave}
         unreadByChannel={unreadByChannel}
       />
 
-      <main className="main-panel">
+      <main className="flex min-w-0 flex-1 flex-col">
         {activeView === 'profile' ? (
           <ProfilePanel
             workspace={session.workspaceName}
@@ -132,6 +154,7 @@ function WorkspaceShell({
             workspaceProtected
             onToggleFiles={onToggleFiles}
             showFiles={showFiles}
+            onOpenSidebar={() => onSidebarOpenChange(true)}
           />
         )}
       </main>
@@ -147,8 +170,13 @@ export function Workspace({ session, peerHandshake, authManager, onSessionChange
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
   const [activeChannel, setActiveChannel] = useState(GENERAL_CHANNEL.id)
   const [activeView, setActiveView] = useState<'channel' | 'profile'>('channel')
-  const [showFiles, setShowFiles] = useState(true)
+  // The files panel is a third column on desktop but an overlay on phones, so
+  // defaulting it open there would bury the conversation behind it on load.
+  const [showFiles, setShowFiles] = useState(
+    () => typeof window === 'undefined' || window.innerWidth >= 1280
+  )
   const [canInvite, setCanInvite] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Whether this device holds the creator key. Async because the device key is
   // read from IndexedDB; default false so the invite UI never flashes for
@@ -227,6 +255,8 @@ export function Workspace({ session, peerHandshake, authManager, onSessionChange
         showFiles={showFiles}
         canInvite={canInvite}
         onInvite={handleInvite}
+        sidebarOpen={sidebarOpen}
+        onSidebarOpenChange={setSidebarOpen}
         onChannelSelect={openChannel}
         onChannelsUpdated={refreshChannels}
         onProfileSelect={() => setActiveView('profile')}

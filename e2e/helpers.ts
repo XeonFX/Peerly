@@ -55,10 +55,16 @@ export async function openProfile(page: Page) {
   await expect(page.getByTestId('profile-page')).toBeVisible()
 }
 
+/**
+ * Open an invite link and wait for the pre-sign-in screen.
+ *
+ * Only the invite banner is asserted here: the join/create tabs render after
+ * sign-in, since every action behind them needs a verified identity.
+ */
 export async function openInviteJoin(page: Page, inviteHash = E2E_INVITE_HASH) {
   await installFreshSession(page)
   await page.goto(`/#${inviteHash}`)
-  await expect(page.getByTestId('join-workspace-tab')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('signin-e2e')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByTestId('invite-summary')).toBeVisible({ timeout: 15_000 })
 }
 
@@ -124,9 +130,9 @@ export async function createWorkspace(
 ) {
   await installFreshSession(page)
   await page.goto('/')
-  await expect(page.getByTestId('create-workspace-tab')).toBeVisible({ timeout: 15_000 })
-  await page.getByTestId('create-workspace-tab').click()
+  // Sign in first: the create/join tabs only exist once there is an identity.
   await e2eSignIn(page, opts)
+  await page.getByTestId('create-workspace-tab').click()
   await page.getByTestId('workspace-name').fill(opts.workspaceName)
   if (opts.guests) await page.getByTestId('guest-emails').fill(opts.guests)
   await page.getByTestId('join-submit').click()

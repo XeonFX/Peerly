@@ -29,46 +29,73 @@ export function MessageList({ messages, selfId, selfProfile, peers }: Props) {
 
   if (messages.length === 0) {
     return (
-      <div className="message-list empty">
-        <div className="empty-state">
-          <span className="empty-icon">💬</span>
-          <h3>Start the conversation</h3>
-          <p>Messages are sent directly peer-to-peer. No server stores your data.</p>
+      <div className="message-list flex flex-1 items-center justify-center p-6">
+        <div className="max-w-sm text-center">
+          <span
+            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-base-300/70 bg-base-200/70 text-3xl shadow-lg shadow-black/10"
+            aria-hidden="true"
+          >
+            💬
+          </span>
+          <h3 className="mb-1 text-lg font-semibold">Start the conversation</h3>
+          <p className="text-sm text-base-content/50">
+            Messages are sent directly peer-to-peer. No server stores your data.
+          </p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="message-list">
+    <div className="message-list flex-1 overflow-y-auto px-3 py-4 sm:px-5">
       {messages.map(msg => {
         const sender = resolveSenderInfo(msg, senderDirectory, peers)
 
         return (
-          <div key={msg.id} className="message" data-testid="chat-message">
-            <div className="message-avatar">
-              <Avatar name={sender.name} color={sender.color} avatar={sender.avatar} />
-            </div>
-            <div className="message-content">
-              <div className="message-meta">
-                <span className="sender-name">{sender.name}</span>
-                <span className="message-time">{formatTime(msg.timestamp)}</span>
+          <div
+            key={msg.id}
+            className="group flex gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-base-200/40"
+            data-testid="chat-message"
+          >
+            {/* size="md" is deliberate: message avatars were previously sized up
+                from `sm` by a CSS override, so plain `sm` would shrink them. */}
+            <Avatar name={sender.name} color={sender.color} avatar={sender.avatar} size="md" />
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="truncate text-sm font-semibold text-base-content">
+                  {sender.name}
+                </span>
+                <span className="shrink-0 text-[0.7rem] text-base-content/40">
+                  {formatTime(msg.timestamp)}
+                </span>
               </div>
-              <div className="message-body">
+
+              <div className="text-sm leading-relaxed text-base-content/90">
                 {msg.type === 'text' ? (
-                  <p>{msg.text}</p>
+                  <p className="break-words whitespace-pre-wrap">{msg.text}</p>
                 ) : msg.file ? (
-                  <div className="file-message">
+                  <div className="mt-1">
                     {isImage(msg.file.mimeType) ? (
                       <a href={msg.file.url} target="_blank" rel="noreferrer">
-                        <img src={msg.file.url} alt={msg.file.name} className="file-preview" />
+                        <img
+                          src={msg.file.url}
+                          alt={msg.file.name}
+                          className="file-preview max-h-64 max-w-full rounded-lg border border-base-300"
+                        />
                       </a>
                     ) : (
-                      <a href={msg.file.url} download={msg.file.name} className="file-download">
-                        <span className="file-icon">📎</span>
-                        <span className="file-info">
-                          <strong>{msg.file.name}</strong>
-                          <span>{formatBytes(msg.file.size)}</span>
+                      <a
+                        href={msg.file.url}
+                        download={msg.file.name}
+                        className="file-download inline-flex items-center gap-2.5 rounded-lg border border-base-300 bg-base-200 px-3 py-2 transition-colors hover:border-primary/40 hover:bg-base-300"
+                      >
+                        <span aria-hidden="true">📎</span>
+                        <span className="flex min-w-0 flex-col">
+                          <strong className="truncate text-sm font-medium">{msg.file.name}</strong>
+                          <span className="text-xs text-base-content/50">
+                            {formatBytes(msg.file.size)}
+                          </span>
                         </span>
                       </a>
                     )}

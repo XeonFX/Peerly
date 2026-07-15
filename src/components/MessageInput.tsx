@@ -33,44 +33,40 @@ export function MessageInput({
   }
 
   return (
-    <form className="message-input" onSubmit={handleSubmit}>
-      <input
-        ref={fileRef}
-        type="file"
-        hidden
-        onChange={handleFile}
-        data-testid="file-input"
-      />
-      <button
-        type="button"
-        className="btn-attach"
-        onClick={() => fileRef.current?.click()}
-        disabled={disabled}
-        title="Attach a file to share with everyone in this channel"
-        aria-label="Attach file"
-        data-testid="attach-file-button"
-      >
-        <span className="attach-icon" aria-hidden="true">
-          📎
-        </span>
-        <span className="attach-label">Attach</span>
-      </button>
-      <input
-        type="text"
-        placeholder={isDirectMessage ? `Message ${channelName}` : `Message #${channelName}`}
-        value={text}
-        onChange={e => setText(e.target.value)}
-        disabled={disabled}
-        data-testid="message-input"
-      />
-      <button
-        type="submit"
-        className="btn-send"
-        disabled={disabled || !text.trim()}
-        data-testid="send-button"
-      >
-        Send
-      </button>
+    <form className="shrink-0 px-3 pb-3 pt-1 sm:px-5 sm:pb-4" onSubmit={handleSubmit}>
+      <div className="flex items-center gap-1.5 rounded-2xl border border-base-300 bg-base-200/80 p-1.5 backdrop-blur transition-colors focus-within:border-primary/60">
+        <input ref={fileRef} type="file" hidden onChange={handleFile} data-testid="file-input" />
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm btn-circle shrink-0"
+          onClick={() => fileRef.current?.click()}
+          disabled={disabled}
+          title="Attach a file to share with everyone in this channel"
+          aria-label="Attach file"
+          data-testid="attach-file-button"
+        >
+          <span aria-hidden="true">📎</span>
+        </button>
+        <input
+          type="text"
+          // min-w-0 matters: without it the flex item refuses to shrink and the
+          // send button gets pushed off a narrow screen.
+          className="min-w-0 flex-1 bg-transparent px-1.5 text-sm outline-none placeholder:text-base-content/35 disabled:cursor-not-allowed disabled:opacity-50"
+          placeholder={isDirectMessage ? `Message ${channelName}` : `Message #${channelName}`}
+          value={text}
+          onChange={e => setText(e.target.value)}
+          disabled={disabled}
+          data-testid="message-input"
+        />
+        <button
+          type="submit"
+          className="btn btn-primary btn-sm shrink-0 rounded-xl px-4"
+          disabled={disabled || !text.trim()}
+          data-testid="send-button"
+        >
+          Send
+        </button>
+      </div>
     </form>
   )
 }

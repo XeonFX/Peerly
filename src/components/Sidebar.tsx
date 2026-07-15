@@ -7,6 +7,8 @@ import { InvitePeople } from './InvitePeople'
 
 type Props = {
   workspace: string
+  /** Drives the off-canvas drawer below `lg`; ignored at desktop widths. */
+  open: boolean
   inviteLink?: string
   /** Only the creator's device can add members; see WorkspaceAuthManager.canInvite. */
   canInvite: boolean
@@ -19,7 +21,6 @@ type Props = {
   connectionStatus: ConnectionStatus
   relayOnline: boolean
   rtcPeerCount: number
-  roomId: string
   relayUrls: string[]
   onChannelSelect: (id: string) => void
   onAddChannel: (name: string) => void
@@ -47,14 +48,21 @@ function ChannelButton({
   return (
     <li>
       <button
-        className={`channel-item ${active ? 'active' : ''}`}
+        className={`channel-item flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+          active
+            ? 'bg-accent/15 font-medium text-accent'
+            : 'text-base-content/60 hover:bg-base-content/5 hover:text-base-content'
+        }`}
         onClick={onSelect}
         data-testid={channel.kind === 'dm' ? `dm-${channel.peerId}` : undefined}
       >
         {prefix}
-        <span className="channel-name">{label}</span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
         {unread > 0 && (
-          <span className="channel-unread" data-testid={`unread-${channel.id}`}>
+          <span
+            className="badge badge-sm shrink-0 border-0 bg-primary font-semibold text-primary-content"
+            data-testid={`unread-${channel.id}`}
+          >
             {unread > 99 ? '99+' : unread}
           </span>
         )}
@@ -65,6 +73,7 @@ function ChannelButton({
 
 export function Sidebar({
   workspace,
+  open,
   inviteLink,
   canInvite,
   onInvite,
@@ -76,7 +85,6 @@ export function Sidebar({
   connectionStatus,
   relayOnline,
   rtcPeerCount,
-  roomId,
   relayUrls,
   onChannelSelect,
   onAddChannel,
@@ -102,43 +110,52 @@ export function Sidebar({
   }
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-header">
-        <div className="workspace-name">
-          <span className="workspace-icon">⚡</span>
-          <span>{workspace}</span>
+    <aside
+      className={`sidebar flex w-65 min-w-65 flex-col border-r border-base-300/70 bg-base-200/75 backdrop-blur-xl max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:w-68 max-lg:min-w-68 max-lg:transition-transform max-lg:duration-200 motion-reduce:max-lg:transition-none ${
+        open ? 'max-lg:translate-x-0 max-lg:shadow-2xl' : 'max-lg:-translate-x-full'
+      }`}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-base-300 p-3">
+        <div className="workspace-name flex min-w-0 items-center gap-2 font-bold text-base-content">
+          <span aria-hidden="true">⚡</span>
+          <span className="truncate">{workspace}</span>
         </div>
         <button
-          className="btn-icon"
+          className="btn btn-ghost btn-square btn-sm shrink-0"
           onClick={onLeave}
           title="Switch workspace"
+          aria-label="Switch workspace"
           data-testid="leave-workspace"
         >
           ⏻
         </button>
       </div>
 
-      <nav className="sidebar-section">
-        <div className="sidebar-section-header">
-          <h3>
+      <nav className="mt-3">
+        <div className="flex items-center justify-between px-3 pb-1">
+          <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/45">
             Channels
             {totalUnread > 0 && (
-              <span className="section-unread-total" data-testid="total-unread">
+              <span
+                className="badge badge-xs border-0 bg-primary text-primary-content"
+                data-testid="total-unread"
+              >
                 {totalUnread}
               </span>
             )}
           </h3>
           <button
             type="button"
-            className="btn-add-channel"
+            className="btn btn-ghost btn-xs btn-square"
             onClick={() => setShowAddChannel(value => !value)}
             title="Add a channel"
+            aria-label="Add a channel"
             data-testid="add-channel-toggle"
           >
             +
           </button>
         </div>
-        <ul className="channel-list">
+        <ul className="space-y-0.5 px-2">
           {publicChannels.map(channel => (
             <ChannelButton
               key={channel.id}
@@ -152,16 +169,17 @@ export function Sidebar({
           ))}
         </ul>
         {showAddChannel && (
-          <form className="add-channel-form" onSubmit={handleAddChannel}>
+          <form className="flex gap-1.5 px-3 pt-2" onSubmit={handleAddChannel}>
             <input
               type="text"
+              className="input input-bordered input-xs w-full min-w-0 flex-1"
               placeholder="e.g. random"
               value={newChannelName}
               onChange={e => setNewChannelName(e.target.value)}
               autoFocus
               data-testid="add-channel-input"
             />
-            <button type="submit" data-testid="add-channel-submit">
+            <button type="submit" className="btn btn-primary btn-xs" data-testid="add-channel-submit">
               Add
             </button>
           </form>
@@ -169,9 +187,11 @@ export function Sidebar({
       </nav>
 
       {dmChannels.length > 0 && (
-        <nav className="sidebar-section">
-          <h3>Direct messages</h3>
-          <ul className="channel-list">
+        <nav className="mt-4">
+          <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/45">
+            Direct messages
+          </h3>
+          <ul className="space-y-0.5 px-2">
             {dmChannels.map(channel => {
               const peer = peers.find(entry => entry.id === channel.peerId)
               return (
@@ -196,12 +216,18 @@ export function Sidebar({
         </nav>
       )}
 
-      <nav className="sidebar-section">
-        <h3>You</h3>
-        <ul className="channel-list">
+      <nav className="mt-4">
+        <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/45">
+          You
+        </h3>
+        <ul className="px-2">
           <li>
             <button
-              className={`channel-item profile-nav ${activeView === 'profile' ? 'active' : ''}`}
+              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                activeView === 'profile'
+                  ? 'bg-accent/15 font-medium text-accent'
+                  : 'text-base-content/60 hover:bg-base-content/5 hover:text-base-content'
+              }`}
               onClick={onProfileSelect}
               data-testid="nav-profile"
             >
@@ -212,27 +238,30 @@ export function Sidebar({
         </ul>
       </nav>
 
-      <div className="sidebar-section members-section">
-        <h3>Online — {peers.length + 1}</h3>
-        <ul className="member-list" data-testid="member-list">
-          <li className="member-item" data-testid="member-self">
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
+        <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/45">
+          Online — {peers.length + 1}
+        </h3>
+        <ul data-testid="member-list">
+          <li className="flex items-center gap-2 px-3 py-1 text-sm" data-testid="member-self">
             <Avatar name={selfProfile.name} color={selfProfile.color} avatar={selfProfile.avatar} />
-            <span className="member-name">{selfProfile.name}</span>
-            <span className="member-you">you</span>
+            <span className="min-w-0 flex-1 truncate">{selfProfile.name}</span>
+            <span className="shrink-0 text-xs text-base-content/35">you</span>
           </li>
           {peers.map(peer => (
             <li
               key={peer.id}
-              className="member-item"
+              className="group flex items-center gap-2 px-3 py-1 text-sm"
               data-testid={`member-${peer.name}`}
               data-peer-color={peer.color}
             >
               <Avatar name={peer.name} color={peer.color} avatar={peer.avatar} />
-              <span className="member-name">{peer.name}</span>
+              <span className="min-w-0 flex-1 truncate">{peer.name}</span>
               <button
                 type="button"
-                className="btn-member-message"
+                className="btn btn-ghost btn-xs btn-square shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                 title={`Message ${peer.name}`}
+                aria-label={`Message ${peer.name}`}
                 data-testid={`message-peer-${peer.name}`}
                 onClick={() => onStartDirectMessage(peer)}
               >
@@ -243,26 +272,37 @@ export function Sidebar({
         </ul>
       </div>
 
-      <div className="sidebar-footer">
-        <ConnectionStatusLabel
-          relayOnline={relayOnline}
-          connectionStatus={connectionStatus}
-          rtcPeerCount={rtcPeerCount}
-          testId="connection-status"
-        />
-        <span className="debug-info">Room: {roomId}</span>
-        <span className="debug-info">
-          {relayUrls.length > 0
-            ? `Signaling: ${relayUrls.length} endpoint${relayUrls.length === 1 ? '' : 's'}`
-            : 'Signaling: connecting…'}
-        </span>
-        <span className="p2p-badge">P2P · E2E encrypted</span>
-        <span className="debug-info app-version" data-testid="app-version">
-          {appBuildLabel()}
-        </span>
+      <div className="mt-auto space-y-2 border-t border-base-300/70 p-3">
         {inviteLink && (
           <InvitePeople inviteLink={inviteLink} canInvite={canInvite} onInvite={onInvite} />
         )}
+
+        <div className="flex flex-col gap-1 pt-1">
+          <ConnectionStatusLabel
+            relayOnline={relayOnline}
+            connectionStatus={connectionStatus}
+            rtcPeerCount={rtcPeerCount}
+            testId="connection-status"
+          />
+          {/*
+            The room id is deliberately NOT shown. It is the workspace id, which
+            doubles as the Trystero encryption password — printing it here put
+            the workspace secret on screen for anyone screen-sharing, pairing, or
+            looking over a shoulder. The signaling endpoint count carries the
+            diagnostic value that line actually had.
+          */}
+          <span className="text-[0.65rem] text-base-content/40" data-testid="signaling-info">
+            {relayUrls.length > 0
+              ? `${relayUrls.length} signaling endpoint${relayUrls.length === 1 ? '' : 's'} · P2P encrypted`
+              : 'Connecting to signaling…'}
+          </span>
+          <span
+            className="font-mono text-[0.65rem] text-base-content/30"
+            data-testid="app-version"
+          >
+            {appBuildLabel()}
+          </span>
+        </div>
       </div>
     </aside>
   )

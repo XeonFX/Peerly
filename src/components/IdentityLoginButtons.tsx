@@ -9,6 +9,7 @@ import {
 } from '../collab/identityProviders'
 import { signInWithProvider } from '../collab/providerSignIn'
 import { WorkspaceAuthManager } from '../collab/workspaceAuth'
+import { Avatar } from './Avatar'
 
 export type SignedInIdentity = {
   email: string
@@ -27,6 +28,45 @@ type Props = {
   onError: (message: string | null) => void
 }
 
+/** Compact identity chip, shown at the top once signed in. */
+function SignedInChip({
+  signedIn,
+  busy,
+  onSignOut,
+}: {
+  signedIn: SignedInIdentity
+  busy: boolean
+  onSignOut: () => void
+}) {
+  const label = getIdentityProvider(signedIn.providerId)?.label
+  return (
+    <div
+      className="signed-in-banner flex items-center gap-3 rounded-box border border-base-300 bg-base-200 px-3 py-2"
+      data-testid="signed-in-user"
+    >
+      <Avatar name={signedIn.name ?? signedIn.email} color="#2eb67d" size="md" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-base-content">
+          {signedIn.name ?? signedIn.email}
+        </p>
+        <p className="truncate text-xs text-base-content/60">
+          {signedIn.email}
+          {label ? ` · ${label}` : ''}
+        </p>
+      </div>
+      <button
+        type="button"
+        className="btn btn-ghost btn-xs"
+        data-testid="sign-out"
+        onClick={onSignOut}
+        disabled={busy}
+      >
+        Sign out
+      </button>
+    </div>
+  )
+}
+
 export function IdentityLoginButtons({
   authManager,
   signedIn,
@@ -39,15 +79,11 @@ export function IdentityLoginButtons({
   const providers = getConfiguredIdentityProviders()
   const googleContainerRef = useRef<HTMLDivElement>(null)
   const [googleMountKey, setGoogleMountKey] = useState(0)
+  const [e2eEmail, setE2eEmail] = useState('alice@e2e.test')
 
   const completeSignIn = async (providerId: IdentityProviderId, token: string) => {
     const claims = await authManager.verifyAndStoreIdToken(token, providerId)
-    onSignedIn({
-      email: claims.email,
-      name: claims.name,
-      token,
-      providerId,
-    })
+    onSignedIn({ email: claims.email, name: claims.name, token, providerId })
   }
 
   const handleProviderSignIn = async (providerId: IdentityProviderId) => {
@@ -71,8 +107,7 @@ export function IdentityLoginButtons({
     onError(null)
     onBusyChange(true)
     try {
-      const emailInput = document.querySelector<HTMLInputElement>('[data-testid="e2e-email"]')
-      const email = emailInput?.value.trim()
+      const email = e2eEmail.trim()
       if (!email) throw new Error('Enter your email to continue')
       const claims = await authManager.signInWithE2eEmail(email)
       const token = authManager.getIdToken()
@@ -105,7 +140,7 @@ export function IdentityLoginButtons({
         if (cancelled) return
         await completeSignIn('google', token)
       } catch {
-        // Dismissed Google prompt or render failure — user can retry via page refresh / sign out.
+        // Dismissed Google prompt or render failure — user can retry via sign out / refresh.
       }
     })()
 
@@ -114,79 +149,71 @@ export function IdentityLoginButtons({
     }
   }, [signedIn, hasGoogle, googleMountKey, authManager])
 
-  if (isE2eAuthBypass()) {
-    if (signedIn) {
-      return (
-        <div className="signed-in-banner" data-testid="signed-in-user">
-          <span>
-            Signed in as <strong>{signedIn.email}</strong>
-          </span>
-          <button
-            type="button"
-            className="btn-link"
-            data-testid="sign-out"
-            onClick={onSignOut}
-            disabled={busy}
-          >
-            Sign out
-          </button>
-        </div>
-      )
-    }
-    return (
-      <button
-        type="button"
-        className="btn-login"
-        data-testid="signin-e2e"
-        onClick={() => void handleE2eSignIn()}
-        disabled={busy}
-      >
-        {busy ? 'Signing in…' : 'Sign in (test mode)'}
-      </button>
-    )
-  }
-
-  if (providers.length === 0) {
-    return (
-      <p className="error-banner" data-testid="no-identity-provider">
-        {identityConfigurationError()}
-      </p>
-    )
-  }
-
   if (signedIn) {
-    const label = getIdentityProvider(signedIn.providerId)?.label ?? signedIn.providerId
     return (
-      <div className="signed-in-banner" data-testid="signed-in-user">
-        <span>
-          Signed in as <strong>{signedIn.email}</strong> ({label})
-        </span>
+      <SignedInChip
+        signedIn={signedIn}
+        busy={busy}
+        onSignOut={() => {
+          onSignOut()
+          setGoogleMountKey(key => key + 1)
+        }}
+      />
+    )
+  }
+
+  // Test mode owns its email field rather than reaching into the DOM for one the
+  // join screen happened to render. That coupling is also why the field used to
+  // sit inside the create-workspace form: it is a sign-in input, and it has to
+  // exist *before* sign-in — which is exactly what gating that form would break.
+  if (isE2eAuthBypass()) {
+    return (
+      <div className="flex flex-col gap-3" data-testid="identity-login">
+        <label className="w-full">
+          <span className="mb-1 block text-xs font-medium text-base-content/70">
+            Your email (test mode)
+          </span>
+          <input
+            type="email"
+            className="input input-bordered w-full"
+            placeholder="alice@e2e.test"
+            data-testid="e2e-email"
+            value={e2eEmail}
+            onChange={e => setE2eEmail(e.target.value)}
+          />
+        </label>
         <button
           type="button"
-          className="btn-link"
-          data-testid="sign-out"
-          onClick={() => {
-            onSignOut()
-            setGoogleMountKey(key => key + 1)
-          }}
+          className="btn btn-primary w-full"
+          data-testid="signin-e2e"
+          onClick={() => void handleE2eSignIn()}
           disabled={busy}
         >
-          Sign out
+          {busy ? 'Signing in…' : 'Sign in (test mode)'}
         </button>
       </div>
     )
   }
 
+  if (providers.length === 0) {
+    return (
+      <div role="alert" className="alert alert-error" data-testid="no-identity-provider">
+        <span className="text-sm">{identityConfigurationError()}</span>
+      </div>
+    )
+  }
+
   return (
-    <div className="identity-login" data-testid="identity-login">
-      <p className="identity-login-label">Sign in to continue</p>
-      <div className="identity-login-buttons" data-testid="identity-providers">
+    <div className="flex flex-col gap-3" data-testid="identity-login">
+      <div className="flex flex-col items-center gap-2" data-testid="identity-providers">
         {providers.map(provider =>
           provider.id === 'google' ? (
+            // Google renders its own button (an iframe) into this slot, so we
+            // cannot style it — the others are sized to match it instead.
             <div
               key="google"
               ref={googleContainerRef}
-              className="google-signin-slot"
+              className="google-signin-slot flex min-h-10 w-full justify-center"
               data-signin-container="google"
               data-testid="google-signin"
             />
@@ -194,12 +221,12 @@ export function IdentityLoginButtons({
             <button
               key={provider.id}
               type="button"
-              className="btn-login"
+              className="btn btn-outline w-full"
               data-testid={`signin-${provider.id}`}
               onClick={() => void handleProviderSignIn(provider.id)}
               disabled={busy}
             >
-              Sign in with {provider.label}
+              Continue with {provider.label}
             </button>
           )
         )}
