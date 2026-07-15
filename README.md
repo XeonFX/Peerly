@@ -164,7 +164,7 @@ Deploy the `dist/` folder to any static host (Cloudflare Pages, Vercel, Netlify,
 | `npm run guard:bundle` | Fail if test key material reached `dist/` (runs in `build`) |
 | `npm run lint` | oxlint |
 
-The app shows its version and commit (`v0.1.0 · a1b2c3d`) on the join screen and
+The app shows its version and commit (`v0.1.1 · a1b2c3d`) on the join screen and
 in the sidebar footer, so you can tell at a glance whether a deployment is
 running the code you think it is. Hosts that expose a commit SHA
 (`CF_PAGES_COMMIT_SHA`, `WORKERS_CI_COMMIT_SHA`, `GITHUB_SHA`, …) are picked up
