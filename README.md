@@ -5,7 +5,7 @@ Serverless peer-to-peer team collaboration — channels, chat, file sharing, and
 ## Features
 
 - **Invite-only workspaces** — high-entropy workspace ID (in the URL fragment) doubles as the encryption secret; share the invite link to grant access
-- **Verified identity** — sign in with Google, Microsoft, GitHub, Apple, or generic OIDC; peers verify JWTs client-side via JWKS
+- **Verified identity** — sign in with Google, Microsoft, Apple, or generic OIDC; peers verify JWTs client-side via JWKS
 - **Creator-signed allow-list** — only invited email addresses can join; enforced cryptographically in the P2P handshake
 - **Device-bound auth** — ECDSA challenge-response prevents replayed identity tokens
 - **Channels & DMs** — scoped messaging over one encrypted P2P room
@@ -31,17 +31,66 @@ npm run stop        # kill common dev ports
 
 ## Identity providers (required for production)
 
-Set **at least one** in `.env`, then restart the dev server:
+Workspace access is decided by the **verified email** on an ID token, so a
+provider only works here if it (a) issues a signed OIDC ID token in the browser,
+(b) includes the user's email, (c) asserts that email is verified, and (d)
+supports `nonce` (which binds the token to your device key). Set **at least one**
+in `.env`, then restart the dev server.
 
-| Provider | Variables |
-|----------|-----------|
-| Google | `VITE_GOOGLE_CLIENT_ID` |
-| Microsoft | `VITE_MICROSOFT_CLIENT_ID`, optional `VITE_MICROSOFT_TENANT_ID` |
-| GitHub | `VITE_GITHUB_CLIENT_ID`, optional `VITE_GITHUB_TOKEN_PROXY` |
-| Apple | `VITE_APPLE_CLIENT_ID`, optional `VITE_APPLE_REDIRECT_URI` |
-| Generic OIDC | `VITE_OIDC_CLIENT_ID`, `VITE_OIDC_ISSUER`, optional `VITE_OIDC_LABEL` |
+| Provider | Variables | Notes |
+|----------|-----------|-------|
+| Google | `VITE_GOOGLE_CLIENT_ID` | Simplest. Works out of the box. |
+| Microsoft | `VITE_MICROSOFT_CLIENT_ID`, `VITE_MICROSOFT_TENANT_ID` | Tenant is **required**; needs `email` + `xms_edov` optional claims. |
+| Apple | `VITE_APPLE_CLIENT_ID`, optional `VITE_APPLE_REDIRECT_URI` | Needs a Services ID + verified domain. |
+| Generic OIDC | `VITE_OIDC_CLIENT_ID`, `VITE_OIDC_ISSUER`, optional `VITE_OIDC_LABEL` | IdP must allow implicit `id_token` for a SPA. |
 
-See [.env.example](.env.example) for signaling, TURN, and E2E options.
+### Google
+
+1. [Google Cloud console](https://console.cloud.google.com/apis/credentials) → **Create credentials → OAuth client ID → Web application**.
+2. **Authorized JavaScript origins**: every origin the app is served from — `http://localhost:5173` for dev, plus your production origin. No redirect URI is needed (Google Identity Services returns the token via callback).
+3. Configure the OAuth consent screen (External is fine; while in *Testing* only listed test users can sign in).
+4. Copy the client ID → `VITE_GOOGLE_CLIENT_ID`.
+
+### Microsoft
+
+1. [Entra portal](https://entra.microsoft.com) → **App registrations → New registration**.
+2. **Supported account types**: *Accounts in this organizational directory only*. Multi-tenant is refused at startup — see the security note below.
+3. **Redirect URI**: platform **Single-page application**, value = your exact origin (`http://localhost:5173`, and your production origin).
+4. **Authentication → Implicit grant**: tick **ID tokens**.
+5. **Token configuration → Add optional claim → ID** → add both **`email`** and **`xms_edov`**.
+6. Copy *Application (client) ID* → `VITE_MICROSOFT_CLIENT_ID`, and *Directory (tenant) ID* → `VITE_MICROSOFT_TENANT_ID`.
+
+Step 5 is not optional. Azure never emits the standard `email_verified`; `xms_edov`
+("email domain owner verified") is its equivalent, and without it no Microsoft
+user can be admitted. Step 2 matters because Azure lets a tenant admin set an
+account's `email` to any unverified value — with multi-tenant, anyone could
+register a free tenant, assert one of your members' addresses, and walk in
+(Microsoft's documented ["nOAuth"](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference) abuse). Pinning one tenant reduces that to
+"an admin of your own directory", who you already trust.
+
+### Apple
+
+1. [Apple Developer](https://developer.apple.com/account/resources/identifiers/list/serviceId) → **Identifiers → Services IDs** → create one (e.g. `com.example.peerly`).
+2. Enable **Sign in with Apple**, then **Configure**: add your domain and a **Return URL** matching your origin. Apple requires a verified domain and **does not accept `localhost`** — for local dev use a tunnel, or just use Google.
+3. Services ID → `VITE_APPLE_CLIENT_ID`; set `VITE_APPLE_REDIRECT_URI` if it differs from `window.location.origin`.
+
+### Generic OIDC (Okta, Auth0, Keycloak, Entra ID as OIDC, …)
+
+1. Create a **SPA / public client** in your IdP.
+2. Allow **implicit `id_token`** and the `openid profile email` scopes; redirect URI = your origin.
+3. Ensure the ID token carries `email` **and** `email_verified` — the app rejects tokens without a verified email.
+4. `VITE_OIDC_ISSUER` = the issuer URL (the app reads `<issuer>/.well-known/openid-configuration`), `VITE_OIDC_CLIENT_ID` = the client ID.
+
+### Why GitHub is not supported
+
+GitHub does not implement OIDC for user sign-in. Its
+[discovery document](https://github.com/login/oauth/.well-known/openid-configuration)
+advertises `claims_supported: [sub, aud, exp, nbf, iat, iss, act]` — **no `email`
+and no `nonce`** — and there is no `userinfo_endpoint`. Its plain OAuth returns an
+*opaque* access token instead, which a peer cannot verify without a server (and
+only by handing that server the token). Both are load-bearing here, so GitHub
+cannot be supported without changing the trust model. It was removed rather than
+left as a button that always fails.
 
 ## Signaling
 
@@ -106,11 +155,25 @@ Deploy the `dist/` folder to any static host (Cloudflare Pages, Vercel, Netlify,
 |---------|-------------|
 | `npm run dev` | Vite + public Nostr signaling |
 | `npm run dev:relay` | Vite + local WebSocket relay |
-| `npm run build` | Typecheck + production build |
-| `npm test` | Vitest unit tests (99 tests) |
+| `npm run build` | Typecheck + production build + bundle guard |
+| `npm test` | Vitest unit tests (122 tests) |
 | `npm run test:e2e` | Playwright E2E (28 tests, local relay) |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
+| `npm run check:relays` | Health-check the default Nostr relays |
+| `npm run guard:bundle` | Fail if test key material reached `dist/` (runs in `build`) |
 | `npm run lint` | oxlint |
+
+The app shows its version and commit (`v0.1.0 · a1b2c3d`) on the join screen and
+in the sidebar footer, so you can tell at a glance whether a deployment is
+running the code you think it is. Hosts that expose a commit SHA
+(`CF_PAGES_COMMIT_SHA`, `WORKERS_CI_COMMIT_SHA`, `GITHUB_SHA`, …) are picked up
+automatically; otherwise it falls back to local git.
+
+`check:relays` is a diagnostic, not part of `npm test` — a third-party relay
+going down shouldn't fail your build. Run it after editing
+`DEFAULT_NOSTR_RELAYS`: a relay that merely opens a socket can still silently
+drop the ephemeral events Trystero signals with, which looks identical to
+working until two peers fail to find each other.
 
 ## Security model
 

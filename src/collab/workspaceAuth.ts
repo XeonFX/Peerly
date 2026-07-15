@@ -56,16 +56,6 @@ export class WorkspaceAuthManager {
     }
   }
 
-  /** @deprecated Use getIdToken */
-  getGoogleToken(): string | null {
-    return this.idToken
-  }
-
-  /** @deprecated Use setIdToken */
-  setGoogleToken(token: string | null): void {
-    this.setIdToken(token, 'google')
-  }
-
   getIdentityProvider(): IdentityProviderId | null {
     return this.identityProvider
   }
@@ -98,18 +88,13 @@ export class WorkspaceAuthManager {
       expectedAudience: provider.clientId,
       expectedNonce: keyId,
       issuers: provider.issuers,
-      issuerPrefixes: provider.issuerPrefixes,
       fetchJwks,
       jwksCacheKey: provider.id,
+      emailVerifiedClaim: provider.emailVerifiedClaim,
     })
     this.idToken = token
     this.identityProvider = providerId
     return claims
-  }
-
-  /** @deprecated Use verifyAndStoreIdToken */
-  async verifyAndStoreGoogleToken(token: string): Promise<OidcIdTokenClaims> {
-    return this.verifyAndStoreIdToken(token, 'google')
   }
 
   async signInWithE2eEmail(email: string): Promise<OidcIdTokenClaims> {

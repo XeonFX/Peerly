@@ -1,5 +1,10 @@
 /// <reference types="vite/client" />
 
+/** Injected at build time by vite.config.ts. */
+declare const __APP_VERSION__: string
+/** Short commit of the build, or 'unknown' when git/host metadata is absent. */
+declare const __APP_COMMIT__: string
+
 interface ImportMetaEnv {
   readonly VITE_NOSTR_RELAYS: string
   readonly VITE_SIGNALING: 'ws-relay' | 'nostr' | 'supabase'
@@ -12,8 +17,6 @@ interface ImportMetaEnv {
   readonly VITE_GOOGLE_CLIENT_ID: string
   readonly VITE_MICROSOFT_CLIENT_ID: string
   readonly VITE_MICROSOFT_TENANT_ID: string
-  readonly VITE_GITHUB_CLIENT_ID: string
-  readonly VITE_GITHUB_TOKEN_PROXY: string
   readonly VITE_APPLE_CLIENT_ID: string
   readonly VITE_APPLE_REDIRECT_URI: string
   readonly VITE_OIDC_CLIENT_ID: string

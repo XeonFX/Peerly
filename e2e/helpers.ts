@@ -136,15 +136,6 @@ export async function expectJoinRejected(page: Page, reason?: string | RegExp) {
   await expect(page.locator('.sidebar')).not.toBeVisible()
 }
 
-/** @deprecated Use expectJoinRejected */
-export const expectPasswordRejected = expectJoinRejected
-
-export async function expectAccessDenied(page: Page) {
-  await page.waitForTimeout(12_000)
-  await expect(page.getByTestId('connection-status')).not.toContainText('Connected')
-  await expect(page.getByTestId('member-list')).not.toContainText('Peer')
-}
-
 export async function expectSharedFilesUsable(page: Page) {
   const result = await page.evaluate(async () => {
     const probe = async (url: string | null | undefined) => {

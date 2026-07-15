@@ -3,11 +3,20 @@ import {
   createSessionFromInvite,
   leaveWorkspace,
   loadIdentityProvider,
+  loadIdToken,
   loadPersistedSession,
   loadSession,
   saveIdCredentials,
   saveSession,
 } from './session'
+import { utf8ToBase64Url } from './utils/base64url'
+
+/** Shapes just enough of a JWT for the expiry check; signature is irrelevant here. */
+function tokenExpiringAt(expSeconds: number): string {
+  const header = utf8ToBase64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const payload = utf8ToBase64Url(JSON.stringify({ email: 'alice@example.com', exp: expSeconds }))
+  return `${header}.${payload}.not-a-real-signature`
+}
 
 const PERSIST_KEY = 'peerly-session'
 const ID_TOKEN_KEY = 'peerly-id-token'
@@ -113,5 +122,41 @@ describe('session persistence', () => {
       avatarId: undefined,
     })
     expect(loadIdentityProvider()).toBe('google')
+  })
+})
+
+describe('stored ID token expiry', () => {
+  const nowSec = () => Math.floor(Date.now() / 1000)
+
+  // ID tokens last ~1h. A stale one made the UI claim "signed in", then every
+  // peer rejected the handshake on an expired token — which reads as a broken
+  // app rather than "sign in again".
+  it('treats an expired token as no token, and clears it', () => {
+    saveIdCredentials(tokenExpiringAt(nowSec() - 60), 'google')
+
+    expect(loadIdToken()).toBeNull()
+    // Cleared, so the stale provider does not linger either.
+    expect(loadIdentityProvider()).toBeNull()
+  })
+
+  it('keeps a token that is still valid', () => {
+    const token = tokenExpiringAt(nowSec() + 3600)
+    saveIdCredentials(token, 'google')
+
+    expect(loadIdToken()).toBe(token)
+  })
+
+  it('does not restore a session when the token has expired', () => {
+    saveSession(createSessionFromInvite(TEST_INVITE, 'alice@example.com', 'google'))
+    saveIdCredentials(tokenExpiringAt(nowSec() - 1), 'google')
+
+    expect(loadSession()).toBeNull()
+  })
+
+  it('keeps an opaque token without an exp rather than locking the user out', () => {
+    // Not all issuers are JWT-shaped; absence of a readable exp is not evidence
+    // of expiry, and the peer handshake still enforces the real one.
+    saveIdCredentials('not-a-jwt', 'google')
+    expect(loadIdToken()).toBe('not-a-jwt')
   })
 })

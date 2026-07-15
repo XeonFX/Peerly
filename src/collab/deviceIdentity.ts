@@ -18,12 +18,18 @@ export type DeviceKeyId = string
  * a copy of the JWT string can present it to any peer within its validity
  * window, including a peer who only ever *observed* someone else present it.
  *
- * Generated with extractable: true. This app already treats localStorage and
- * IndexedDB as readable by same-origin script — profiles, files, and (until
- * this change) the workspace password all lived there in the clear. This key
- * defends against other PEERS forging your identity, not against an XSS on
- * your own client; that is a separate, complementary concern (input
- * sanitization), already addressed elsewhere in this app.
+ * The private key is generated NON-extractable and never leaves WebCrypto. It
+ * still persists across reloads: an unextractable CryptoKey is structured-
+ * cloneable, so IndexedDB stores the key object itself rather than any material
+ * we could read back. The public key stays exportable, which is all
+ * canonicalizePublicKey needs.
+ *
+ * This bounds what an XSS on our own origin can do. It can still sign while it
+ * has script running on the page — that is unavoidable — but it cannot copy the
+ * key out. Extractable, one XSS yields the key plus the ID token from
+ * sessionStorage, which together impersonate the user to every peer
+ * indefinitely, offline, long after the page is closed. That is a much larger
+ * blast radius for no benefit: nothing here needs to read the private key.
  */
 export class DeviceIdentity {
   private readonly store: KvStore<CryptoKeyPair>
@@ -42,7 +48,9 @@ export class DeviceIdentity {
       return stored
     }
 
-    const pair = (await crypto.subtle.generateKey(KEY_ALGORITHM, true, [
+    // extractable: false — applies to the private key only; the public key
+    // remains exportable, which is what publicKeyId() needs.
+    const pair = (await crypto.subtle.generateKey(KEY_ALGORITHM, false, [
       'sign',
       'verify',
     ])) as CryptoKeyPair

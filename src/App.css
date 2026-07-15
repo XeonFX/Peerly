@@ -1262,3 +1262,17 @@
   margin-top: 0.15rem;
   display: block;
 }
+/* Build identity — deliberately low-contrast: useful when diagnosing "is the
+   deployed app running my latest code?", noise the rest of the time. */
+.join-version {
+  margin-top: 0.75rem;
+  text-align: center;
+  font-size: 0.7rem;
+  color: #5a5a5a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.app-version {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.75;
+}

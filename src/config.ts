@@ -1,5 +1,20 @@
 export const APP_NAME = 'Peerly'
 
+/**
+ * Build identity, injected by vite.config.ts. Version alone does not move on
+ * every push, so the commit is what actually answers "is the deployed app
+ * running my latest code?".
+ */
+export const APP_VERSION = __APP_VERSION__
+export const APP_COMMIT = __APP_COMMIT__
+
+/** e.g. "v0.1.0 · a1b2c3d" — falls back gracefully when the commit is unknown. */
+export function appBuildLabel(): string {
+  return APP_COMMIT && APP_COMMIT !== 'unknown'
+    ? `v${APP_VERSION} · ${APP_COMMIT}`
+    : `v${APP_VERSION}`
+}
+
 export const APP_ID = 'peerly-collab-v1'
 
 export const DEFAULT_USER_COLOR = '#36c5f0'
@@ -98,12 +113,21 @@ export const DEFAULT_NOSTR_RELAYS = [
   'wss://relay.primal.net',
   'wss://purplerelay.com',
   'wss://nostr.mom',
-  'wss://relay.mostr.pub',
+  'wss://nostr.oxtr.dev',
 ]
-// relay.damus.io is deliberately absent. It accepts a one-off ephemeral event
-// but rate-limits this traffic pattern in normal use ("rate-limited: you are
-// noting too much"), so it logs failures without carrying signaling. Losing one
-// relay is harmless — peers only need one working relay in common.
+// Two relays are deliberately absent, for different reasons:
+//
+// - relay.damus.io accepts a one-off ephemeral event but rate-limits this
+//   traffic pattern in normal use ("rate-limited: you are noting too much"), so
+//   it logs failures without carrying signaling.
+// - relay.mostr.pub stopped accepting connections entirely (it was in this list
+//   and produced a stream of "WebSocket connection failed" in the console).
+//
+// Losing one relay is harmless — peers only need one working relay in common —
+// but a dead entry is pure console noise, so keep this list to relays actually
+// verified against the ephemeral events Trystero signals with. `npm run
+// check:relays` re-checks the list; a one-shot probe is not enough evidence,
+// since that is exactly how mostr.pub got in here.
 
 /** Nostr relay URLs (wss://…). Override via VITE_NOSTR_RELAYS comma-separated env. */
 export function getNostrRelayConfig(): { urls: string[] } {

@@ -2,7 +2,7 @@
   "name": "peerly",
   "private": false,
   "version": "0.1.0",
-  "description": "Serverless P2P team collaboration — verified identity, invite-only workspaces, chat, files, and video via Trystero",
+  "description": "Serverless P2P team collaboration \u2014 verified identity, invite-only workspaces, chat, files, and video via Trystero",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -17,14 +17,16 @@
     "dev:relay": "node server/dev-relay.mjs",
     "dev:app": "vite --host",
     "stop": "lsof -ti :8080 -ti :5173 -ti :5174 -ti :17273 2>/dev/null | xargs kill -9 2>/dev/null || true",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run guard:bundle",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:nostr": "E2E_SIGNALING=nostr playwright test -g \"two users connect and see each other|chat messages sync between peers|file sharing between peers|shared image preview survives page reload\"",
     "test:e2e:ui": "playwright test --ui",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "guard:bundle": "node scripts/guard-bundle.mjs",
+    "check:relays": "node scripts/check-relays.mjs"
   },
   "dependencies": {
     "@trystero-p2p/core": "^0.25.3",

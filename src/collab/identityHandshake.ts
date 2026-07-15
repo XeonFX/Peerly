@@ -30,20 +30,19 @@ export type IdentityHandshakeDeps = {
   onAllowListSeen?: (list: SignedAllowList) => void
 }
 
+/**
+ * Every field here is attacker-controlled — this is the first thing a stranger
+ * gets to send us. Accept one exact shape and nothing else: a peer that omits
+ * `providerId` is not silently treated as Google, because that would let the
+ * shape of a request decide which issuer we trust.
+ */
 function isAttestationShape(data: unknown): data is Attestation {
   if (!data || typeof data !== 'object') return false
   const d = data as Record<string, unknown>
 
-  const idToken =
-    typeof d.idToken === 'string'
-      ? d.idToken
-      : typeof d.googleIdToken === 'string'
-        ? d.googleIdToken
-        : null
-  const providerId =
-    typeof d.providerId === 'string' ? d.providerId : idToken ? 'google' : null
-
-  if (!idToken || !providerId || typeof d.deviceKeyId !== 'string') return false
+  if (typeof d.idToken !== 'string' || !d.idToken) return false
+  if (typeof d.providerId !== 'string' || !d.providerId) return false
+  if (typeof d.deviceKeyId !== 'string' || !d.deviceKeyId) return false
 
   const list = d.allowList as Record<string, unknown> | undefined
   return (
@@ -54,22 +53,6 @@ function isAttestationShape(data: unknown): data is Attestation {
     typeof list.signedAt === 'number' &&
     typeof list.signature === 'string'
   )
-}
-
-function normalizeAttestation(data: Record<string, unknown>): Attestation {
-  const idToken =
-    typeof data.idToken === 'string'
-      ? data.idToken
-      : typeof data.googleIdToken === 'string'
-        ? data.googleIdToken
-        : ''
-  const providerId = typeof data.providerId === 'string' ? data.providerId : 'google'
-  return {
-    idToken,
-    providerId,
-    deviceKeyId: data.deviceKeyId as DeviceKeyId,
-    allowList: data.allowList as SignedAllowList,
-  }
 }
 
 function isNonceMessage(data: unknown): data is { nonce: string } {
@@ -112,7 +95,7 @@ export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandsh
     }
 
     if (!isAttestationShape(theirsRaw)) deny('malformed attestation')
-    const theirs = normalizeAttestation(theirsRaw as Record<string, unknown>)
+    const theirs = theirsRaw
 
     const provider = resolveProviderConfig(theirs.providerId, deps)
     if (!provider) deny(`unknown identity provider: ${theirs.providerId}`)
@@ -128,9 +111,9 @@ export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandsh
         expectedAudience: provider.clientId,
         expectedNonce: theirs.deviceKeyId,
         issuers: provider.issuers,
-        issuerPrefixes: provider.issuerPrefixes,
         fetchJwks,
         jwksCacheKey: provider.id,
+        emailVerifiedClaim: provider.emailVerifiedClaim,
       })
     } catch (err) {
       deny(`ID token: ${err instanceof Error ? err.message : String(err)}`)

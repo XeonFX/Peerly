@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'fs'
 import type { Connect } from 'vite'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { buildDefines } from './build-info.mjs'
 
 function relayPortPlugin() {
   return {
@@ -21,6 +22,7 @@ function relayPortPlugin() {
 
 export default defineConfig({
   plugins: [react(), relayPortPlugin()],
+  define: buildDefines(),
   resolve: {
     dedupe: ['@trystero-p2p/core'],
   },

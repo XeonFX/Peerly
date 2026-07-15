@@ -6,7 +6,6 @@ import {
   type IdentityProviderId,
 } from './identityProviders'
 import { signInWithApple, getAppleRedirectUri } from './appleAuth'
-import { signInWithGitHub } from './githubAuth'
 import { signInWithMicrosoft } from './microsoftAuth'
 import { signInWithGenericOidc } from './oidcAuth'
 
@@ -33,11 +32,13 @@ export async function signInWithProviderConfig(
       return renderGoogleSignInButton(container, deviceKeyId, provider.clientId)
     }
     case 'microsoft': {
-      const tenant = import.meta.env.VITE_MICROSOFT_TENANT_ID?.trim() || 'common'
+      // No 'common' fallback: microsoftProvider() refuses to build a config
+      // without a pinned tenant, so signing in against a different tenant than
+      // the one we verify tokens for would only produce confusing failures.
+      const tenant = import.meta.env.VITE_MICROSOFT_TENANT_ID?.trim()
+      if (!tenant) throw new Error('VITE_MICROSOFT_TENANT_ID is required for Microsoft sign-in')
       return signInWithMicrosoft(provider.clientId, tenant, deviceKeyId)
     }
-    case 'github':
-      return signInWithGitHub(provider.clientId, deviceKeyId)
     case 'apple':
       return signInWithApple(provider.clientId, deviceKeyId, getAppleRedirectUri())
     case 'oidc': {

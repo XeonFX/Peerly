@@ -7,7 +7,6 @@ import {
   waitForPeerConnection,
   expectPeerVisible,
   expectJoinRejected,
-  expectAccessDenied,
   createChannel,
   expectChannel,
   startDirectMessage,

@@ -33,6 +33,30 @@ describe('DeviceIdentity', () => {
     expect(second).toBe(first)
   })
 
+  // An XSS that can export this key impersonates the user to every peer
+  // forever, offline, long after the tab closes. Non-extractable bounds it to
+  // "can sign while script is on the page". Nothing needs to read the key, so
+  // there is no reason to ever flip this back.
+  it('never lets the private key leave WebCrypto', async () => {
+    const store = memoryStore()
+    const identity = new DeviceIdentity(store)
+    await identity.publicKeyId() // force generation
+
+    const pair = await store.get('device-keypair')
+    expect(pair?.privateKey.extractable).toBe(false)
+    await expect(crypto.subtle.exportKey('jwk', pair!.privateKey)).rejects.toThrow()
+  })
+
+  it('keeps the public key exportable, which publicKeyId depends on', async () => {
+    const store = memoryStore()
+    const identity = new DeviceIdentity(store)
+    const keyId = await identity.publicKeyId()
+
+    expect(keyId).toMatch(/^P-256:.+:.+$/)
+    const pair = await store.get('device-keypair')
+    expect(pair?.publicKey.extractable).toBe(true)
+  })
+
   it('produces a signature that verifies against its own public key id', async () => {
     const identity = new DeviceIdentity(memoryStore())
     const keyId = await identity.publicKeyId()

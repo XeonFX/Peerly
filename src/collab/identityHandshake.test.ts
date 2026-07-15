@@ -43,6 +43,9 @@ async function makeFakeGoogle() {
       aud: AUDIENCE,
       sub: email,
       email,
+      // Real providers assert this and the app requires it; overridable so
+      // tests can exercise the unverified-email rejection.
+      email_verified: true,
       nonce,
       iat: nowSec,
       exp: nowSec + 3600,
@@ -352,6 +355,106 @@ describe('identity handshake', () => {
 
     expect(a.ok).toBe(false)
     expectHandshakeError({ a, b }, 'proof-of-possession failed')
+  })
+
+  it('denies a peer whose email the provider has NOT verified', async () => {
+    const google = await makeFakeGoogle()
+    const creator = new DeviceIdentity(memoryStore())
+    const creatorKeyId = await creator.publicKeyId()
+    const allowList = await signAllowList(creator, ['alice@example.com'])
+
+    const alice = new DeviceIdentity(memoryStore())
+    const mallory = new DeviceIdentity(memoryStore())
+    const aliceKeyId = await alice.publicKeyId()
+    const malloryKeyId = await mallory.publicKeyId()
+
+    const { a, b } = await runHandshake(
+      {
+        identity: alice,
+        getAttestation: async () => ({
+          idToken: await google.issueToken('alice@example.com', aliceKeyId),
+          providerId: 'google',
+          deviceKeyId: aliceKeyId,
+          allowList,
+        }),
+        resolveProvider: resolveFakeGoogle(google),
+        fetchJwks: google.fetchJwks,
+        creatorKeyId,
+      },
+      {
+        identity: mallory,
+        // Mallory holds a real, correctly-signed, correctly-nonced token that
+        // she genuinely owns the device key for — but the address on it was
+        // never verified by the provider. She simply typed a colleague's
+        // address into a provider that doesn't check. Without the
+        // email_verified requirement this walks straight in, because the
+        // allow-list only ever compares the address.
+        getAttestation: async () => ({
+          idToken: await google.issueToken('alice@example.com', malloryKeyId, {
+            email_verified: false,
+          }),
+          providerId: 'google',
+          deviceKeyId: malloryKeyId,
+          allowList,
+        }),
+        resolveProvider: resolveFakeGoogle(google),
+        fetchJwks: google.fetchJwks,
+        creatorKeyId,
+      }
+    )
+
+    expect(a.ok).toBe(false)
+    expect(b.ok).toBe(false)
+    expect(a.ok ? '' : a.error).toMatch(/not verified/i)
+  })
+
+  it('denies a token carrying only preferred_username, which is not a verified email', async () => {
+    const google = await makeFakeGoogle()
+    const creator = new DeviceIdentity(memoryStore())
+    const creatorKeyId = await creator.publicKeyId()
+    const allowList = await signAllowList(creator, ['alice@example.com'])
+
+    const alice = new DeviceIdentity(memoryStore())
+    const mallory = new DeviceIdentity(memoryStore())
+    const aliceKeyId = await alice.publicKeyId()
+    const malloryKeyId = await mallory.publicKeyId()
+
+    const { a, b } = await runHandshake(
+      {
+        identity: alice,
+        getAttestation: async () => ({
+          idToken: await google.issueToken('alice@example.com', aliceKeyId),
+          providerId: 'google',
+          deviceKeyId: aliceKeyId,
+          allowList,
+        }),
+        resolveProvider: resolveFakeGoogle(google),
+        fetchJwks: google.fetchJwks,
+        creatorKeyId,
+      },
+      {
+        identity: mallory,
+        // Azure-shaped token: no verified `email`, just a UPN that looks like
+        // one. It must not be accepted as proof of the address.
+        getAttestation: async () => ({
+          idToken: await google.issueToken('', malloryKeyId, {
+            email: undefined,
+            email_verified: undefined,
+            preferred_username: 'alice@example.com',
+          }),
+          providerId: 'google',
+          deviceKeyId: malloryKeyId,
+          allowList,
+        }),
+        resolveProvider: resolveFakeGoogle(google),
+        fetchJwks: google.fetchJwks,
+        creatorKeyId,
+      }
+    )
+
+    expect(a.ok).toBe(false)
+    expect(b.ok).toBe(false)
+    expect(a.ok ? '' : a.error).toMatch(/missing an email claim/i)
   })
 
   it('denies an expired token even with a correct nonce and allow-list membership', async () => {

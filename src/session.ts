@@ -1,4 +1,5 @@
 import { DEFAULT_USER_COLOR } from './config'
+import { base64UrlToUtf8 } from './utils/base64url'
 import { migrateLegacyAvatarDataUrl, resolveAvatarPreview } from './collab/avatarService'
 import type { SignedAllowList } from './collab/allowList'
 import type { DeviceKeyId } from './collab/deviceIdentity'
@@ -64,8 +65,41 @@ export function loadPersistedSession(): PersistedSession | null {
   }
 }
 
+/**
+ * Read `exp` without verifying the signature.
+ *
+ * That is safe *for this purpose only*: the question here is "is our own stored
+ * token still worth presenting", not "should we trust this token". Every peer
+ * re-verifies signature, issuer, audience, nonce and expiry before admitting
+ * anyone, so a tampered `exp` buys nothing — it just means we try and get
+ * rejected, exactly as if we hadn't checked. Never use this to make an
+ * authorization decision; use verifyOidcIdToken.
+ */
+function idTokenExpiryMs(token: string): number | null {
+  try {
+    const payload = JSON.parse(base64UrlToUtf8(token.split('.')[1])) as { exp?: unknown }
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * ID tokens live about an hour. Without this, reloading after a break shows a
+ * signed-in UI, lets the user "join", and then every peer handshake fails on an
+ * expired token — which reads as "the app is broken", not "sign in again".
+ * Treat an expired token as no token so the UI asks for sign-in up front.
+ */
 export function loadIdToken(): string | null {
-  return sessionStorage.getItem(ID_TOKEN_KEY)
+  const token = sessionStorage.getItem(ID_TOKEN_KEY)
+  if (!token) return null
+
+  const expiresAt = idTokenExpiryMs(token)
+  if (expiresAt !== null && expiresAt <= Date.now()) {
+    clearIdCredentials()
+    return null
+  }
+  return token
 }
 
 export function loadIdentityProvider(): IdentityProviderId | null {
@@ -73,7 +107,6 @@ export function loadIdentityProvider(): IdentityProviderId | null {
   if (
     stored === 'google' ||
     stored === 'microsoft' ||
-    stored === 'github' ||
     stored === 'apple' ||
     stored === 'oidc'
   ) {

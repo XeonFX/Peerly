@@ -55,34 +55,71 @@ function audienceMatches(aud: unknown, expectedAudience: string): boolean {
   return false
 }
 
-function issuerMatches(
-  iss: string,
-  issuers?: Set<string>,
-  issuerPrefixes?: string[]
-): boolean {
-  if (issuers?.has(iss)) return true
-  if (issuerPrefixes?.some(prefix => iss.startsWith(prefix))) return true
-  return false
+/**
+ * Exact match only. Prefix matching was removed: it is correct solely when the
+ * prefix ends in "/" (otherwise "https://issuer.com.evil.test/" matches
+ * "https://issuer.com"), which is a trap for whoever adds the next provider.
+ * Every provider now pins its exact issuer(s).
+ */
+function issuerMatches(iss: string, issuers?: Set<string>): boolean {
+  return issuers?.has(iss) ?? false
 }
 
-export function extractEmailClaim(payload: Record<string, unknown>): string {
-  if (typeof payload.email === 'string' && payload.email.includes('@')) {
-    return payload.email
+/**
+ * Providers disagree on the type: Google sends a boolean, Apple has historically
+ * sent the string "true". Anything else — absent, false, "false" — is not a
+ * verified email.
+ */
+function isEmailVerifiedClaim(value: unknown): boolean {
+  return value === true || value === 'true'
+}
+
+/** The standard OIDC claim. Microsoft is the exception — see EMAIL_VERIFIED_CLAIM notes. */
+export const DEFAULT_EMAIL_VERIFIED_CLAIM = 'email_verified'
+
+/**
+ * The email a workspace's allow-list is matched against, and therefore the only
+ * thing standing between a stranger and a private workspace.
+ *
+ * Three rules, all load-bearing:
+ *
+ * 1. The provider must assert the address is verified. Without this, a provider
+ *    that lets a user type any address into their profile hands an attacker the
+ *    ability to claim a colleague's address and walk in.
+ * 2. `preferred_username` is not accepted as a fallback. It looks like an email
+ *    in Azure AD (it is the UPN) but carries no verification guarantee, so
+ *    treating it as one silently re-opens exactly the hole rule 1 closes.
+ * 3. Which claim carries that assertion is per-provider. Most use the standard
+ *    `email_verified`; Microsoft never emits it and uses the optional `xms_edov`
+ *    ("email domain owner verified") instead. Defaulting Microsoft to
+ *    `email_verified` would not fail open — it would reject every Microsoft
+ *    user — but naming the claim per provider is what keeps rule 1 true for all
+ *    of them rather than only the ones that happen to follow the spec.
+ */
+export function extractEmailClaim(
+  payload: Record<string, unknown>,
+  verifiedClaim: string = DEFAULT_EMAIL_VERIFIED_CLAIM
+): string {
+  const email = payload.email
+  if (typeof email !== 'string' || !email.includes('@')) {
+    throw new Error('Token is missing an email claim')
   }
-  const preferred = payload.preferred_username
-  if (typeof preferred === 'string' && preferred.includes('@')) {
-    return preferred
+  if (!isEmailVerifiedClaim(payload[verifiedClaim])) {
+    throw new Error(
+      `Email ${email} is not verified by the identity provider (${verifiedClaim} is not true)`
+    )
   }
-  throw new Error('Token is missing an email claim')
+  return email
 }
 
 export type VerifyOidcIdTokenOptions = {
   expectedAudience: string
   expectedNonce: string
   issuers?: Set<string>
-  issuerPrefixes?: string[]
   fetchJwks: JwksFetcher
   jwksCacheKey?: string
+  /** Claim carrying the provider's email-verified assertion. See extractEmailClaim. */
+  emailVerifiedClaim?: string
   now?: number
 }
 
@@ -125,9 +162,7 @@ export async function verifyOidcIdToken(
   if (typeof payload.iss !== 'string' || !payload.iss) {
     throw new Error(`Unexpected token issuer: ${String(payload.iss)}`)
   }
-  if (
-    !issuerMatches(payload.iss, options.issuers, options.issuerPrefixes)
-  ) {
+  if (!issuerMatches(payload.iss, options.issuers)) {
     throw new Error(`Unexpected token issuer: ${payload.iss}`)
   }
   if (!audienceMatches(payload.aud, options.expectedAudience)) {
@@ -140,7 +175,7 @@ export async function verifyOidcIdToken(
     throw new Error('Token nonce does not match the presenting device key')
   }
 
-  const email = extractEmailClaim(payload)
+  const email = extractEmailClaim(payload, options.emailVerifiedClaim)
 
   return {
     ...(payload as OidcIdTokenClaims),

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { appBuildLabel } from '../config'
 import type { Channel, ConnectionStatus, Peer, UserProfile } from '../types'
 import { Avatar } from './Avatar'
 import { ConnectionStatus as ConnectionStatusLabel } from './ConnectionStatus'
@@ -245,6 +246,9 @@ export function Sidebar({
             : 'Signaling: connecting…'}
         </span>
         <span className="p2p-badge">P2P · E2E encrypted</span>
+        <span className="debug-info app-version" data-testid="app-version">
+          {appBuildLabel()}
+        </span>
         {inviteLink && (
           <button
             type="button"

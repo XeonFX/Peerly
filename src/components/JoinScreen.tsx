@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { isEmailAllowed } from '../collab/allowList'
 import { isE2eAuthBypass } from '../collab/e2eAuth'
-import { APP_NAME } from '../config'
+import { APP_NAME, appBuildLabel } from '../config'
 import {
   decodeInviteFromHash,
   encodeInviteLink,
@@ -331,6 +331,10 @@ export function JoinScreen({ onJoined }: Props) {
         <p className="join-hint">
           Workspace access is enforced cryptographically: only invited accounts can connect, and
           peers verify each other's identity before any data flows.
+        </p>
+
+        <p className="join-version" data-testid="app-version">
+          {appBuildLabel()}
         </p>
       </div>
     </div>
