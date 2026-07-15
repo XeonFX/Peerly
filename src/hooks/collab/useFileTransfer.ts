@@ -96,7 +96,7 @@ export function useFileTransfer(
     async (data: ArrayBuffer, meta: FileMetaPayload) => {
       // A peer controls both the buffer and the claimed size; check the real one.
       if (data.byteLength > MAX_FILE_BYTES) {
-        console.warn('[Flux] Dropped oversized file from peer:', meta.senderId, data.byteLength)
+        console.warn('[Peerly] Dropped oversized file from peer:', meta.senderId, data.byteLength)
         setTransfers(prev => prev.filter(t => t.id !== meta.id))
         return
       }
@@ -118,7 +118,7 @@ export function useFileTransfer(
       // like the real file because nothing here checks. A hash mismatch means
       // the peer is either corrupt or malicious; either way, drop it.
       if (!(await fileContentMatchesId(data, meta.id))) {
-        console.warn('[Flux] Dropped file with mismatched content hash from peer:', meta.senderId)
+        console.warn('[Peerly] Dropped file with mismatched content hash from peer:', meta.senderId)
         setTransfers(prev => prev.filter(t => t.id !== meta.id))
         return
       }
@@ -157,7 +157,7 @@ export function useFileTransfer(
         try {
           await action.send(wanted, { target: peerId })
         } catch (err) {
-          console.warn('[Flux] Failed to request files from peer:', peerId, err)
+          console.warn('[Peerly] Failed to request files from peer:', peerId, err)
         }
 
         if (peerId !== peerIds[peerIds.length - 1]) {
@@ -187,7 +187,7 @@ export function useFileTransfer(
         try {
           await fileAction.send(cached.buffer, { metadata: cached.meta, target: peerId })
         } catch (err) {
-          console.warn('[Flux] Failed to serve file to peer:', peerId, err)
+          console.warn('[Peerly] Failed to serve file to peer:', peerId, err)
         }
       }
     },

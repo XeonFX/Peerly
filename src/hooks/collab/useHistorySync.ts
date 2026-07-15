@@ -102,7 +102,7 @@ export function useHistorySync(
           try {
             await requestFromPeers(peerIds, channelId, force)
           } catch (err) {
-            console.warn('[Flux] History sync failed:', err)
+            console.warn('[Peerly] History sync failed:', err)
           } finally {
             syncingChannelsRef.current.delete(channelId)
           }

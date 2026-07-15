@@ -9,8 +9,8 @@ import {
   saveSession,
 } from './session'
 
-const PERSIST_KEY = 'flux-session'
-const ID_TOKEN_KEY = 'flux-id-token'
+const PERSIST_KEY = 'peerly-session'
+const ID_TOKEN_KEY = 'peerly-id-token'
 
 const TEST_INVITE = {
   workspaceId: 'abc123workspaceid000000000001',
@@ -113,6 +113,26 @@ describe('session persistence', () => {
       avatarId: undefined,
     })
     expect(loadIdentityProvider()).toBe('google')
+  })
+
+  it('loads legacy flux-session from localStorage', () => {
+    localStorage.setItem(
+      'flux-session',
+      JSON.stringify({
+        workspaceId: TEST_INVITE.workspaceId,
+        workspaceName: TEST_INVITE.workspaceName,
+        creatorKeyId: TEST_INVITE.creatorKeyId,
+        allowList: TEST_INVITE.allowList,
+        identityEmail: 'alice@e2e.test',
+        identityProvider: 'google',
+        userName: 'alice',
+        color: '#2eb67d',
+      })
+    )
+    saveIdCredentials('token-1', 'google')
+
+    expect(loadPersistedSession()?.identityEmail).toBe('alice@e2e.test')
+    expect(loadSession()?.workspaceId).toBe(TEST_INVITE.workspaceId)
   })
 
   it('migrates legacy googleEmail and google token fields', () => {

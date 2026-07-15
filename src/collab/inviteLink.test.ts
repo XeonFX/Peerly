@@ -29,14 +29,14 @@ describe('generateWorkspaceId', () => {
 describe('invite link', () => {
   it('round-trips through encode/decode', () => {
     const invite = sampleInvite()
-    const link = encodeInviteLink(invite, 'https://flux.example')
+    const link = encodeInviteLink(invite, 'https://peerly.example')
     const hash = new URL(link).hash
 
     expect(decodeInviteFromHash(hash)).toEqual(invite)
   })
 
   it('puts the payload in the fragment, never the query string or path', () => {
-    const link = encodeInviteLink(sampleInvite(), 'https://flux.example')
+    const link = encodeInviteLink(sampleInvite(), 'https://peerly.example')
     const url = new URL(link)
 
     expect(url.search).toBe('')

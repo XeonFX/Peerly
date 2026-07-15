@@ -8,7 +8,7 @@ const { run } = createProcessRunner()
 //
 // To use a local relay instead (offline work, or to stay off public relays):
 //   npm run dev:relay
-console.log('\nStarting Flux — signaling: public Nostr relays\n')
+console.log('\nStarting Peerly — signaling: public Nostr relays\n')
 
 run('vite', 'npx', ['vite', '--host'], {
   VITE_SIGNALING: 'nostr',

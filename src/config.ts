@@ -1,4 +1,6 @@
-export const APP_ID = 'trystero-collab-v1'
+export const APP_NAME = 'Peerly'
+
+export const APP_ID = 'peerly-collab-v1'
 
 export const DEFAULT_USER_COLOR = '#36c5f0'
 

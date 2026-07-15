@@ -3,7 +3,7 @@ import type { Message } from '../types'
 
 export type ReadState = Record<string, number>
 
-const STORAGE_PREFIX = 'flux-read-'
+const STORAGE_PREFIX = 'peerly-read-'
 
 function storageKey(workspaceId: string): string {
   return `${STORAGE_PREFIX}${normalizeWorkspaceId(workspaceId)}`

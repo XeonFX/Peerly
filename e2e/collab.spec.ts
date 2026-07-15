@@ -40,7 +40,7 @@ async function joinAlice(browser: Browser) {
 
 test.describe.configure({ mode: 'serial' })
 
-test.describe('Flux P2P collaboration', () => {
+test.describe('Peerly P2P collaboration', () => {
   test('signaling is online after join', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await waitForRelay(page)
@@ -280,7 +280,7 @@ test.describe('Flux P2P collaboration', () => {
     await expect(preview).toHaveAttribute('src', /^blob:/)
     await expect
       .poll(async () => {
-        const raw = await page.evaluate(() => localStorage.getItem('flux-history-e2e00000000000000000000000000001__general'))
+        const raw = await page.evaluate(() => localStorage.getItem('peerly-history-e2e00000000000000000000000000001__general'))
         return raw?.includes('shared-photo.png') ?? false
       })
       .toBe(true)
@@ -311,7 +311,7 @@ test.describe('Flux P2P collaboration', () => {
     await expect(page.locator('.message-list .file-download')).toBeVisible({ timeout: 15_000 })
     await expect
       .poll(async () => {
-        const raw = await page.evaluate(() => localStorage.getItem('flux-history-e2e00000000000000000000000000001__general'))
+        const raw = await page.evaluate(() => localStorage.getItem('peerly-history-e2e00000000000000000000000000001__general'))
         return raw?.includes('notes.txt') ?? false
       })
       .toBe(true)
@@ -398,12 +398,12 @@ test.describe('Flux P2P collaboration', () => {
 
   test('id token is not stored in localStorage', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
-    const stored = await page.evaluate(() => localStorage.getItem('flux-session'))
+    const stored = await page.evaluate(() => localStorage.getItem('peerly-session'))
     expect(stored).toBeTruthy()
     expect(stored).toContain('workspaceId')
     const token = await page.evaluate(
       () =>
-        sessionStorage.getItem('flux-id-token') ?? sessionStorage.getItem('flux-google-token')
+        sessionStorage.getItem('peerly-id-token') ?? sessionStorage.getItem('flux-google-token')
     )
     expect(token).toBeTruthy()
     expect(stored).not.toContain(token ?? '')

@@ -2,7 +2,7 @@ import { createIndexedDbStore } from './indexedDbStore'
 import { BlobUrlRegistry } from './blobUrls'
 import { safeFileMimeType } from './fileType'
 
-const store = createIndexedDbStore('flux-files', 'files')
+const store = createIndexedDbStore('peerly-files', 'files')
 
 export async function saveFileBlob(id: string, mimeType: string, buffer: ArrayBuffer): Promise<void> {
   await store.put(id, mimeType, buffer)

@@ -1,4 +1,4 @@
-# Flux
+# Peerly
 
 Serverless peer-to-peer team collaboration — channels, chat, file sharing, and video calls over WebRTC. Built with [React](https://react.dev/) and [Trystero](https://github.com/dmotz/trystero). No central server stores your messages or files.
 

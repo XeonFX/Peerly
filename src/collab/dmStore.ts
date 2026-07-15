@@ -3,7 +3,7 @@ import type { Channel, Peer } from '../types'
 
 export const DM_PREFIX = 'dm-'
 const DM_SEP = '::'
-const STORAGE_PREFIX = 'flux-dms-'
+const STORAGE_PREFIX = 'peerly-dms-'
 
 function storageKey(workspaceId: string): string {
   return `${STORAGE_PREFIX}${normalizeWorkspaceId(workspaceId)}`

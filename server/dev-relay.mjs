@@ -16,7 +16,7 @@ const portFile = existsSync('.relay-port')
   ? readFileSync('.relay-port', 'utf8').trim()
   : String(relayPort)
 
-console.log(`\nStarting Flux — local relay: ws://localhost:${portFile}\n`)
+console.log(`\nStarting Peerly — local relay: ws://localhost:${portFile}\n`)
 
 run('vite', 'npx', ['vite', '--host'], {
   VITE_SIGNALING: 'ws-relay',

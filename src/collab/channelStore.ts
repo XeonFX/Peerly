@@ -9,7 +9,7 @@ export const GENERAL_CHANNEL: Channel = {
   kind: 'channel',
 }
 
-const STORAGE_PREFIX = 'flux-channels-'
+const STORAGE_PREFIX = 'peerly-channels-'
 
 export const MAX_CHANNEL_NAME_LENGTH = 48
 
@@ -20,7 +20,7 @@ export const MAX_CHANNEL_NAME_LENGTH = 48
 export const MAX_CUSTOM_CHANNELS = 100
 
 /**
- * Channel ids become localStorage key suffixes (`flux-history-<ws>__<id>`), so
+ * Channel ids become localStorage key suffixes (`peerly-history-<ws>__<id>`), so
  * a peer-supplied id must not be free-form text. Matches what slugify produces.
  */
 const CHANNEL_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/

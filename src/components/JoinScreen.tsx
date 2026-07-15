@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { isEmailAllowed } from '../collab/allowList'
 import { isE2eAuthBypass } from '../collab/e2eAuth'
+import { APP_NAME } from '../config'
 import {
   decodeInviteFromHash,
   encodeInviteLink,
@@ -195,7 +196,7 @@ export function JoinScreen({ onJoined }: Props) {
       <div className="join-card">
         <div className="join-logo">
           <span className="logo-icon">⚡</span>
-          <h1>Flux</h1>
+          <h1>{APP_NAME}</h1>
         </div>
         <p className="join-subtitle">
           Serverless team collaboration — chat, video, and files over peer-to-peer WebRTC.

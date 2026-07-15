@@ -29,7 +29,7 @@ export class DeviceIdentity {
   private readonly store: KvStore<CryptoKeyPair>
   private cached: CryptoKeyPair | null = null
 
-  constructor(store: KvStore<CryptoKeyPair> = createKvStore('flux-identity', 'keys')) {
+  constructor(store: KvStore<CryptoKeyPair> = createKvStore('peerly-identity', 'keys')) {
     this.store = store
   }
 

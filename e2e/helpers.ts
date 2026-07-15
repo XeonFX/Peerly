@@ -19,7 +19,7 @@ function emailFor(opts: JoinOptions): string {
   return `${slug}@e2e.test`
 }
 
-const E2E_SESSION_INIT_FLAG = 'flux-e2e-session-init'
+const E2E_SESSION_INIT_FLAG = 'peerly-e2e-session-init'
 
 /**
  * Clear persisted session before the app's first load in this tab.

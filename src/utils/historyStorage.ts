@@ -2,7 +2,7 @@ import { toHistoryEntry } from '../protocol/mappers'
 import type { HistoryEntry } from '../protocol/types'
 import type { Message } from '../types'
 
-const STORAGE_PREFIX = 'flux-history-'
+const STORAGE_PREFIX = 'peerly-history-'
 
 export function historyStorageKey(workspaceId: string, channelId: string): string {
   return `${STORAGE_PREFIX}${workspaceId}__${channelId}`

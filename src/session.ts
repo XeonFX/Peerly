@@ -23,10 +23,12 @@ export type Session = PersistedSession & {
   avatar?: string
 }
 
-const PERSIST_KEY = 'flux-session'
-const ID_TOKEN_KEY = 'flux-id-token'
-const ID_PROVIDER_KEY = 'flux-id-provider'
-const LEGACY_GOOGLE_TOKEN_KEY = 'flux-google-token'
+const PERSIST_KEY = 'peerly-session'
+const LEGACY_PERSIST_KEY = 'flux-session'
+const ID_TOKEN_KEY = 'peerly-id-token'
+const ID_PROVIDER_KEY = 'peerly-id-provider'
+const LEGACY_ID_TOKEN_KEYS = ['flux-id-token', 'flux-google-token'] as const
+const LEGACY_ID_PROVIDER_KEY = 'flux-id-provider'
 
 type LegacySession = {
   workspace?: string
@@ -44,9 +46,13 @@ type LegacySession = {
   identityProvider?: string
 }
 
+function readPersistedRaw(): string | null {
+  return localStorage.getItem(PERSIST_KEY) ?? localStorage.getItem(LEGACY_PERSIST_KEY)
+}
+
 export function loadPersistedSession(): PersistedSession | null {
   try {
-    const raw = localStorage.getItem(PERSIST_KEY)
+    const raw = readPersistedRaw()
     if (!raw) return null
     const data = JSON.parse(raw) as Partial<LegacySession>
     const workspaceId = data.workspaceId ?? data.workspace
@@ -80,13 +86,18 @@ export function loadPersistedSession(): PersistedSession | null {
 }
 
 export function loadIdToken(): string | null {
-  return (
-    sessionStorage.getItem(ID_TOKEN_KEY) ?? sessionStorage.getItem(LEGACY_GOOGLE_TOKEN_KEY)
-  )
+  const current = sessionStorage.getItem(ID_TOKEN_KEY)
+  if (current) return current
+  for (const key of LEGACY_ID_TOKEN_KEYS) {
+    const legacy = sessionStorage.getItem(key)
+    if (legacy) return legacy
+  }
+  return null
 }
 
 export function loadIdentityProvider(): IdentityProviderId | null {
-  const stored = sessionStorage.getItem(ID_PROVIDER_KEY)
+  const stored =
+    sessionStorage.getItem(ID_PROVIDER_KEY) ?? sessionStorage.getItem(LEGACY_ID_PROVIDER_KEY)
   if (
     stored === 'google' ||
     stored === 'microsoft' ||
@@ -96,20 +107,28 @@ export function loadIdentityProvider(): IdentityProviderId | null {
   ) {
     return stored
   }
-  if (sessionStorage.getItem(LEGACY_GOOGLE_TOKEN_KEY)) return 'google'
+  for (const key of LEGACY_ID_TOKEN_KEYS) {
+    if (sessionStorage.getItem(key)) return 'google'
+  }
   return null
 }
 
 export function saveIdCredentials(token: string, providerId: IdentityProviderId): void {
   sessionStorage.setItem(ID_TOKEN_KEY, token)
   sessionStorage.setItem(ID_PROVIDER_KEY, providerId)
-  sessionStorage.removeItem(LEGACY_GOOGLE_TOKEN_KEY)
+  for (const key of LEGACY_ID_TOKEN_KEYS) {
+    sessionStorage.removeItem(key)
+  }
+  sessionStorage.removeItem(LEGACY_ID_PROVIDER_KEY)
 }
 
 export function clearIdCredentials(): void {
   sessionStorage.removeItem(ID_TOKEN_KEY)
   sessionStorage.removeItem(ID_PROVIDER_KEY)
-  sessionStorage.removeItem(LEGACY_GOOGLE_TOKEN_KEY)
+  for (const key of LEGACY_ID_TOKEN_KEYS) {
+    sessionStorage.removeItem(key)
+  }
+  sessionStorage.removeItem(LEGACY_ID_PROVIDER_KEY)
 }
 
 /** @deprecated Use loadIdToken */
@@ -137,6 +156,7 @@ export function loadSession(): Session | null {
 export function saveSession(session: Session): void {
   const { avatar: _avatar, ...persisted } = session
   localStorage.setItem(PERSIST_KEY, JSON.stringify(persisted))
+  localStorage.removeItem(LEGACY_PERSIST_KEY)
 }
 
 /** Leave workspace but keep profile for next join. */

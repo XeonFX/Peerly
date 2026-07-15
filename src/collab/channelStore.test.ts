@@ -39,7 +39,7 @@ afterEach(() => {
 describe('channelStore hostile input', () => {
   it('rejects channel ids that are not slugs', () => {
     // Ids become localStorage key suffixes, so free-form text is not acceptable.
-    for (const id of ['../../etc', 'a b', 'Upper', '', 'x'.repeat(200), 'flux-history-x__y']) {
+    for (const id of ['../../etc', 'a b', 'Upper', '', 'x'.repeat(200), 'peerly-history-x__y']) {
       expect(mergeWorkspaceChannel('team', { id, name: 'n', description: '', kind: 'channel' })).toBe(false)
     }
     expect(mergeWorkspaceChannel('team', { id: 'design-2', name: 'n', description: '', kind: 'channel' })).toBe(true)

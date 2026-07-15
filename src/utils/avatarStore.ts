@@ -1,6 +1,6 @@
 import { createIndexedDbStore } from './indexedDbStore'
 
-const store = createIndexedDbStore('flux-avatars', 'avatars')
+const store = createIndexedDbStore('peerly-avatars', 'avatars')
 
 export async function saveAvatar(id: string, blob: Blob): Promise<void> {
   const buffer = await blob.arrayBuffer()
