@@ -73,8 +73,16 @@ export function useCollab(
   setErrorRef.current = connection.setError
 
   const peers = usePeerProfiles(displayProfile)
+  const {
+    reset: resetPeers,
+    bindProfileAction,
+    unbindProfileAction,
+    broadcastProfile,
+  } = peers
   const channelSync = useChannelSync(workspaceId, onChannelsChange)
+  const { bindChannelAction, unbindChannelAction } = channelSync
   const channelStore = useMultiChannelStore(workspaceId, activeChannelId, fileCache, channelIds)
+  const { resetWorkspace } = channelStore
   const files = useFileTransfer(
     activeChannelId,
     profileRef,
@@ -82,14 +90,30 @@ export function useCollab(
     channelStore.blobUrls,
     channelStore.upsertFileMessage
   )
+  const {
+    reset: resetFileTransfer,
+    bindFileAction,
+    bindFileRequestAction,
+    unbindFileAction,
+    unbindFileRequestAction,
+  } = files
   const history = useHistorySync(
     channelStore.getHistoryEntries,
     channelStore.applyHistory,
     channelIds,
     files.requestFilesFromPeers
   )
+  const {
+    reset: resetHistory,
+    syncFromPeers,
+    bindHistoryAction,
+    unbindHistoryAction,
+  } = history
   const video = useVideoCall(room)
+  const { reset: resetVideo } = video
   const chatAction = useRoomAction<ChatPayload>()
+  const { bind: bindChatAction, unbind: unbindChatAction } = chatAction
+  const { reset: resetConnection } = connection
 
   const profileManager = useProfileManager(displayProfile, avatarId, handleProfileChange)
   const unread = useUnreadCounts(
@@ -202,20 +226,29 @@ export function useCollab(
 
   useEffect(() => {
     fileCache.clear()
-    peers.reset()
-    channelStore.resetWorkspace()
-    files.reset()
-    history.reset()
-    connection.reset()
-    video.reset()
-  }, [workspaceId])
+    resetPeers()
+    resetWorkspace()
+    resetFileTransfer()
+    resetHistory()
+    resetConnection()
+    resetVideo()
+  }, [
+    workspaceId,
+    fileCache,
+    resetPeers,
+    resetWorkspace,
+    resetFileTransfer,
+    resetHistory,
+    resetConnection,
+    resetVideo,
+  ])
 
   useEffect(() => {
     const peerIds = room ? Object.keys(room.getPeers()) : []
     if (peerIds.length > 0) {
-      void history.syncFromPeers(peerIds, [activeChannelId], true)
+      void syncFromPeers(peerIds, [activeChannelId], true)
     }
-  }, [activeChannelId, room])
+  }, [activeChannelId, room, syncFromPeers])
 
   useEffect(() => {
     if (!room) return
@@ -234,30 +267,41 @@ export function useCollab(
       onChannel: (...args) => handlersRef.current.onChannel(...args),
     }
 
-    const cleanup = wireRoomProtocol(
-      room,
-      stableHandlers,
-      {
-        bindChatAction: chatAction.bind,
-        bindProfileAction: peers.bindProfileAction,
-        bindFileAction: files.bindFileAction,
-        bindHistoryAction: history.bindHistoryAction,
-        bindChannelAction: channelSync.bindChannelAction,
-        bindFileRequestAction: files.bindFileRequestAction,
-        broadcastProfile: peers.broadcastProfile,
-      }
-    )
+    const cleanup = wireRoomProtocol(room, stableHandlers, {
+      bindChatAction,
+      bindProfileAction,
+      bindFileAction,
+      bindHistoryAction,
+      bindChannelAction,
+      bindFileRequestAction,
+      broadcastProfile,
+    })
 
     return () => {
       cleanup()
-      chatAction.unbind()
-      peers.unbindProfileAction()
-      files.unbindFileAction()
-      files.unbindFileRequestAction()
-      history.unbindHistoryAction()
-      channelSync.unbindChannelAction()
+      unbindChatAction()
+      unbindProfileAction()
+      unbindFileAction()
+      unbindFileRequestAction()
+      unbindHistoryAction()
+      unbindChannelAction()
     }
-  }, [room])
+  }, [
+    room,
+    bindChatAction,
+    unbindChatAction,
+    bindProfileAction,
+    unbindProfileAction,
+    bindFileAction,
+    unbindFileAction,
+    bindFileRequestAction,
+    unbindFileRequestAction,
+    bindHistoryAction,
+    unbindHistoryAction,
+    bindChannelAction,
+    unbindChannelAction,
+    broadcastProfile,
+  ])
 
   const sendMessage = useCallback(
     (text: string) => {
@@ -271,14 +315,14 @@ export function useCollab(
       void chatAction.send(payload, target ? { target } : undefined)
       channelStore.appendMessage(chatPayloadToMessage(payload), senderDirectoryRef.current)
     },
-    [channelStore, chatAction, profileRef]
+    [channelStore, chatAction, profileRef, senderDirectoryRef]
   )
 
   const appendChannelMessage = useCallback(
     (message: Message) => {
       channelStore.appendMessage(message, senderDirectoryRef.current, peersRef.current)
     },
-    [channelStore]
+    [channelStore, senderDirectoryRef, peersRef]
   )
 
   const sendFile = useCallback(

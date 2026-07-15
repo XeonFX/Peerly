@@ -11,16 +11,24 @@ export function useWorkspaceAuth(
   const onAllowListUpdatedRef = useRef(onAllowListUpdated)
   onAllowListUpdatedRef.current = onAllowListUpdated
 
+  const sessionRef = useRef(session)
+  sessionRef.current = session
+
+  const workspaceId = session?.workspaceId
+  const creatorKeyId = session?.creatorKeyId
+  const identityProvider = session?.identityProvider
+
   const manager = useMemo(() => {
-    if (!session) return null
+    const current = sessionRef.current
+    if (!workspaceId || !creatorKeyId || !current?.allowList) return null
     const instance = new WorkspaceAuthManager({
-      workspaceId: session.workspaceId,
-      creatorKeyId: session.creatorKeyId,
-      allowList: session.allowList,
+      workspaceId,
+      creatorKeyId,
+      allowList: current.allowList,
     })
-    instance.setIdToken(loadIdToken(), loadIdentityProvider() ?? session.identityProvider)
+    instance.setIdToken(loadIdToken(), loadIdentityProvider() ?? identityProvider)
     return instance
-  }, [session?.workspaceId, session?.creatorKeyId, session?.allowList.signedAt])
+  }, [workspaceId, creatorKeyId, identityProvider])
 
   useEffect(() => {
     manager?.setAllowList(session?.allowList ?? manager.getAllowList())

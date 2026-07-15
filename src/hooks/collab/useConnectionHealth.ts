@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { joinRoom } from '@trystero-p2p/nostr'
 import {
   ALONE_WARNING_MS,
@@ -33,13 +33,13 @@ export function useConnectionHealth(room: Room | null) {
     setConnectionNotice(null)
   }
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setConnectionStatus('connecting')
     setConnectionError(null)
     setConnectionNotice(null)
     setRtcPeerCount(0)
     setRelayUrls([])
-  }
+  }, [])
 
   useEffect(() => {
     if (!room) return
