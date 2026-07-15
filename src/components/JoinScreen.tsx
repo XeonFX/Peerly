@@ -5,12 +5,20 @@ import { APP_NAME, appBuildLabel } from '../config'
 import {
   decodeInviteFromHash,
   encodeInviteLink,
+  type WorkspaceAccess,
   type WorkspaceInvite,
 } from '../collab/inviteLink'
 import { verifyInviteAllowList, WorkspaceAuthManager } from '../collab/workspaceAuth'
 import {
+  forgetWorkspace,
+  rememberWorkspace,
+  workspacesForEmail,
+  type StoredWorkspace,
+} from '../collab/workspaceStore'
+import {
   createSessionFromInvite,
   loadIdToken,
+  loadIdentityEmail,
   loadIdentityProvider,
   loadPersistedSession,
   clearIdCredentials,
@@ -28,16 +36,16 @@ type Mode = 'create' | 'join'
 
 const PLACEHOLDER_ALLOW_LIST = { emails: [] as string[], signedAt: 0, signature: '' }
 
+/**
+ * Restore the signed-in identity independently of any workspace, so leaving one
+ * drops you on the picker still signed in rather than back at sign-in.
+ */
 function restoreSignedInIdentity(): SignedInIdentity | null {
   const token = loadIdToken()
   const providerId = loadIdentityProvider()
-  const persisted = loadPersistedSession()
-  if (!token || !providerId || !persisted?.identityEmail) return null
-  return {
-    email: persisted.identityEmail,
-    token,
-    providerId,
-  }
+  const email = loadIdentityEmail()
+  if (!token || !providerId || !email) return null
+  return { email, token, providerId }
 }
 
 export function JoinScreen({ onJoined }: Props) {
@@ -54,6 +62,7 @@ export function JoinScreen({ onJoined }: Props) {
   const [busy, setBusy] = useState(false)
   const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null)
   const [signedIn, setSignedIn] = useState<SignedInIdentity | null>(() => restoreSignedInIdentity())
+  const [myWorkspaces, setMyWorkspaces] = useState<StoredWorkspace[]>([])
   const authManagerRef = useRef(
     new WorkspaceAuthManager({
       workspaceId: 'pending',
@@ -66,6 +75,9 @@ export function JoinScreen({ onJoined }: Props) {
     if (signedIn) {
       authManagerRef.current.setIdToken(signedIn.token, signedIn.providerId)
     }
+    // Only offer workspaces this identity is actually allowed into — signing in
+    // as someone else must not present a list that would fail at the handshake.
+    setMyWorkspaces(signedIn ? workspacesForEmail(signedIn.email) : [])
   }, [signedIn])
 
   useEffect(() => {
@@ -81,7 +93,7 @@ export function JoinScreen({ onJoined }: Props) {
     return () => window.removeEventListener('hashchange', syncInviteFromHash)
   }, [])
 
-  const authManagerForInvite = (nextInvite: WorkspaceInvite) => {
+  const authManagerForInvite = (nextInvite: WorkspaceAccess) => {
     const manager = new WorkspaceAuthManager({
       workspaceId: nextInvite.workspaceId,
       creatorKeyId: nextInvite.creatorKeyId,
@@ -102,7 +114,7 @@ export function JoinScreen({ onJoined }: Props) {
   }
 
   const completeJoin = async (
-    nextInvite: WorkspaceInvite,
+    nextInvite: WorkspaceAccess,
     identity: SignedInIdentity,
     name?: string
   ) => {
@@ -110,7 +122,7 @@ export function JoinScreen({ onJoined }: Props) {
       throw new Error(`${identity.email} is not on this workspace's invite list`)
     }
 
-    saveIdCredentials(identity.token, identity.providerId)
+    saveIdCredentials(identity.token, identity.providerId, identity.email)
     const session = createSessionFromInvite(
       nextInvite,
       identity.email,
@@ -118,6 +130,13 @@ export function JoinScreen({ onJoined }: Props) {
       name ?? identity.name
     )
     saveSession(session)
+    // Remember it so the next sign-in offers it without the invite link.
+    rememberWorkspace({
+      workspaceId: nextInvite.workspaceId,
+      workspaceName: nextInvite.workspaceName,
+      creatorKeyId: nextInvite.creatorKeyId,
+      allowList: nextInvite.allowList,
+    })
     history.replaceState(null, '', location.pathname)
     onJoined(session)
   }
@@ -143,6 +162,28 @@ export function JoinScreen({ onJoined }: Props) {
       setCreatedInviteLink(encodeInviteLink(nextInvite))
       setInvite(nextInvite)
       await completeJoin(nextInvite, identity, identity.name)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Re-open a workspace this browser already joined, without needing the link again. */
+  const handleOpenStored = async (workspace: StoredWorkspace) => {
+    setError(null)
+    setBusy(true)
+    try {
+      const identity = requireSignedIn()
+      // Re-verify rather than trust localStorage: the stored list is only as
+      // good as whatever last wrote it, and this is the same check the invite
+      // path runs. Peers verify independently regardless, but failing here
+      // gives a comprehensible message instead of a silent handshake denial.
+      if (!(await verifyInviteAllowList(workspace))) {
+        throw new Error('Stored workspace has an invalid signature — rejoin with the invite link')
+      }
+      authManagerForInvite(workspace)
+      await completeJoin(workspace, identity, identity.name)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -222,6 +263,44 @@ export function JoinScreen({ onJoined }: Props) {
         </div>
 
         {identitySection}
+
+        {signedIn && myWorkspaces.length > 0 && (
+          <div className="workspace-picker" data-testid="workspace-picker">
+            <span className="workspace-picker-title">Your workspaces</span>
+            <ul className="workspace-list">
+              {myWorkspaces.map(workspace => (
+                <li key={workspace.workspaceId}>
+                  <button
+                    type="button"
+                    className="workspace-item"
+                    data-testid={`open-workspace-${workspace.workspaceName}`}
+                    disabled={busy}
+                    onClick={() => void handleOpenStored(workspace)}
+                  >
+                    <span className="workspace-item-name">{workspace.workspaceName}</span>
+                    <span className="workspace-item-meta">
+                      {workspace.allowList.emails.length} member
+                      {workspace.allowList.emails.length === 1 ? '' : 's'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-forget-workspace"
+                    title="Remove from this list (does not affect the workspace)"
+                    aria-label={`Forget ${workspace.workspaceName}`}
+                    data-testid={`forget-workspace-${workspace.workspaceName}`}
+                    onClick={() => {
+                      forgetWorkspace(workspace.workspaceId)
+                      setMyWorkspaces(workspacesForEmail(signedIn.email))
+                    }}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {activeMode === 'create' ? (
           <form onSubmit={handleCreate} className="join-form">

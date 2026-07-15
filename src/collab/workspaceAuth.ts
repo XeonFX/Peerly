@@ -15,7 +15,7 @@ import {
 } from './identityProviders'
 import { verifyOidcIdToken, type JwksFetcher, type OidcIdTokenClaims } from './oidcIdToken'
 import { createIdentityHandshake } from './identityHandshake'
-import { generateWorkspaceId, type WorkspaceInvite } from './inviteLink'
+import { generateWorkspaceId, type WorkspaceAccess, type WorkspaceInvite } from './inviteLink'
 
 export type WorkspaceAuthConfig = {
   workspaceId: string
@@ -141,6 +141,49 @@ export class WorkspaceAuthManager {
     })
   }
 
+  /**
+   * Whether this device can change who is allowed in.
+   *
+   * The allow-list is only accepted by peers if it verifies against the
+   * workspace's `creatorKeyId`, and that key never leaves the browser profile
+   * that created the workspace (see deviceIdentity.ts). So this is not a role
+   * check that could be relaxed — a non-creator physically cannot produce a
+   * signature anyone would accept, and neither can the creator from a second
+   * device. Callers should use this to hide the invite UI rather than let
+   * someone fill in emails and hit an error at the end.
+   */
+  async canInvite(): Promise<boolean> {
+    return (await this.deviceKeyId()) === this.config.creatorKeyId
+  }
+
+  /**
+   * Add members to an existing workspace by re-signing its allow-list.
+   *
+   * Existing members pick this up without any action: the newly invited peer
+   * presents the newer list during its handshake, everyone verifies it against
+   * the same `creatorKeyId`, and `newerAllowList` adopts it.
+   *
+   * There is deliberately no removeMembers(). Adding works because a signed list
+   * is a *capability* — showing a newer one that includes you gets you in. That
+   * same property makes removal ineffective: the handshake authorizes a peer
+   * against the list they present, so anyone once invited keeps a validly signed
+   * list naming them and can present it forever. Real revocation needs the
+   * handshake to judge peers against the newest list *we* know rather than the
+   * one they hand us, and even then only for peers who have seen the update.
+   * Offering a remove button today would imply a guarantee that does not exist.
+   */
+  async addMembers(emails: string[]): Promise<SignedAllowList> {
+    if (!(await this.canInvite())) {
+      throw new Error(
+        'Only the workspace creator can invite people, and only from the device that created it.'
+      )
+    }
+
+    const next = await signAllowList(this.identity, [...this.allowList.emails, ...emails])
+    this.allowList = next
+    return next
+  }
+
   async createInvite(workspaceName: string, memberEmails: string[]): Promise<WorkspaceInvite> {
     const creatorKeyId = await this.deviceKeyId()
     const workspaceId = generateWorkspaceId()
@@ -169,6 +212,13 @@ function getE2eProvider(providerId: string): IdentityProvider | null {
   }
 }
 
-export async function verifyInviteAllowList(invite: WorkspaceInvite): Promise<boolean> {
-  return verifyAllowList(invite.allowList, invite.creatorKeyId)
+/**
+ * Does this workspace's allow-list actually carry its creator's signature?
+ *
+ * Takes WorkspaceAccess, not WorkspaceInvite, so a remembered workspace gets
+ * checked on exactly the same path as a fresh invite link — localStorage is no
+ * more trustworthy than a URL someone pasted.
+ */
+export async function verifyInviteAllowList(access: WorkspaceAccess): Promise<boolean> {
+  return verifyAllowList(access.allowList, access.creatorKeyId)
 }

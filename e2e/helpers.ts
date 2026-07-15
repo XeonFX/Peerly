@@ -110,6 +110,34 @@ export async function joinWorkspace(page: Page, opts: JoinOptions) {
   }
 }
 
+/**
+ * Create a brand-new workspace as the signed-in user.
+ *
+ * Distinct from joinWorkspace(), which uses the fixed E2E invite: that
+ * workspace's creator key belongs to no test device, so its members correctly
+ * cannot invite. Creating one here makes this browser the creator, which is the
+ * only way to exercise the invite flow.
+ */
+export async function createWorkspace(
+  page: Page,
+  opts: JoinOptions & { workspaceName: string; guests?: string }
+) {
+  await installFreshSession(page)
+  await page.goto('/')
+  await expect(page.getByTestId('create-workspace-tab')).toBeVisible({ timeout: 15_000 })
+  await page.getByTestId('create-workspace-tab').click()
+  await e2eSignIn(page, opts)
+  await page.getByTestId('workspace-name').fill(opts.workspaceName)
+  if (opts.guests) await page.getByTestId('guest-emails').fill(opts.guests)
+  await page.getByTestId('join-submit').click()
+  await waitForWorkspace(page)
+}
+
+export async function leaveToPicker(page: Page) {
+  await page.getByTestId('leave-workspace').click()
+  await expect(page.getByTestId('workspace-picker')).toBeVisible({ timeout: 15_000 })
+}
+
 export async function waitForSignaling(page: Page) {
   const status = page.getByTestId('connection-status')
   await expect(status).not.toContainText('Signaling offline', { timeout: 45_000 })

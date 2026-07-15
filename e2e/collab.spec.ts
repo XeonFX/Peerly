@@ -1,6 +1,8 @@
 import { test, expect, type Browser } from '@playwright/test'
 import {
   joinWorkspace,
+  createWorkspace,
+  leaveToPicker,
   e2eSignIn,
   openInviteJoin,
   installFreshSession,
@@ -40,6 +42,70 @@ async function joinAlice(browser: Browser) {
 test.describe.configure({ mode: 'serial' })
 
 test.describe('Peerly P2P collaboration', () => {
+  test('remembered workspaces let you switch without the invite link', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await expect(page.locator('.workspace-name')).toContainText('test-ws')
+
+    // Leaving must NOT sign you out — you land on the picker still signed in.
+    await leaveToPicker(page)
+    await expect(page.getByTestId('signed-in-user')).toBeVisible()
+
+    // The workspace we just joined is offered without pasting the link again.
+    await page.getByTestId('open-workspace-test-ws').click()
+    await waitForWorkspace(page)
+    await expect(page.locator('.workspace-name')).toContainText('test-ws')
+  })
+
+  test('a remembered workspace survives a reload and can be reopened', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await leaveToPicker(page)
+
+    await page.reload()
+    await expect(page.getByTestId('workspace-picker')).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('open-workspace-test-ws').click()
+    await waitForWorkspace(page)
+  })
+
+  test('the picker only offers workspaces the signed-in email is invited to', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await leaveToPicker(page)
+    await expect(page.getByTestId('open-workspace-test-ws')).toBeVisible()
+
+    // Same browser, different identity: outsider@ is not on the fixture's
+    // allow-list, so the workspace must not be offered to them.
+    await page.getByTestId('sign-out').click()
+    await e2eSignIn(page, { email: 'outsider@e2e.test' })
+    await expect(page.getByTestId('open-workspace-test-ws')).not.toBeVisible()
+  })
+
+  test('the creator can invite someone to an existing workspace', async ({ page }) => {
+    await createWorkspace(page, {
+      email: 'alice@e2e.test',
+      workspaceName: 'invite-test',
+    })
+
+    // This browser created the workspace, so it holds the signing key.
+    await expect(page.getByTestId('invite-people-toggle')).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('invite-people-toggle').click()
+    await page.getByTestId('invite-emails').fill('bob@e2e.test')
+    await page.getByTestId('invite-submit').click()
+
+    // The form closes on success; the allow-list now carries bob.
+    await expect(page.getByTestId('invite-emails')).not.toBeVisible({ timeout: 15_000 })
+    await leaveToPicker(page)
+    await expect(page.getByTestId('open-workspace-invite-test')).toContainText('2 members')
+  })
+
+  test('a non-creator is told they cannot invite, instead of failing later', async ({ page }) => {
+    // Joins via the fixed E2E invite, whose creator key no test device holds.
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+
+    await expect(page.getByTestId('invite-creator-only')).toBeVisible()
+    await expect(page.getByTestId('invite-people-toggle')).not.toBeVisible()
+    // Sharing the existing link is still open to everyone.
+    await expect(page.getByTestId('copy-invite')).toBeVisible()
+  })
+
   test('signaling is online after join', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await waitForRelay(page)

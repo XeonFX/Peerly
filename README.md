@@ -5,6 +5,7 @@ Serverless peer-to-peer team collaboration — channels, chat, file sharing, and
 ## Features
 
 - **Invite-only workspaces** — high-entropy workspace ID (in the URL fragment) doubles as the encryption secret; share the invite link to grant access
+- **Multiple workspaces** — joined workspaces are remembered per browser; sign in once and switch between them
 - **Verified identity** — sign in with Google, Microsoft, Apple, or generic OIDC; peers verify JWTs client-side via JWKS
 - **Creator-signed allow-list** — only invited email addresses can join; enforced cryptographically in the P2P handshake
 - **Device-bound auth** — ECDSA challenge-response prevents replayed identity tokens
@@ -156,8 +157,8 @@ Deploy the `dist/` folder to any static host (Cloudflare Pages, Vercel, Netlify,
 | `npm run dev` | Vite + public Nostr signaling |
 | `npm run dev:relay` | Vite + local WebSocket relay |
 | `npm run build` | Typecheck + production build + bundle guard |
-| `npm test` | Vitest unit tests (122 tests) |
-| `npm run test:e2e` | Playwright E2E (28 tests, local relay) |
+| `npm test` | Vitest unit tests (140 tests) |
+| `npm run test:e2e` | Playwright E2E (33 tests, local relay) |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
 | `npm run check:relays` | Health-check the default Nostr relays |
 | `npm run guard:bundle` | Fail if test key material reached `dist/` (runs in `build`) |
@@ -180,6 +181,8 @@ working until two peers fail to find each other.
 - **Invite link = credential** — workspace ID lives in the URL hash (never sent to servers in HTTP requests)
 - **Identity handshake** — three-round P2P verification: OIDC JWT + allow-list signature + live device-key proof
 - **No server-side enforcement** — allow-list is creator-signed; peers verify signatures and JWTs locally
+- **Inviting is creator-only** — the allow-list is only accepted if it verifies against the workspace's creator key, and that key never leaves the browser profile that created the workspace. A second device, even the creator's, cannot add members.
+- **No revocation** — adding works because a signed allow-list is a capability: presenting a newer one that names you gets you in. That same property means anyone once invited keeps a validly signed list naming them, so removal is not offered rather than implied and unenforced.
 - **Live messages** — attributed by transport peer id, not payload `senderId`
 - **History sync** — rejoin history is not per-message signed today; treat synced history as trusted only among members you trust
 

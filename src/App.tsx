@@ -4,7 +4,9 @@ import { WorkspaceAuthManager } from './collab/workspaceAuth'
 import { JoinScreen } from './components/JoinScreen'
 import { Workspace } from './components/Workspace'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
+import { rememberWorkspace } from './collab/workspaceStore'
 import {
+  clearActiveWorkspace,
   hydrateSessionAvatar,
   leaveWorkspace,
   loadPersistedSession,
@@ -21,11 +23,19 @@ function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [ready, setReady] = useState(false)
 
-  const { peerHandshake } = useWorkspaceAuth(session, allowList => {
+  const { manager, peerHandshake } = useWorkspaceAuth(session, allowList => {
     setSession(prev => {
       if (!prev) return prev
       const next = { ...prev, allowList }
       saveSession(next)
+      // A peer showed us a newer creator-signed list (someone was invited).
+      // Persist it so the picker and future invite links carry it too.
+      rememberWorkspace({
+        workspaceId: next.workspaceId,
+        workspaceName: next.workspaceName,
+        creatorKeyId: next.creatorKeyId,
+        allowList,
+      })
       return next
     })
   })
@@ -45,7 +55,7 @@ function App() {
           await manager.signInWithE2eEmail(persisted.identityEmail)
           const token = manager.getIdToken()
           if (token) {
-            saveIdCredentials(token, persisted.identityProvider)
+            saveIdCredentials(token, persisted.identityProvider, persisted.identityEmail)
             const next = { ...persisted }
             saveSession(next)
             loaded = next
@@ -88,9 +98,12 @@ function App() {
     <Workspace
       session={session}
       peerHandshake={peerHandshake}
+      authManager={manager}
       onSessionChange={updateSession}
       onLeave={() => {
-        leaveWorkspace()
+        // Close the workspace, keep the sign-in: the user lands on the picker
+        // and can open another workspace without authenticating again.
+        clearActiveWorkspace()
         setSession(null)
       }}
     />

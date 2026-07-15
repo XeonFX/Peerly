@@ -3,10 +3,14 @@ import { appBuildLabel } from '../config'
 import type { Channel, ConnectionStatus, Peer, UserProfile } from '../types'
 import { Avatar } from './Avatar'
 import { ConnectionStatus as ConnectionStatusLabel } from './ConnectionStatus'
+import { InvitePeople } from './InvitePeople'
 
 type Props = {
   workspace: string
   inviteLink?: string
+  /** Only the creator's device can add members; see WorkspaceAuthManager.canInvite. */
+  canInvite: boolean
+  onInvite: (emails: string[]) => Promise<void>
   channels: Channel[]
   activeChannel: string
   activeView: 'channel' | 'profile'
@@ -62,6 +66,8 @@ function ChannelButton({
 export function Sidebar({
   workspace,
   inviteLink,
+  canInvite,
+  onInvite,
   channels,
   activeChannel,
   activeView,
@@ -102,7 +108,12 @@ export function Sidebar({
           <span className="workspace-icon">⚡</span>
           <span>{workspace}</span>
         </div>
-        <button className="btn-icon" onClick={onLeave} title="Leave workspace">
+        <button
+          className="btn-icon"
+          onClick={onLeave}
+          title="Switch workspace"
+          data-testid="leave-workspace"
+        >
           ⏻
         </button>
       </div>
@@ -250,15 +261,7 @@ export function Sidebar({
           {appBuildLabel()}
         </span>
         {inviteLink && (
-          <button
-            type="button"
-            className="btn-copy-invite"
-            data-testid="copy-invite"
-            onClick={() => void navigator.clipboard.writeText(inviteLink)}
-            title="Copy invite link"
-          >
-            Copy invite link
-          </button>
+          <InvitePeople inviteLink={inviteLink} canInvite={canInvite} onInvite={onInvite} />
         )}
       </div>
     </aside>

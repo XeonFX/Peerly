@@ -121,7 +121,13 @@ export function IdentityLoginButtons({
           <span>
             Signed in as <strong>{signedIn.email}</strong>
           </span>
-          <button type="button" className="btn-link" onClick={onSignOut} disabled={busy}>
+          <button
+            type="button"
+            className="btn-link"
+            data-testid="sign-out"
+            onClick={onSignOut}
+            disabled={busy}
+          >
             Sign out
           </button>
         </div>
@@ -158,6 +164,7 @@ export function IdentityLoginButtons({
         <button
           type="button"
           className="btn-link"
+          data-testid="sign-out"
           onClick={() => {
             onSignOut()
             setGoogleMountKey(key => key + 1)
