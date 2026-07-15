@@ -15,8 +15,8 @@ Serverless peer-to-peer team collaboration — channels, chat, file sharing, and
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR_USER/YOUR_REPO.git
-cd YOUR_REPO
+git clone https://github.com/XeonFX/Peerly.git
+cd Peerly
 npm install
 cp .env.example .env   # add at least one identity provider (see below)
 npm run dev
