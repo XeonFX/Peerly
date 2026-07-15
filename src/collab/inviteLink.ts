@@ -4,13 +4,24 @@ import type { SignedAllowList } from './allowList'
 
 const INVITE_PARAM = 'invite'
 
-export type WorkspaceInvite = {
-  v: 1
+/**
+ * Everything needed to enter a workspace: the secret that addresses the room,
+ * and the creator-signed list saying who may be there.
+ *
+ * Shared by the two things that can grant access — an invite link and a
+ * remembered workspace (workspaceStore.ts) — so both flow through the same
+ * verification and join code instead of one growing a looser path.
+ */
+export type WorkspaceAccess = {
   /** Random, high-entropy — this doubles as the Trystero room password. */
   workspaceId: string
   workspaceName: string
   creatorKeyId: DeviceKeyId
   allowList: SignedAllowList
+}
+
+export type WorkspaceInvite = WorkspaceAccess & {
+  v: 1
 }
 
 /**

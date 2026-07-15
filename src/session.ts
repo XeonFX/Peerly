@@ -24,9 +24,18 @@ export type Session = PersistedSession & {
   avatar?: string
 }
 
+/** The workspace currently open. Cleared when switching workspaces. */
 const PERSIST_KEY = 'peerly-session'
+
+/**
+ * Who is signed in, kept independently of which workspace is open so that
+ * leaving a workspace does not sign the user out — they land on the picker and
+ * open another one. Session-scoped: the token is a credential, and a new tab
+ * should re-authenticate.
+ */
 const ID_TOKEN_KEY = 'peerly-id-token'
 const ID_PROVIDER_KEY = 'peerly-id-provider'
+const ID_EMAIL_KEY = 'peerly-id-email'
 
 type StoredSession = Partial<PersistedSession> & {
   avatar?: string
@@ -115,14 +124,40 @@ export function loadIdentityProvider(): IdentityProviderId | null {
   return null
 }
 
-export function saveIdCredentials(token: string, providerId: IdentityProviderId): void {
+/**
+ * The verified email of the signed-in user.
+ *
+ * Stored alongside the token rather than derived from it: this is only used to
+ * decide what the UI offers (which workspaces, whose name). It is never an
+ * authorization input — peers re-verify the token itself, so a tampered value
+ * here changes nothing except that the user gets rejected at the handshake.
+ */
+export function loadIdentityEmail(): string | null {
+  return sessionStorage.getItem(ID_EMAIL_KEY)
+}
+
+export function saveIdCredentials(
+  token: string,
+  providerId: IdentityProviderId,
+  email: string
+): void {
   sessionStorage.setItem(ID_TOKEN_KEY, token)
   sessionStorage.setItem(ID_PROVIDER_KEY, providerId)
+  sessionStorage.setItem(ID_EMAIL_KEY, email)
 }
 
 export function clearIdCredentials(): void {
   sessionStorage.removeItem(ID_TOKEN_KEY)
   sessionStorage.removeItem(ID_PROVIDER_KEY)
+  sessionStorage.removeItem(ID_EMAIL_KEY)
+}
+
+/**
+ * Close the open workspace but stay signed in — the "switch workspace" path.
+ * Deliberately distinct from leaveWorkspace(), which drops the identity too.
+ */
+export function clearActiveWorkspace(): void {
+  localStorage.removeItem(PERSIST_KEY)
 }
 
 export function loadSession(): Session | null {

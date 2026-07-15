@@ -59,7 +59,7 @@ describe('session persistence', () => {
   it('leaveWorkspace keeps profile but clears id credentials', () => {
     const session = createSessionFromInvite(TEST_INVITE, 'alice@example.com', 'google')
     saveSession(session)
-    saveIdCredentials('token-1', 'google')
+    saveIdCredentials('token-1', 'google', 'alice@example.com')
 
     leaveWorkspace()
 
@@ -108,7 +108,7 @@ describe('session persistence', () => {
   it('loadSession restores after save when id token is present', () => {
     const session = createSessionFromInvite(TEST_INVITE, 'alice@e2e.test', 'google')
     saveSession(session)
-    saveIdCredentials('test-id-token', 'google')
+    saveIdCredentials('test-id-token', 'google', 'alice@example.com')
 
     expect(loadSession()).toEqual({
       workspaceId: TEST_INVITE.workspaceId,
@@ -132,7 +132,7 @@ describe('stored ID token expiry', () => {
   // peer rejected the handshake on an expired token — which reads as a broken
   // app rather than "sign in again".
   it('treats an expired token as no token, and clears it', () => {
-    saveIdCredentials(tokenExpiringAt(nowSec() - 60), 'google')
+    saveIdCredentials(tokenExpiringAt(nowSec() - 60), 'google', 'alice@example.com')
 
     expect(loadIdToken()).toBeNull()
     // Cleared, so the stale provider does not linger either.
@@ -141,14 +141,14 @@ describe('stored ID token expiry', () => {
 
   it('keeps a token that is still valid', () => {
     const token = tokenExpiringAt(nowSec() + 3600)
-    saveIdCredentials(token, 'google')
+    saveIdCredentials(token, 'google', 'alice@example.com')
 
     expect(loadIdToken()).toBe(token)
   })
 
   it('does not restore a session when the token has expired', () => {
     saveSession(createSessionFromInvite(TEST_INVITE, 'alice@example.com', 'google'))
-    saveIdCredentials(tokenExpiringAt(nowSec() - 1), 'google')
+    saveIdCredentials(tokenExpiringAt(nowSec() - 1), 'google', 'alice@example.com')
 
     expect(loadSession()).toBeNull()
   })
@@ -156,7 +156,7 @@ describe('stored ID token expiry', () => {
   it('keeps an opaque token without an exp rather than locking the user out', () => {
     // Not all issuers are JWT-shaped; absence of a readable exp is not evidence
     // of expiry, and the peer handshake still enforces the real one.
-    saveIdCredentials('not-a-jwt', 'google')
+    saveIdCredentials('not-a-jwt', 'google', 'alice@example.com')
     expect(loadIdToken()).toBe('not-a-jwt')
   })
 })
