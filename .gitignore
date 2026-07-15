@@ -1,0 +1,44 @@
+# Dependencies & build
+node_modules
+dist
+dist-ssr
+*.tsbuildinfo
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Test & coverage artifacts
+test-results
+playwright-report
+blob-report
+coverage
+
+# Local dev runtime
+.relay-port
+
+# OS & editors
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# AI / local tooling
+.claude
+.cursor
