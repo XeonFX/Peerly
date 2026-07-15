@@ -1,71 +1,24 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
-import { createContext, useContext, useMemo, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { useCollab } from '../hooks/useCollab'
-import type {
-  Channel,
-  ConnectionStatus,
-  FileTransfer,
-  Message,
-  Peer,
-  SharedFile,
-  UserProfile,
-} from '../types'
+import type { UserProfile } from '../types'
+import {
+  ChatContext,
+  ConnectionContext,
+  MediaContext,
+  ProfileContext,
+  WorkspaceContext,
+} from './collabContexts'
+import type { ChatSlice, ConnectionSlice, MediaSlice, ProfileSlice, WorkspaceSlice } from './collabTypes'
 
-type CollabState = ReturnType<typeof useCollab>
-
-export type ConnectionSlice = {
-  connectionStatus: ConnectionStatus
-  connectionError: string | null
-  connectionNotice: string | null
-  relayOnline: boolean
-  rtcPeerCount: number
-  roomId: string
-  relayUrls: string[]
-  isReady: boolean
-}
-
-export type ChatSlice = {
-  messages: Message[]
-  sharedFiles: SharedFile[]
-  transfers: FileTransfer[]
-  fileError: string | null
-  unreadByChannel: Record<string, number>
-  totalUnread: number
-  sendMessage: (text: string) => void
-  sendFile: (file: File) => Promise<void>
-}
-
-export type MediaSlice = {
-  inCall: boolean
-  localStream: MediaStream | null
-  peerStreams: Record<string, MediaStream>
-  videoEnabled: boolean
-  audioEnabled: boolean
-  mediaError: string | null
-  startCall: () => Promise<void>
-  endCall: () => void
-  toggleVideo: () => void
-  toggleAudio: () => void
-}
-
-export type ProfileSlice = {
-  selfId: string
-  profile: UserProfile
-  peers: Peer[]
-  updateProfile: (next: Partial<UserProfile> & { avatarId?: string }) => void
-  setAvatar: (file: File) => Promise<void>
-  clearAvatar: () => Promise<void>
-}
-
-export type WorkspaceSlice = {
-  announceChannel: (channel: Channel) => Promise<void>
-}
-
-const ConnectionContext = createContext<ConnectionSlice | null>(null)
-const ChatContext = createContext<ChatSlice | null>(null)
-const MediaContext = createContext<MediaSlice | null>(null)
-const ProfileContext = createContext<ProfileSlice | null>(null)
-const WorkspaceContext = createContext<WorkspaceSlice | null>(null)
+export type {
+  ChatSlice,
+  CollabState,
+  ConnectionSlice,
+  MediaSlice,
+  ProfileSlice,
+  WorkspaceSlice,
+} from './collabTypes'
 
 type CollabProviderProps = {
   workspaceId: string
@@ -79,14 +32,6 @@ type CollabProviderProps = {
   onProfileChange?: (profile: UserProfile & { avatarId?: string }) => void
   onChannelsChange?: () => void
   children: ReactNode
-}
-
-function useSlice<T>(context: React.Context<T | null>, name: string): T {
-  const value = useContext(context)
-  if (!value) {
-    throw new Error(`${name} must be used within CollabProvider`)
-  }
-  return value
 }
 
 export function CollabProvider({
@@ -225,34 +170,4 @@ export function CollabProvider({
       </ChatContext.Provider>
     </ConnectionContext.Provider>
   )
-}
-
-export function useConnectionSlice(): ConnectionSlice {
-  return useSlice(ConnectionContext, 'useConnectionSlice')
-}
-
-export function useChatSlice(): ChatSlice {
-  return useSlice(ChatContext, 'useChatSlice')
-}
-
-export function useMediaSlice(): MediaSlice {
-  return useSlice(MediaContext, 'useMediaSlice')
-}
-
-export function useProfileSlice(): ProfileSlice {
-  return useSlice(ProfileContext, 'useProfileSlice')
-}
-
-export function useWorkspaceSlice(): WorkspaceSlice {
-  return useSlice(WorkspaceContext, 'useWorkspaceSlice')
-}
-
-/** @deprecated Prefer scoped hooks: useConnectionSlice, useChatSlice, useMediaSlice, useProfileSlice */
-export function useCollabContext(): CollabState {
-  const connection = useConnectionSlice()
-  const chat = useChatSlice()
-  const media = useMediaSlice()
-  const profile = useProfileSlice()
-  const workspace = useWorkspaceSlice()
-  return { ...connection, ...chat, ...media, ...profile, ...workspace }
 }

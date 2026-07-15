@@ -3,7 +3,7 @@ import {
   useConnectionSlice,
   useMediaSlice,
   useProfileSlice,
-} from '../../context/CollabContext'
+} from '../../context/useCollabSlices'
 import type { Channel } from '../../types'
 import { Avatar } from '../Avatar'
 import { MessageInput } from '../MessageInput'

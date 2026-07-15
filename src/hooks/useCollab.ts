@@ -58,7 +58,7 @@ export function useCollab(
   )
 
   const profileRef = useLatest(displayProfile)
-  const fileCache = useMemo(() => new FileCache(), [workspaceId])
+  const fileCache = useMemo(() => new FileCache(), [])
   const setErrorRef = useRef<(message: string) => void>(() => {})
 
   const { room } = useRoom(

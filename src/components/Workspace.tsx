@@ -7,13 +7,13 @@ import {
   loadAllWorkspaceChannels,
 } from '../collab/channelStore'
 import { ensureDmChannel } from '../collab/dmStore'
+import { CollabProvider } from '../context/CollabContext'
 import {
-  CollabProvider,
   useChatSlice,
   useConnectionSlice,
   useProfileSlice,
   useWorkspaceSlice,
-} from '../context/CollabContext'
+} from '../context/useCollabSlices'
 import type { PeerHandshake } from '@trystero-p2p/core'
 import { encodeInviteLink } from '../collab/inviteLink'
 import type { WorkspaceAuthManager } from '../collab/workspaceAuth'

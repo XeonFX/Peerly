@@ -1,4 +1,4 @@
-import { useConnectionSlice, useProfileSlice } from '../../context/CollabContext'
+import { useConnectionSlice, useProfileSlice } from '../../context/useCollabSlices'
 import { ProfilePage } from '../ProfilePage'
 
 type Props = {

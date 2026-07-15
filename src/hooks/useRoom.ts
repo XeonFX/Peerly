@@ -72,7 +72,9 @@ export function useRoom(
   const resolvedRelayUrls = strategy === 'ws-relay' ? relayUrls : null
 
   useEffect(() => {
-    if (strategy === 'ws-relay' && (relayUrls === null || relayUrls.length === 0)) return
+    if (strategy === 'ws-relay' && (resolvedRelayUrls === null || resolvedRelayUrls.length === 0)) {
+      return
+    }
     if (strategy === 'supabase' && !getSupabaseRoomConfig()) {
       onErrorRef.current?.(
         'Supabase signaling is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
@@ -146,7 +148,7 @@ export function useRoom(
           {
             ...baseConfig,
             appId,
-            relayConfig: { urls: relayUrls! },
+            relayConfig: { urls: resolvedRelayUrls! },
           },
           roomId,
           callbacks

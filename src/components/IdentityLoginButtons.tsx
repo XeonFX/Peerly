@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { isE2eAuthBypass } from '../collab/e2eAuth'
 import { renderGoogleSignInButton } from '../collab/googleAuth'
 import {
@@ -81,10 +81,13 @@ export function IdentityLoginButtons({
   const [googleMountKey, setGoogleMountKey] = useState(0)
   const [e2eEmail, setE2eEmail] = useState('alice@e2e.test')
 
-  const completeSignIn = async (providerId: IdentityProviderId, token: string) => {
-    const claims = await authManager.verifyAndStoreIdToken(token, providerId)
-    onSignedIn({ email: claims.email, name: claims.name, token, providerId })
-  }
+  const completeSignIn = useCallback(
+    async (providerId: IdentityProviderId, token: string) => {
+      const claims = await authManager.verifyAndStoreIdToken(token, providerId)
+      onSignedIn({ email: claims.email, name: claims.name, token, providerId })
+    },
+    [authManager, onSignedIn]
+  )
 
   const handleProviderSignIn = async (providerId: IdentityProviderId) => {
     onError(null)
@@ -147,7 +150,7 @@ export function IdentityLoginButtons({
     return () => {
       cancelled = true
     }
-  }, [signedIn, hasGoogle, googleMountKey, authManager])
+  }, [signedIn, hasGoogle, googleMountKey, authManager, completeSignIn])
 
   if (signedIn) {
     return (
