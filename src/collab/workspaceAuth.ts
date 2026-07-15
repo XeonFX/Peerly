@@ -172,7 +172,7 @@ export class WorkspaceAuthManager {
   }
 }
 
-function getE2eProvider(providerId: IdentityProviderId): IdentityProvider | null {
+function getE2eProvider(providerId: string): IdentityProvider | null {
   if (!isE2eAuthBypass() || providerId !== 'google') return null
   return {
     id: 'google',
