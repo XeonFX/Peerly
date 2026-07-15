@@ -2,12 +2,13 @@
 
 Serverless peer-to-peer team collaboration — channels, chat, file sharing, and video calls over WebRTC. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), and [Trystero](https://github.com/dmotz/trystero). No central server stores your messages or files.
 
-**v0.1.1** — invite-only workspaces, verified identity, multi-workspace switching, DaisyUI redesign.
+**v0.1.2** — invite-only workspaces, verified identity, multi-workspace switching, DaisyUI redesign.
 
 ## Features
 
 - **Invite-only workspaces** — high-entropy workspace ID (in the URL fragment) doubles as the encryption secret; share the invite link to grant access
 - **Multiple workspaces** — joined workspaces are remembered per browser; sign in once, pick a workspace from the join screen, and switch later without the invite link
+- **Workspace appearance** — rename a workspace and upload a custom icon from workspace settings; stored locally per browser and shown in the sidebar and picker
 - **Identity separate from workspace** — sign out of a workspace without losing your identity; leave and return to the picker still signed in
 - **Verified identity** — sign in with Google, Microsoft, Apple, or generic OIDC; peers verify JWTs client-side via JWKS
 - **Creator-signed allow-list** — only invited email addresses can join; enforced cryptographically in the P2P handshake
@@ -164,7 +165,7 @@ Add TURN, signaling overrides, or other providers as needed (see `.env.example`)
 
 Register your production origin (`https://your-project.pages.dev` and any custom domain) in each OAuth provider's allowed JavaScript origins / redirect URIs.
 
-Cloudflare injects `CF_PAGES_COMMIT_SHA` at build time, which appears in the UI as `v0.1.1 · abc1234`.
+Cloudflare injects `CF_PAGES_COMMIT_SHA` at build time, which appears in the UI as `v0.1.2 · abc1234`.
 
 ### Other hosts
 
@@ -221,13 +222,13 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 | `npm run dev:relay` | Vite + local WebSocket relay |
 | `npm run build` | Typecheck + production build + bundle guard |
 | `npm test` | Vitest unit tests (140 tests) |
-| `npm run test:e2e` | Playwright E2E (34 tests, local relay) |
+| `npm run test:e2e` | Playwright E2E (35 tests, local relay) |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
 | `npm run check:relays` | Health-check the default Nostr relays |
 | `npm run guard:bundle` | Fail if test key material reached `dist/` (runs in `build`) |
 | `npm run lint` | oxlint |
 
-The app shows its version and commit (`v0.1.1 · a1b2c3d`) on the join screen and
+The app shows its version and commit (`v0.1.2 · a1b2c3d`) on the join screen and
 in the sidebar footer. Hosts that expose a commit SHA
 (`CF_PAGES_COMMIT_SHA`, `GITHUB_SHA`, `VERCEL_GIT_COMMIT_SHA`, …) are picked up
 automatically; otherwise it falls back to local git.

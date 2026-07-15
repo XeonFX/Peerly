@@ -110,6 +110,15 @@ test.describe('Peerly P2P collaboration', () => {
   // printed in the sidebar ("Room: <id>") and on the profile page, putting the
   // workspace secret on screen for anyone screen-sharing or looking over a
   // shoulder. It must not appear in the rendered page at all.
+  test('workspace name can be changed in settings', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await page.getByTestId('workspace-settings-open').click()
+    await expect(page.getByTestId('workspace-settings-page')).toBeVisible()
+    await page.getByTestId('workspace-name').fill('Renamed team')
+    await page.getByTestId('workspace-settings-back').click()
+    await expect(page.locator('.workspace-name')).toContainText('Renamed team')
+  })
+
   test('the workspace secret is never displayed in the UI', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
 

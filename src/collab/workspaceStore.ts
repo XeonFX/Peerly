@@ -13,6 +13,8 @@ import type { WorkspaceAccess } from './inviteLink'
 export type StoredWorkspace = WorkspaceAccess & {
   /** Drives ordering in the picker: most recently used first. */
   lastOpenedAt: number
+  /** Local workspace icon — not part of the signed invite payload. */
+  workspaceAvatarId?: string
 }
 
 const STORAGE_KEY = 'peerly-workspaces'
@@ -32,8 +34,22 @@ function isStoredWorkspace(value: unknown): value is StoredWorkspace {
     Array.isArray(list.emails) &&
     list.emails.every(email => typeof email === 'string') &&
     typeof list.signedAt === 'number' &&
-    typeof list.signature === 'string'
+    typeof list.signature === 'string' &&
+    (w.workspaceAvatarId === undefined || typeof w.workspaceAvatarId === 'string')
   )
+}
+
+/** Snapshot the open workspace for the remembered-workspaces list. */
+export function snapshotWorkspace(
+  workspace: WorkspaceAccess & { workspaceAvatarId?: string }
+): Omit<StoredWorkspace, 'lastOpenedAt'> {
+  return {
+    workspaceId: workspace.workspaceId,
+    workspaceName: workspace.workspaceName,
+    creatorKeyId: workspace.creatorKeyId,
+    allowList: workspace.allowList,
+    workspaceAvatarId: workspace.workspaceAvatarId,
+  }
 }
 
 export function loadWorkspaces(): StoredWorkspace[] {
@@ -73,6 +89,7 @@ export function rememberWorkspace(workspace: Omit<StoredWorkspace, 'lastOpenedAt
   const next: StoredWorkspace = {
     ...workspace,
     allowList: previous ? newerAllowList(previous.allowList, workspace.allowList) : workspace.allowList,
+    workspaceAvatarId: workspace.workspaceAvatarId ?? previous?.workspaceAvatarId,
     lastOpenedAt: Date.now(),
   }
 

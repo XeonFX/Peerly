@@ -32,7 +32,7 @@ export function useCollab(
   avatarId?: string,
   channelIds: string[] = ['general'],
   onChannelsChange?: () => void,
-  activeView: 'channel' | 'profile' = 'channel',
+  activeView: 'channel' | 'profile' | 'workspace' = 'channel',
   peerHandshake?: PeerHandshake
 ) {
   const roomId = buildRoomId(workspaceId)

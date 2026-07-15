@@ -24,7 +24,7 @@ type CollabProviderProps = {
   workspaceId: string
   channelId: string
   channelIds: string[]
-  activeView: 'channel' | 'profile'
+  activeView: 'channel' | 'profile' | 'workspace'
   profile: UserProfile
   avatarId?: string
   workspaceSecret?: string

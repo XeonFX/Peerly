@@ -17,13 +17,14 @@ import {
 import type { PeerHandshake } from '@trystero-p2p/core'
 import { encodeInviteLink } from '../collab/inviteLink'
 import type { WorkspaceAuthManager } from '../collab/workspaceAuth'
-import { rememberWorkspace } from '../collab/workspaceStore'
+import { rememberWorkspace, snapshotWorkspace } from '../collab/workspaceStore'
 import { sessionProfile, type Session } from '../session'
 import type { Channel, Peer, UserProfile } from '../types'
 import { FilesPanel } from './FilesPanel'
 import { Sidebar } from './Sidebar'
 import { ChannelPanel } from './workspace/ChannelPanel'
 import { ProfilePanel } from './workspace/ProfilePanel'
+import { WorkspaceSettingsPanel } from './workspace/WorkspaceSettingsPanel'
 
 type Props = {
   session: Session
@@ -47,13 +48,17 @@ function WorkspaceShell({
   onChannelSelect,
   onChannelsUpdated,
   onProfileSelect,
+  onWorkspaceSettings,
   onLeave,
   onToggleFiles,
+  onWorkspaceNameChange,
+  onWorkspaceAvatarChange,
+  onWorkspaceAvatarClear,
 }: {
   session: Session
   channels: Channel[]
   activeChannel: string
-  activeView: 'channel' | 'profile'
+  activeView: 'channel' | 'profile' | 'workspace'
   showFiles: boolean
   canInvite: boolean
   onInvite: (emails: string[]) => Promise<void>
@@ -62,8 +67,12 @@ function WorkspaceShell({
   onChannelSelect: (id: string) => void
   onChannelsUpdated: () => void
   onProfileSelect: () => void
+  onWorkspaceSettings: () => void
   onLeave: () => void
   onToggleFiles: () => void
+  onWorkspaceNameChange: (name: string) => void
+  onWorkspaceAvatarChange: (avatarId: string, preview: string) => void
+  onWorkspaceAvatarClear: () => void
 }) {
   const { announceChannel } = useWorkspaceSlice()
   const { connectionStatus, relayOnline, rtcPeerCount, relayUrls } = useConnectionSlice()
@@ -106,6 +115,7 @@ function WorkspaceShell({
       <Sidebar
         open={sidebarOpen}
         workspace={session.workspaceName}
+        workspaceAvatar={session.workspaceAvatar}
         inviteLink={encodeInviteLink({
           v: 1,
           workspaceId: session.workspaceId,
@@ -132,6 +142,10 @@ function WorkspaceShell({
           onProfileSelect()
           onSidebarOpenChange(false)
         }}
+        onWorkspaceSettings={() => {
+          onWorkspaceSettings()
+          onSidebarOpenChange(false)
+        }}
         onLeave={onLeave}
         unreadByChannel={unreadByChannel}
       />
@@ -147,6 +161,16 @@ function WorkspaceShell({
               creatorKeyId: session.creatorKeyId,
               allowList: session.allowList,
             })}
+            onBack={() => onChannelSelect(activeChannel)}
+          />
+        ) : activeView === 'workspace' ? (
+          <WorkspaceSettingsPanel
+            workspaceName={session.workspaceName}
+            workspaceAvatar={session.workspaceAvatar}
+            workspaceAvatarId={session.workspaceAvatarId}
+            onNameChange={onWorkspaceNameChange}
+            onAvatarChange={onWorkspaceAvatarChange}
+            onAvatarClear={onWorkspaceAvatarClear}
             onBack={() => onChannelSelect(activeChannel)}
           />
         ) : (
@@ -170,7 +194,7 @@ function WorkspaceShell({
 export function Workspace({ session, peerHandshake, authManager, onSessionChange, onLeave }: Props) {
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
   const [activeChannel, setActiveChannel] = useState(GENERAL_CHANNEL.id)
-  const [activeView, setActiveView] = useState<'channel' | 'profile'>('channel')
+  const [activeView, setActiveView] = useState<'channel' | 'profile' | 'workspace'>('channel')
   // The files panel is a third column on desktop but an overlay on phones, so
   // defaulting it open there would bury the conversation behind it on load.
   const [showFiles, setShowFiles] = useState(
@@ -203,15 +227,19 @@ export function Workspace({ session, peerHandshake, authManager, onSessionChange
     async (emails: string[]) => {
       if (!authManager) throw new Error('Workspace is still connecting — try again in a moment')
       const allowList = await authManager.addMembers(emails)
+      const next = { ...session, allowList }
       onSessionChange({ allowList })
-      rememberWorkspace({
-        workspaceId: session.workspaceId,
-        workspaceName: session.workspaceName,
-        creatorKeyId: session.creatorKeyId,
-        allowList,
-      })
+      rememberWorkspace(snapshotWorkspace(next))
     },
-    [authManager, onSessionChange, session.workspaceId, session.workspaceName, session.creatorKeyId]
+    [authManager, onSessionChange, session]
+  )
+
+  const persistWorkspaceAppearance = useCallback(
+    (patch: Partial<Session>) => {
+      onSessionChange(patch)
+      rememberWorkspace(snapshotWorkspace({ ...session, ...patch }))
+    },
+    [onSessionChange, session]
   )
 
   const profile = useMemo(() => sessionProfile(session), [session])
@@ -261,8 +289,16 @@ export function Workspace({ session, peerHandshake, authManager, onSessionChange
         onChannelSelect={openChannel}
         onChannelsUpdated={refreshChannels}
         onProfileSelect={() => setActiveView('profile')}
+        onWorkspaceSettings={() => setActiveView('workspace')}
         onLeave={onLeave}
         onToggleFiles={() => setShowFiles(value => !value)}
+        onWorkspaceNameChange={name => persistWorkspaceAppearance({ workspaceName: name })}
+        onWorkspaceAvatarChange={(avatarId, preview) =>
+          persistWorkspaceAppearance({ workspaceAvatarId: avatarId, workspaceAvatar: preview })
+        }
+        onWorkspaceAvatarClear={() =>
+          persistWorkspaceAppearance({ workspaceAvatarId: undefined, workspaceAvatar: undefined })
+        }
       />
     </CollabProvider>
   )

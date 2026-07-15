@@ -120,6 +120,13 @@ describe('workspaceStore', () => {
     expect(loadWorkspaces()).toEqual([])
   })
 
+  it('preserves workspace avatar id when re-remembering without one', () => {
+    rememberWorkspace({ ...workspace('ws1', ['alice@example.com']), workspaceAvatarId: 'avatar-1' })
+    rememberWorkspace(workspace('ws1', ['alice@example.com']))
+
+    expect(loadWorkspaces()[0].workspaceAvatarId).toBe('avatar-1')
+  })
+
   it('drops malformed entries but keeps valid ones', () => {
     localStorage.setItem(
       'peerly-workspaces',

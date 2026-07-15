@@ -8,9 +8,11 @@ import {
   type WorkspaceInvite,
 } from '../collab/inviteLink'
 import { verifyInviteAllowList, WorkspaceAuthManager } from '../collab/workspaceAuth'
+import { resolveAvatarPreview } from '../collab/avatarService'
 import {
   forgetWorkspace,
   rememberWorkspace,
+  snapshotWorkspace,
   workspacesForEmail,
   type StoredWorkspace,
 } from '../collab/workspaceStore'
@@ -25,7 +27,32 @@ import {
   saveSession,
   type Session,
 } from '../session'
+import { Avatar } from './Avatar'
 import { IdentityLoginButtons, type SignedInIdentity } from './IdentityLoginButtons'
+
+const WORKSPACE_COLOR = '#2eb67d'
+
+function WorkspacePickerAvatar({ workspace }: { workspace: StoredWorkspace }) {
+  const [preview, setPreview] = useState<string>()
+  useEffect(() => {
+    let cancelled = false
+    void resolveAvatarPreview(workspace.workspaceAvatarId).then(url => {
+      if (!cancelled && url) setPreview(url)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [workspace.workspaceAvatarId])
+
+  return (
+    <Avatar
+      name={workspace.workspaceName}
+      color={WORKSPACE_COLOR}
+      avatar={preview}
+      size="md"
+    />
+  )
+}
 
 type Props = {
   onJoined: (session: Session) => void
@@ -115,7 +142,8 @@ export function JoinScreen({ onJoined }: Props) {
   const completeJoin = async (
     nextInvite: WorkspaceAccess,
     identity: SignedInIdentity,
-    name?: string
+    name?: string,
+    workspaceAvatarId?: string
   ) => {
     if (!isEmailAllowed(nextInvite.allowList, identity.email)) {
       throw new Error(`${identity.email} is not on this workspace's invite list`)
@@ -123,19 +151,22 @@ export function JoinScreen({ onJoined }: Props) {
 
     saveIdCredentials(identity.token, identity.providerId, identity.email)
     const session = createSessionFromInvite(
-      nextInvite,
+      { ...nextInvite, workspaceAvatarId },
       identity.email,
       identity.providerId,
       name ?? identity.name
     )
     saveSession(session)
     // Remember it so the next sign-in offers it without the invite link.
-    rememberWorkspace({
-      workspaceId: nextInvite.workspaceId,
-      workspaceName: nextInvite.workspaceName,
-      creatorKeyId: nextInvite.creatorKeyId,
-      allowList: nextInvite.allowList,
-    })
+    rememberWorkspace(
+      snapshotWorkspace({
+        workspaceId: nextInvite.workspaceId,
+        workspaceName: nextInvite.workspaceName,
+        creatorKeyId: nextInvite.creatorKeyId,
+        allowList: nextInvite.allowList,
+        workspaceAvatarId,
+      })
+    )
     history.replaceState(null, '', location.pathname)
     onJoined(session)
   }
@@ -182,7 +213,7 @@ export function JoinScreen({ onJoined }: Props) {
         throw new Error('Stored workspace has an invalid signature — rejoin with the invite link')
       }
       authManagerForInvite(workspace)
-      await completeJoin(workspace, identity, identity.name)
+      await completeJoin(workspace, identity, identity.name, workspace.workspaceAvatarId)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -323,7 +354,10 @@ export function JoinScreen({ onJoined }: Props) {
                     disabled={busy}
                     onClick={() => void handleOpenStored(workspace)}
                   >
-                    <span className="truncate text-sm font-medium">{workspace.workspaceName}</span>
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <WorkspacePickerAvatar workspace={workspace} />
+                      <span className="truncate text-sm font-medium">{workspace.workspaceName}</span>
+                    </span>
                     <span className="shrink-0 text-xs text-base-content/50">
                       {workspace.allowList.emails.length} member
                       {workspace.allowList.emails.length === 1 ? '' : 's'}

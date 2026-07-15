@@ -11,6 +11,8 @@ export type PersistedSession = {
   workspaceId: string
   /** Human-readable label shown in the UI. */
   workspaceName: string
+  /** Local workspace icon id in IndexedDB. */
+  workspaceAvatarId?: string
   creatorKeyId: DeviceKeyId
   allowList: SignedAllowList
   identityEmail: string
@@ -22,6 +24,7 @@ export type PersistedSession = {
 
 export type Session = PersistedSession & {
   avatar?: string
+  workspaceAvatar?: string
 }
 
 /** The workspace currently open. Cleared when switching workspaces. */
@@ -61,6 +64,8 @@ export function loadPersistedSession(): PersistedSession | null {
     return {
       workspaceId: data.workspaceId,
       workspaceName: data.workspaceName,
+      workspaceAvatarId:
+        typeof data.workspaceAvatarId === 'string' ? data.workspaceAvatarId : undefined,
       creatorKeyId: data.creatorKeyId,
       allowList: data.allowList,
       identityEmail: data.identityEmail,
@@ -168,7 +173,7 @@ export function loadSession(): Session | null {
 }
 
 export function saveSession(session: Session): void {
-  const { avatar: _avatar, ...persisted } = session
+  const { avatar: _avatar, workspaceAvatar: _workspaceAvatar, ...persisted } = session
   localStorage.setItem(PERSIST_KEY, JSON.stringify(persisted))
 }
 
@@ -189,6 +194,7 @@ export function createSessionFromInvite(
     workspaceName: string
     creatorKeyId: DeviceKeyId
     allowList: SignedAllowList
+    workspaceAvatarId?: string
   },
   identityEmail: string,
   identityProvider: IdentityProviderId,
@@ -198,6 +204,7 @@ export function createSessionFromInvite(
   return {
     workspaceId: invite.workspaceId,
     workspaceName: invite.workspaceName,
+    workspaceAvatarId: invite.workspaceAvatarId,
     creatorKeyId: invite.creatorKeyId,
     allowList: invite.allowList,
     identityEmail,
@@ -209,8 +216,11 @@ export function createSessionFromInvite(
 }
 
 export async function hydrateSessionAvatar(session: Session): Promise<Session> {
-  const avatar = await resolveAvatarPreview(session.avatarId)
-  return { ...session, avatar }
+  const [avatar, workspaceAvatar] = await Promise.all([
+    resolveAvatarPreview(session.avatarId),
+    resolveAvatarPreview(session.workspaceAvatarId),
+  ])
+  return { ...session, avatar, workspaceAvatar }
 }
 
 /** Migrate inline avatar data URLs to IndexedDB-backed avatar ids. */

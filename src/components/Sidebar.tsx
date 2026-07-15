@@ -7,6 +7,7 @@ import { InvitePeople } from './InvitePeople'
 
 type Props = {
   workspace: string
+  workspaceAvatar?: string
   /** Drives the off-canvas drawer below `lg`; ignored at desktop widths. */
   open: boolean
   inviteLink?: string
@@ -17,7 +18,7 @@ type Props = {
   onInvite: (emails: string[]) => Promise<void>
   channels: Channel[]
   activeChannel: string
-  activeView: 'channel' | 'profile'
+  activeView: 'channel' | 'profile' | 'workspace'
   peers: Peer[]
   selfProfile: UserProfile
   connectionStatus: ConnectionStatus
@@ -28,6 +29,7 @@ type Props = {
   onAddChannel: (name: string) => void
   onStartDirectMessage: (peer: Peer) => void
   onProfileSelect: () => void
+  onWorkspaceSettings: () => void
   onLeave: () => void
   unreadByChannel: Record<string, number>
 }
@@ -73,8 +75,11 @@ function ChannelButton({
   )
 }
 
+const WORKSPACE_COLOR = '#2eb67d'
+
 export function Sidebar({
   workspace,
+  workspaceAvatar,
   open,
   inviteLink,
   invitedEmails = [],
@@ -93,6 +98,7 @@ export function Sidebar({
   onAddChannel,
   onStartDirectMessage,
   onProfileSelect,
+  onWorkspaceSettings,
   onLeave,
   unreadByChannel,
 }: Props) {
@@ -119,10 +125,16 @@ export function Sidebar({
       }`}
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-base-300 p-3">
-        <div className="workspace-name flex min-w-0 items-center gap-2 font-bold text-base-content">
-          <span aria-hidden="true">⚡</span>
+        <button
+          type="button"
+          className="workspace-name flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left font-bold text-base-content transition-colors hover:bg-base-content/5"
+          onClick={onWorkspaceSettings}
+          title="Workspace settings"
+          data-testid="workspace-settings-open"
+        >
+          <Avatar name={workspace} color={WORKSPACE_COLOR} avatar={workspaceAvatar} size="md" />
           <span className="truncate">{workspace}</span>
-        </div>
+        </button>
         <button
           className="btn btn-ghost btn-square btn-sm shrink-0"
           onClick={onLeave}

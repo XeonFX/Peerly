@@ -14,7 +14,7 @@ export function useUnreadCounts(
   messagesByChannel: Record<string, Message[]>,
   channelIds: string[],
   activeChannelId: string,
-  activeView: 'channel' | 'profile',
+  activeView: 'channel' | 'profile' | 'workspace',
   selfId: string
 ) {
   const [readState, setReadState] = useState<ReadState>(() => loadReadState(workspaceId))

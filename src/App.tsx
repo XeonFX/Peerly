@@ -4,7 +4,7 @@ import { WorkspaceAuthManager } from './collab/workspaceAuth'
 import { JoinScreen } from './components/JoinScreen'
 import { Workspace } from './components/Workspace'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
-import { rememberWorkspace } from './collab/workspaceStore'
+import { rememberWorkspace, snapshotWorkspace } from './collab/workspaceStore'
 import {
   clearActiveWorkspace,
   hydrateSessionAvatar,
@@ -29,12 +29,7 @@ function App() {
       saveSession(next)
       // A peer showed us a newer creator-signed list (someone was invited).
       // Persist it so the picker and future invite links carry it too.
-      rememberWorkspace({
-        workspaceId: next.workspaceId,
-        workspaceName: next.workspaceName,
-        creatorKeyId: next.creatorKeyId,
-        allowList,
-      })
+      rememberWorkspace(snapshotWorkspace(next))
       return next
     })
   })
