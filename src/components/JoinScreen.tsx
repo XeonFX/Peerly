@@ -279,9 +279,12 @@ export function JoinScreen({ onJoined }: Props) {
         <div className="join-card w-full max-w-md space-y-5">
           <header className="space-y-2 text-center">
             <div className="join-logo flex items-center justify-center gap-2">
-              <span className="logo-icon text-3xl" aria-hidden="true">
-                ⚡
-              </span>
+              <img
+                src="/app-icon.png"
+                alt=""
+                className="logo-icon h-8 w-8 rounded-xl"
+                aria-hidden="true"
+              />
               <h1 className="text-3xl font-semibold tracking-tight">{APP_NAME}</h1>
             </div>
             <p className="text-sm text-base-content/60">
@@ -327,9 +330,12 @@ export function JoinScreen({ onJoined }: Props) {
       <div className="join-card w-full max-w-md space-y-5">
         <header className="space-y-2 text-center">
           <div className="join-logo flex items-center justify-center gap-2">
-            <span className="logo-icon text-2xl" aria-hidden="true">
-              ⚡
-            </span>
+            <img
+              src="/app-icon.png"
+              alt=""
+              className="logo-icon h-7 w-7 rounded-xl"
+              aria-hidden="true"
+            />
             <h1 className="text-2xl font-semibold tracking-tight">{APP_NAME}</h1>
           </div>
         </header>
