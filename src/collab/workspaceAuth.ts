@@ -138,6 +138,8 @@ export class WorkspaceAuthManager {
           allowList: this.allowList,
         }
       },
+      resolveProvider: providerId =>
+        getE2eProvider(providerId) ?? getIdentityProvider(providerId),
       fetchJwks: this.fetchJwks,
       creatorKeyId: this.config.creatorKeyId,
       onPeerVerified: handlers?.onPeerVerified,
