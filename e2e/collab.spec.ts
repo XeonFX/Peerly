@@ -173,7 +173,7 @@ test.describe('Peerly P2P collaboration', () => {
     await waitForPeerConnection(alice)
     await waitForPeerConnection(bob)
 
-    const tmpFile = path.join(os.tmpdir(), `flux-test-${Date.now()}.txt`)
+    const tmpFile = path.join(os.tmpdir(), `peerly-test-${Date.now()}.txt`)
     fs.writeFileSync(tmpFile, 'Hello from shared file!')
 
     const fileInput = alice.getByTestId('file-input')
@@ -380,15 +380,15 @@ test.describe('Peerly P2P collaboration', () => {
     await waitForPeerConnection(alice)
     await waitForPeerConnection(bob)
 
-    const tmpFile = path.join(os.tmpdir(), `flux-rejoin-${Date.now()}.txt`)
+    const tmpFile = path.join(os.tmpdir(), `peerly-rejoin-${Date.now()}.txt`)
     fs.writeFileSync(tmpFile, 'File survives rejoin!')
 
     await alice.getByTestId('file-input').setInputFiles(tmpFile)
-    await expect(bob.locator('.message-list')).toContainText('flux-rejoin-', { timeout: 45_000 })
+    await expect(bob.locator('.message-list')).toContainText('peerly-rejoin-', { timeout: 45_000 })
 
     await rejoinWorkspace(bob, { name: 'Bob', email: 'bob@e2e.test' })
     await waitForPeerConnection(bob)
-    await expect(bob.locator('.message-list')).toContainText('flux-rejoin-', { timeout: 60_000 })
+    await expect(bob.locator('.message-list')).toContainText('peerly-rejoin-', { timeout: 60_000 })
     await expect(bob.locator('.files-panel')).toContainText('txt', { timeout: 60_000 })
 
     fs.unlinkSync(tmpFile)
@@ -401,10 +401,7 @@ test.describe('Peerly P2P collaboration', () => {
     const stored = await page.evaluate(() => localStorage.getItem('peerly-session'))
     expect(stored).toBeTruthy()
     expect(stored).toContain('workspaceId')
-    const token = await page.evaluate(
-      () =>
-        sessionStorage.getItem('peerly-id-token') ?? sessionStorage.getItem('flux-google-token')
-    )
+    const token = await page.evaluate(() => sessionStorage.getItem('peerly-id-token'))
     expect(token).toBeTruthy()
     expect(stored).not.toContain(token ?? '')
   })

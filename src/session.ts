@@ -24,58 +24,37 @@ export type Session = PersistedSession & {
 }
 
 const PERSIST_KEY = 'peerly-session'
-const LEGACY_PERSIST_KEY = 'flux-session'
 const ID_TOKEN_KEY = 'peerly-id-token'
 const ID_PROVIDER_KEY = 'peerly-id-provider'
-const LEGACY_ID_TOKEN_KEYS = ['flux-id-token', 'flux-google-token'] as const
-const LEGACY_ID_PROVIDER_KEY = 'flux-id-provider'
 
-type LegacySession = {
-  workspace?: string
-  workspaceId?: string
-  workspaceName?: string
-  password?: string
-  userName?: string
-  color?: string
+type StoredSession = Partial<PersistedSession> & {
   avatar?: string
-  avatarId?: string
-  creatorKeyId?: string
-  allowList?: SignedAllowList
-  googleEmail?: string
-  identityEmail?: string
-  identityProvider?: string
-}
-
-function readPersistedRaw(): string | null {
-  return localStorage.getItem(PERSIST_KEY) ?? localStorage.getItem(LEGACY_PERSIST_KEY)
 }
 
 export function loadPersistedSession(): PersistedSession | null {
   try {
-    const raw = readPersistedRaw()
+    const raw = localStorage.getItem(PERSIST_KEY)
     if (!raw) return null
-    const data = JSON.parse(raw) as Partial<LegacySession>
-    const workspaceId = data.workspaceId ?? data.workspace
-    const identityEmail = data.identityEmail ?? data.googleEmail
-    if (typeof workspaceId !== 'string' || typeof data.userName !== 'string') {
+    const data = JSON.parse(raw) as StoredSession
+    if (typeof data.workspaceId !== 'string' || typeof data.userName !== 'string') {
       return null
     }
     if (
       typeof data.workspaceName !== 'string' ||
       typeof data.creatorKeyId !== 'string' ||
       !data.allowList ||
-      typeof identityEmail !== 'string'
+      typeof data.identityEmail !== 'string' ||
+      typeof data.identityProvider !== 'string'
     ) {
       return null
     }
-    const identityProvider = (data.identityProvider ?? 'google') as IdentityProviderId
     return {
-      workspaceId,
+      workspaceId: data.workspaceId,
       workspaceName: data.workspaceName,
       creatorKeyId: data.creatorKeyId,
       allowList: data.allowList,
-      identityEmail,
-      identityProvider,
+      identityEmail: data.identityEmail,
+      identityProvider: data.identityProvider,
       userName: data.userName,
       color: typeof data.color === 'string' ? data.color : DEFAULT_USER_COLOR,
       avatarId: typeof data.avatarId === 'string' ? data.avatarId : undefined,
@@ -86,18 +65,11 @@ export function loadPersistedSession(): PersistedSession | null {
 }
 
 export function loadIdToken(): string | null {
-  const current = sessionStorage.getItem(ID_TOKEN_KEY)
-  if (current) return current
-  for (const key of LEGACY_ID_TOKEN_KEYS) {
-    const legacy = sessionStorage.getItem(key)
-    if (legacy) return legacy
-  }
-  return null
+  return sessionStorage.getItem(ID_TOKEN_KEY)
 }
 
 export function loadIdentityProvider(): IdentityProviderId | null {
-  const stored =
-    sessionStorage.getItem(ID_PROVIDER_KEY) ?? sessionStorage.getItem(LEGACY_ID_PROVIDER_KEY)
+  const stored = sessionStorage.getItem(ID_PROVIDER_KEY)
   if (
     stored === 'google' ||
     stored === 'microsoft' ||
@@ -107,43 +79,17 @@ export function loadIdentityProvider(): IdentityProviderId | null {
   ) {
     return stored
   }
-  for (const key of LEGACY_ID_TOKEN_KEYS) {
-    if (sessionStorage.getItem(key)) return 'google'
-  }
   return null
 }
 
 export function saveIdCredentials(token: string, providerId: IdentityProviderId): void {
   sessionStorage.setItem(ID_TOKEN_KEY, token)
   sessionStorage.setItem(ID_PROVIDER_KEY, providerId)
-  for (const key of LEGACY_ID_TOKEN_KEYS) {
-    sessionStorage.removeItem(key)
-  }
-  sessionStorage.removeItem(LEGACY_ID_PROVIDER_KEY)
 }
 
 export function clearIdCredentials(): void {
   sessionStorage.removeItem(ID_TOKEN_KEY)
   sessionStorage.removeItem(ID_PROVIDER_KEY)
-  for (const key of LEGACY_ID_TOKEN_KEYS) {
-    sessionStorage.removeItem(key)
-  }
-  sessionStorage.removeItem(LEGACY_ID_PROVIDER_KEY)
-}
-
-/** @deprecated Use loadIdToken */
-export function loadGoogleToken(): string | null {
-  return loadIdToken()
-}
-
-/** @deprecated Use saveIdCredentials */
-export function saveGoogleToken(token: string): void {
-  saveIdCredentials(token, 'google')
-}
-
-/** @deprecated Use clearIdCredentials */
-export function clearGoogleToken(): void {
-  clearIdCredentials()
 }
 
 export function loadSession(): Session | null {
@@ -156,7 +102,6 @@ export function loadSession(): Session | null {
 export function saveSession(session: Session): void {
   const { avatar: _avatar, ...persisted } = session
   localStorage.setItem(PERSIST_KEY, JSON.stringify(persisted))
-  localStorage.removeItem(LEGACY_PERSIST_KEY)
 }
 
 /** Leave workspace but keep profile for next join. */
@@ -200,11 +145,12 @@ export async function hydrateSessionAvatar(session: Session): Promise<Session> {
   return { ...session, avatar }
 }
 
+/** Migrate inline avatar data URLs to IndexedDB-backed avatar ids. */
 export async function migrateLegacySession(): Promise<void> {
   try {
     const raw = localStorage.getItem(PERSIST_KEY)
     if (!raw) return
-    const data = JSON.parse(raw) as LegacySession
+    const data = JSON.parse(raw) as StoredSession
     if (typeof data.avatar !== 'string' || !data.avatar.startsWith('data:image/')) {
       return
     }

@@ -114,44 +114,4 @@ describe('session persistence', () => {
     })
     expect(loadIdentityProvider()).toBe('google')
   })
-
-  it('loads legacy flux-session from localStorage', () => {
-    localStorage.setItem(
-      'flux-session',
-      JSON.stringify({
-        workspaceId: TEST_INVITE.workspaceId,
-        workspaceName: TEST_INVITE.workspaceName,
-        creatorKeyId: TEST_INVITE.creatorKeyId,
-        allowList: TEST_INVITE.allowList,
-        identityEmail: 'alice@e2e.test',
-        identityProvider: 'google',
-        userName: 'alice',
-        color: '#2eb67d',
-      })
-    )
-    saveIdCredentials('token-1', 'google')
-
-    expect(loadPersistedSession()?.identityEmail).toBe('alice@e2e.test')
-    expect(loadSession()?.workspaceId).toBe(TEST_INVITE.workspaceId)
-  })
-
-  it('migrates legacy googleEmail and google token fields', () => {
-    localStorage.setItem(
-      PERSIST_KEY,
-      JSON.stringify({
-        workspaceId: TEST_INVITE.workspaceId,
-        workspaceName: TEST_INVITE.workspaceName,
-        creatorKeyId: TEST_INVITE.creatorKeyId,
-        allowList: TEST_INVITE.allowList,
-        googleEmail: 'alice@e2e.test',
-        userName: 'alice',
-        color: '#2eb67d',
-      })
-    )
-    sessionStorage.setItem('flux-google-token', 'legacy-token')
-
-    expect(loadPersistedSession()?.identityEmail).toBe('alice@e2e.test')
-    expect(loadIdentityProvider()).toBe('google')
-    expect(loadSession()?.identityEmail).toBe('alice@e2e.test')
-  })
 })
