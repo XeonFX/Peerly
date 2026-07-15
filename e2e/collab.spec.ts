@@ -90,8 +90,8 @@ test.describe('Peerly P2P collaboration', () => {
     await page.getByTestId('invite-emails').fill('bob@e2e.test')
     await page.getByTestId('invite-submit').click()
 
-    // The form closes on success; the allow-list now carries bob.
-    await expect(page.getByTestId('invite-emails')).not.toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('invited-bob@e2e.test')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('invited-members')).toContainText('bob@e2e.test')
     await leaveToPicker(page)
     await expect(page.getByTestId('open-workspace-invite-test')).toContainText('2 members')
   })

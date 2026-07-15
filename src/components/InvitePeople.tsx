@@ -3,6 +3,8 @@ import { useState } from 'react'
 type Props = {
   /** Link granting access to the current allow-list. Anyone may share it. */
   inviteLink: string
+  /** Emails on the creator-signed allow-list — who can join via the invite link. */
+  invitedEmails: string[]
   /**
    * Whether this device can add people. Only the creator's device holds the key
    * that signs an allow-list peers accept — see WorkspaceAuthManager.canInvite.
@@ -11,7 +13,7 @@ type Props = {
   onInvite: (emails: string[]) => Promise<void>
 }
 
-export function InvitePeople({ inviteLink, canInvite, onInvite }: Props) {
+export function InvitePeople({ inviteLink, invitedEmails, canInvite, onInvite }: Props) {
   const [open, setOpen] = useState(false)
   const [emails, setEmails] = useState('')
   const [busy, setBusy] = useState(false)
@@ -50,7 +52,6 @@ export function InvitePeople({ inviteLink, canInvite, onInvite }: Props) {
     try {
       await onInvite(parsed)
       setEmails('')
-      setOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -60,6 +61,24 @@ export function InvitePeople({ inviteLink, canInvite, onInvite }: Props) {
 
   return (
     <div className="flex flex-col gap-2">
+      {invitedEmails.length > 0 && (
+        <div className="rounded-box border border-base-300/80 bg-base-200/60 px-2.5 py-2">
+          <p className="mb-1.5 text-xs font-medium text-base-content/70">
+            Invited members ({invitedEmails.length})
+          </p>
+          <ul
+            className="max-h-28 space-y-0.5 overflow-y-auto text-[0.7rem] leading-relaxed text-base-content/80"
+            data-testid="invited-members"
+          >
+            {invitedEmails.map(email => (
+              <li key={email} className="truncate font-mono" data-testid={`invited-${email}`}>
+                {email}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* This is the primary action in the footer — sharing the link is how
           anyone else gets in. It previously rendered as unstyled text, which
           read as disabled. */}

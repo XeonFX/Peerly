@@ -114,6 +114,7 @@ function WorkspaceShell({
           allowList: session.allowList,
         })}
         canInvite={canInvite}
+        invitedEmails={session.allowList.emails}
         onInvite={onInvite}
         channels={channels}
         activeChannel={activeChannel}

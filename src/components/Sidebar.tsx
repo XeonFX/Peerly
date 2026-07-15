@@ -10,6 +10,8 @@ type Props = {
   /** Drives the off-canvas drawer below `lg`; ignored at desktop widths. */
   open: boolean
   inviteLink?: string
+  /** Emails on the signed allow-list for this workspace. */
+  invitedEmails?: string[]
   /** Only the creator's device can add members; see WorkspaceAuthManager.canInvite. */
   canInvite: boolean
   onInvite: (emails: string[]) => Promise<void>
@@ -75,6 +77,7 @@ export function Sidebar({
   workspace,
   open,
   inviteLink,
+  invitedEmails = [],
   canInvite,
   onInvite,
   channels,
@@ -274,7 +277,12 @@ export function Sidebar({
 
       <div className="mt-auto space-y-2 border-t border-base-300/70 p-3">
         {inviteLink && (
-          <InvitePeople inviteLink={inviteLink} canInvite={canInvite} onInvite={onInvite} />
+          <InvitePeople
+            inviteLink={inviteLink}
+            invitedEmails={invitedEmails}
+            canInvite={canInvite}
+            onInvite={onInvite}
+          />
         )}
 
         <div className="flex flex-col gap-1 pt-1">
