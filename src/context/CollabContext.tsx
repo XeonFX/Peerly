@@ -1,4 +1,5 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
+import type { SignedFields } from '../collab/messageSigning'
 import { useMemo, type ReactNode } from 'react'
 import { useCollab } from '../hooks/useCollab'
 import type { UserProfile } from '../types'
@@ -33,6 +34,10 @@ type CollabProviderProps = {
   selfUserId?: string
   /** Handshake-verified peerId -> user id; the only trusted source for peers. */
   resolvePeerUserId?: (peerId: string) => string | undefined
+  /** Signs outgoing messages so relayed history is tamper-evident. */
+  signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
+  /** Live-handshake key bindings; gates identity claims in relayed history. */
+  getBoundUserId?: (deviceKeyId: string) => string | undefined
   onProfileChange?: (profile: UserProfile & { avatarId?: string }) => void
   onChannelsChange?: () => void
   children: ReactNode
@@ -49,6 +54,8 @@ export function CollabProvider({
   peerHandshake,
   selfUserId,
   resolvePeerUserId,
+  signMessage,
+  getBoundUserId,
   onProfileChange,
   onChannelsChange,
   children,
@@ -64,7 +71,7 @@ export function CollabProvider({
     onChannelsChange,
     activeView,
     peerHandshake,
-    { selfUserId, resolvePeerUserId }
+    { selfUserId, resolvePeerUserId, signMessage, getBoundUserId }
   )
 
   const connection = useMemo<ConnectionSlice>(
@@ -74,6 +81,8 @@ export function CollabProvider({
       connectionNotice: collab.connectionNotice,
       relayOnline: collab.relayOnline,
       rtcPeerCount: collab.rtcPeerCount,
+      p2pCapability: collab.p2pCapability,
+      retryP2pCapability: collab.retryP2pCapability,
       relayUrls: collab.relayUrls,
       isReady: collab.isReady,
     }),
@@ -83,6 +92,8 @@ export function CollabProvider({
       collab.connectionNotice,
       collab.relayOnline,
       collab.rtcPeerCount,
+      collab.p2pCapability,
+      collab.retryP2pCapability,
       collab.relayUrls,
       collab.isReady,
     ]
@@ -98,6 +109,9 @@ export function CollabProvider({
       totalUnread: collab.totalUnread,
       sendMessage: collab.sendMessage,
       sendFile: collab.sendFile,
+      markFileNsfw: collab.markFileNsfw,
+      requestFile: collab.requestFile,
+      syncProgress: collab.syncProgress,
     }),
     [
       collab.messages,
@@ -108,6 +122,9 @@ export function CollabProvider({
       collab.totalUnread,
       collab.sendMessage,
       collab.sendFile,
+      collab.markFileNsfw,
+      collab.requestFile,
+      collab.syncProgress,
     ]
   )
 

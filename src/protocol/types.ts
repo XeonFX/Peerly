@@ -10,6 +10,10 @@ export type ChatPayload = {
    * receiver overwrites it with the id verified during that peer's handshake.
    */
   senderUserId?: string
+  /** Author's device key (embeds the public key) — see collab/messageSigning. */
+  senderDeviceKeyId?: string
+  /** ECDSA signature over the signed fields; absent on legacy messages. */
+  signature?: string
   senderName: string
   senderColor: string
   senderAvatar?: string
@@ -32,11 +36,22 @@ export type FileMetaPayload = {
   mimeType: string
   size: number
   senderId: string
+  /**
+   * Durable identity. Never trusted from the wire: receivers overwrite it with
+   * the id verified in the sending peer's handshake (see useCollab handlers).
+   */
+  senderUserId?: string
+  /** Author's device key (embeds the public key) — see collab/messageSigning. */
+  senderDeviceKeyId?: string
+  /** ECDSA signature over the signed fields; absent on legacy messages. */
+  signature?: string
   senderName: string
   senderColor: string
   senderAvatar?: string
   timestamp: number
   channelId: string
+  /** Small inline preview (data URL). Peer-supplied: sanitize before use. */
+  thumbnail?: string
 }
 
 export type HistoryFileMeta = {
@@ -44,6 +59,8 @@ export type HistoryFileMeta = {
   name: string
   mimeType: string
   size: number
+  /** Peer-supplied when the entry came off the wire: sanitize before use. */
+  thumbnail?: string
 }
 
 /** Serializable message for history sync and local persistence. */
@@ -51,6 +68,12 @@ export type HistoryEntry = {
   id: string
   text: string
   senderId: string
+  /** Durable sender identity; best-effort in relayed history (unsigned). */
+  senderUserId?: string
+  /** Author's device key (embeds the public key) — see collab/messageSigning. */
+  senderDeviceKeyId?: string
+  /** ECDSA signature over the signed fields; absent on legacy messages. */
+  signature?: string
   senderName: string
   senderColor: string
   senderAvatar?: string
@@ -82,6 +105,8 @@ export const ACTION_IDS = {
   chat: 'chat',
   profile: 'profile',
   file: 'file',
+  /** Announces file metadata/thumbnail without pushing the original body. */
+  fileMeta: 'file-meta',
   /** Joiner asks holders for specific file bodies it is missing. */
   fileRequest: 'file-req',
   historySync: 'history-sync',

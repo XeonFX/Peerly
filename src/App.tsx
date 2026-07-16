@@ -22,7 +22,7 @@ function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [ready, setReady] = useState(false)
 
-  const { manager, peerHandshake, resolvePeerUserId } = useWorkspaceAuth(session, allowList => {
+  const { manager, peerHandshake, resolvePeerUserId, signMessage, getBoundUserId } = useWorkspaceAuth(session, allowList => {
     setSession(prev => {
       if (!prev) return prev
       const next = { ...prev, allowList }
@@ -93,6 +93,8 @@ function App() {
       session={session}
       peerHandshake={peerHandshake}
       resolvePeerUserId={resolvePeerUserId}
+      signMessage={signMessage}
+      getBoundUserId={getBoundUserId}
       authManager={manager}
       onSessionChange={updateSession}
       onLeave={() => {

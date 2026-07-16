@@ -42,6 +42,42 @@ async function joinAlice(browser: Browser) {
 test.describe.configure({ mode: 'serial' })
 
 test.describe('Peerly P2P collaboration', () => {
+  test('theme preference persists and P2P readiness stays visible', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+
+    await expect(page.getByText('Invite-only workspace — verified identities')).not.toBeVisible()
+    await expect(page.getByRole('heading', { name: 'You', exact: true })).not.toBeVisible()
+    await expect(page.getByTestId('member-list').locator('li').first()).toContainText('Alice')
+    await expect(page.getByTestId('member-list').locator('li').first()).toContainText('you')
+    await expect(page.locator('.files-panel')).not.toBeVisible()
+    await expect(page.getByTestId('toggle-files').locator('svg')).toBeVisible()
+    await expect(page.getByTestId('attach-file-button').locator('svg')).toBeVisible()
+    await page.getByTestId('toggle-files').click()
+    await expect(page.locator('.files-panel')).toContainText('No shared files yet')
+    await page.getByTestId('toggle-files').click()
+
+    await expect(page.getByTestId('p2p-capability')).toContainText('P2P ready', {
+      timeout: 10_000,
+    })
+
+    const initialTheme = await page.locator('html').getAttribute('data-theme')
+    const expectedTheme = initialTheme === 'peerly-dark' ? 'peerly' : 'peerly-dark'
+    await page.getByTestId('theme-toggle').click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', expectedTheme)
+
+    await page.reload()
+    await waitForWorkspace(page)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', expectedTheme)
+
+    await page.getByTestId('workspace-settings-open').click()
+    await expect(page.getByTestId('p2p-capability-card')).toContainText('P2P ready', {
+      timeout: 10_000,
+    })
+    await expect(page.getByTestId('p2p-capability-card')).toContainText(
+      'Strict NAT and corporate firewalls'
+    )
+  })
+
   test('remembered workspaces let you switch without the invite link', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await expect(page.locator('.workspace-name')).toContainText('test-ws')
@@ -76,6 +112,30 @@ test.describe('Peerly P2P collaboration', () => {
     await page.getByTestId('sign-out').click()
     await e2eSignIn(page, { email: 'outsider@e2e.test' })
     await expect(page.getByTestId('open-workspace-test-ws')).not.toBeVisible()
+  })
+
+  test('the creator can remove a member, and their name leaves the invite list', async ({ page }) => {
+    await createWorkspace(page, {
+      email: 'alice@e2e.test',
+      workspaceName: 'remove-test',
+      guests: 'bob@e2e.test',
+    })
+
+    await expect(page.getByTestId('invite-people-toggle')).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('invite-people-toggle').click()
+    await expect(page.getByTestId('invited-bob@e2e.test')).toBeVisible({ timeout: 15_000 })
+
+    // The creator's own row must not offer removal — removing yourself is a
+    // lockout, not a feature.
+    await expect(page.getByTestId('remove-member-alice@e2e.test')).toHaveCount(0)
+
+    page.once('dialog', dialog => void dialog.accept())
+    await page.getByTestId('invited-bob@e2e.test').hover()
+    await page.getByTestId('remove-member-bob@e2e.test').click()
+
+    await expect(page.getByTestId('invited-bob@e2e.test')).toHaveCount(0, { timeout: 15_000 })
+    await leaveToPicker(page)
+    await expect(page.getByTestId('open-workspace-remove-test')).toContainText('1 member')
   })
 
   test('the creator can invite someone to an existing workspace', async ({ page }) => {
@@ -200,6 +260,9 @@ test.describe('Peerly P2P collaboration', () => {
     await waitForPeerConnection(alice)
     await waitForPeerConnection(bob)
 
+    await expect(alice.getByTestId('p2p-capability')).toContainText('P2P active')
+    await expect(bob.getByTestId('p2p-capability')).toContainText('P2P active')
+
     await expectPeerVisible(alice, 'Bob')
     await expectPeerVisible(bob, 'Alice')
 
@@ -277,7 +340,29 @@ test.describe('Peerly P2P collaboration', () => {
     await fileInput.setInputFiles(tmpFile)
 
     await expect(bob.locator('.message-list')).toContainText('test-', { timeout: 45_000 })
+    await bob.getByTestId('toggle-files').click()
     await expect(bob.locator('.files-panel')).toContainText('txt', { timeout: 45_000 })
+
+    const onDemandFile = bob.locator('button.file-download')
+    await expect(onDemandFile).toContainText('Download on demand')
+    await onDemandFile.click()
+    const cachedFile = bob.locator('a.file-download')
+    await expect(cachedFile).toContainText('Ready on this device', { timeout: 45_000 })
+    await expect
+      .poll(
+        () =>
+          bob.evaluate(async () => {
+            const link = document.querySelector<HTMLAnchorElement>('a.file-download')
+            if (!link?.href) return 'NO_LINK'
+            try {
+              return (await fetch(link.href)).ok ? 'OK' : 'FAILED'
+            } catch {
+              return 'FAILED'
+            }
+          }),
+        { timeout: 30_000 }
+      )
+      .toBe('OK')
 
     fs.unlinkSync(tmpFile)
     await aliceCtx.close()
@@ -486,6 +571,7 @@ test.describe('Peerly P2P collaboration', () => {
     await rejoinWorkspace(bob, { name: 'Bob', email: 'bob@e2e.test' })
     await waitForPeerConnection(bob)
     await expect(bob.locator('.message-list')).toContainText('peerly-rejoin-', { timeout: 60_000 })
+    await bob.getByTestId('toggle-files').click()
     await expect(bob.locator('.files-panel')).toContainText('txt', { timeout: 60_000 })
 
     fs.unlinkSync(tmpFile)

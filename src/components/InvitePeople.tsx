@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Icon } from './Icon'
 
 type Props = {
   /** Link granting access to the current allow-list. Anyone may share it. */
@@ -11,9 +12,18 @@ type Props = {
    */
   canInvite: boolean
   onInvite: (emails: string[]) => Promise<void>
+  /**
+   * Creator-only, like inviting. Removal is honest about its limits: members
+   * who receive the re-signed list stop admitting the removed member at their
+   * next handshake; the removed member and anyone who never saw the update can
+   * still pair, and open connections are not torn down.
+   */
+  onRemove?: (email: string) => Promise<void>
+  /** The signed-in member's own email — the creator cannot remove themselves. */
+  selfEmail?: string
 }
 
-export function InvitePeople({ inviteLink, invitedEmails, canInvite, onInvite }: Props) {
+export function InvitePeople({ inviteLink, invitedEmails, canInvite, onInvite, onRemove, selfEmail }: Props) {
   const [open, setOpen] = useState(false)
   const [emails, setEmails] = useState('')
   const [busy, setBusy] = useState(false)
@@ -71,8 +81,34 @@ export function InvitePeople({ inviteLink, invitedEmails, canInvite, onInvite }:
             data-testid="invited-members"
           >
             {invitedEmails.map(email => (
-              <li key={email} className="truncate font-mono" data-testid={`invited-${email}`}>
-                {email}
+              <li
+                key={email}
+                className="group/member flex items-center gap-1"
+                data-testid={`invited-${email}`}
+              >
+                <span className="min-w-0 flex-1 truncate font-mono">{email}</span>
+                {canInvite && onRemove && email.toLowerCase() !== selfEmail?.toLowerCase() && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs btn-square shrink-0 text-base-content/30 opacity-0 transition-opacity hover:text-error group-hover/member:opacity-100 focus-visible:opacity-100"
+                    title="Remove from the invite list. Members who receive the update stop admitting them at their next connection."
+                    aria-label={`Remove ${email}`}
+                    data-testid={`remove-member-${email}`}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Remove ${email}? Members who receive the update will stop admitting them when they next connect. Anyone still holding the old list, including ${email}, may still pair until updated.`
+                        )
+                      ) {
+                        void onRemove(email).catch(err =>
+                          setError(err instanceof Error ? err.message : String(err))
+                        )
+                      }
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -89,7 +125,7 @@ export function InvitePeople({ inviteLink, invitedEmails, canInvite, onInvite }:
         onClick={() => void copyLink()}
         title="Copy the invite link for people already invited"
       >
-        {copied ? '✓ Invite link copied' : 'Copy invite link'}
+        {copied ? <><Icon name="check" size={16} /> Invite link copied</> : 'Copy invite link'}
       </button>
 
       {/* Sharing the link is open to everyone — it only admits people already on

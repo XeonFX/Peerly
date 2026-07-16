@@ -1,5 +1,5 @@
 import type { useCollab } from '../hooks/useCollab'
-import type { Channel, ConnectionStatus, FileTransfer, Message, Peer, SharedFile, UserProfile } from '../types'
+import type { Channel, ConnectionStatus, FileTransfer, Message, P2pCapability, Peer, SharedFile, UserProfile, WorkspaceSyncProgress } from '../types'
 
 export type CollabState = ReturnType<typeof useCollab>
 
@@ -9,6 +9,8 @@ export type ConnectionSlice = {
   connectionNotice: string | null
   relayOnline: boolean
   rtcPeerCount: number
+  p2pCapability: P2pCapability
+  retryP2pCapability: () => void
   relayUrls: string[]
   isReady: boolean
 }
@@ -22,6 +24,10 @@ export type ChatSlice = {
   totalUnread: number
   sendMessage: (text: string) => void
   sendFile: (file: File) => Promise<void>
+  requestFile: (file: SharedFile, channelId: string) => Promise<void>
+  /** Persist a screening verdict so a file is classified once per device. */
+  markFileNsfw: (fileId: string, nsfw: boolean) => void
+  syncProgress: WorkspaceSyncProgress
 }
 
 export type MediaSlice = {

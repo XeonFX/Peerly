@@ -14,6 +14,7 @@ import {
   type IdentityProviderId,
 } from './identityProviders'
 import { verifyOidcIdToken, type JwksFetcher, type OidcIdTokenClaims } from './oidcIdToken'
+import { signedMessageBytes, type SignedFields } from './messageSigning'
 import { createIdentityHandshake } from './identityHandshake'
 import { generateWorkspaceId, type WorkspaceAccess, type WorkspaceInvite } from './inviteLink'
 
@@ -68,6 +69,19 @@ export class WorkspaceAuthManager {
     return this.identity.publicKeyId()
   }
 
+  /** Sign a message's fields with this device's key — see collab/messageSigning. */
+  async signMessage(
+    fields: Omit<SignedFields, 'senderDeviceKeyId'>
+  ): Promise<{ senderDeviceKeyId: DeviceKeyId; signature: string }> {
+    const senderDeviceKeyId = await this.deviceKeyId()
+    return {
+      senderDeviceKeyId,
+      signature: await this.identity.sign(
+        signedMessageBytes({ ...fields, senderDeviceKeyId })
+      ),
+    }
+  }
+
   async verifyAndStoreIdToken(
     token: string,
     providerId: IdentityProviderId
@@ -107,7 +121,7 @@ export class WorkspaceAuthManager {
   }
 
   buildPeerHandshake(handlers?: {
-    onPeerVerified?: (peerId: string, claims: OidcIdTokenClaims) => void
+    onPeerVerified?: (peerId: string, claims: OidcIdTokenClaims, deviceKeyId: DeviceKeyId) => void
     onAllowListUpdated?: (list: SignedAllowList) => void
   }): PeerHandshake {
     return createIdentityHandshake({
@@ -127,6 +141,7 @@ export class WorkspaceAuthManager {
         getE2eProvider(providerId) ?? getIdentityProvider(providerId),
       fetchJwks: this.fetchJwks,
       creatorKeyId: this.config.creatorKeyId,
+      getKnownAllowList: () => this.allowList,
       onPeerVerified: handlers?.onPeerVerified,
       onAllowListSeen: list => {
         void verifyAllowList(list, this.config.creatorKeyId).then(valid => {
@@ -163,14 +178,12 @@ export class WorkspaceAuthManager {
    * presents the newer list during its handshake, everyone verifies it against
    * the same `creatorKeyId`, and `newerAllowList` adopts it.
    *
-   * There is deliberately no removeMembers(). Adding works because a signed list
-   * is a *capability* — showing a newer one that includes you gets you in. That
-   * same property makes removal ineffective: the handshake authorizes a peer
-   * against the list they present, so anyone once invited keeps a validly signed
-   * list naming them and can present it forever. Real revocation needs the
-   * handshake to judge peers against the newest list *we* know rather than the
-   * one they hand us, and even then only for peers who have seen the update.
-   * Offering a remove button today would imply a guarantee that does not exist.
+   * Removal exists but is honest about its limits: the handshake judges peers
+   * against the newest list a device knows (see identityHandshake), so members
+   * who receive the re-signed list stop admitting the removed member. A removed
+   * member and a member who never saw the update can still pair — nothing short
+   * of a server can prevent that. Already-open connections are not torn down;
+   * removal takes effect at the next handshake.
    */
   async addMembers(emails: string[]): Promise<SignedAllowList> {
     if (!(await this.canInvite())) {
@@ -180,6 +193,21 @@ export class WorkspaceAuthManager {
     }
 
     const next = await signAllowList(this.identity, [...this.allowList.emails, ...emails])
+    this.allowList = next
+    return next
+  }
+
+  /** Re-sign the allow-list without `emails`. Same signer rules as addMembers. */
+  async removeMembers(emails: string[]): Promise<SignedAllowList> {
+    if (!(await this.canInvite())) {
+      throw new Error(
+        'Only the workspace creator can remove people, and only from the device that created it.'
+      )
+    }
+    const drop = new Set(emails.map(email => email.toLowerCase()))
+    const remaining = this.allowList.emails.filter(email => !drop.has(email.toLowerCase()))
+    if (remaining.length === this.allowList.emails.length) return this.allowList
+    const next = await signAllowList(this.identity, remaining)
     this.allowList = next
     return next
   }

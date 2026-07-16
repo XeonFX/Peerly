@@ -28,8 +28,33 @@ import {
   saveSession,
   type Session,
 } from '../session'
+import {
+  clearWorkspaceFiles,
+  estimateWorkspacesUsage,
+  formatUsage,
+  type WorkspaceUsage,
+} from '../utils/workspaceUsage'
 import { Avatar } from './Avatar'
 import { IdentityLoginButtons, type SignedInIdentity } from './IdentityLoginButtons'
+import peerlyBrand from '../assets/peerly-brand.webp'
+import { useBrowserStorage } from '../hooks/useBrowserStorage'
+import { BrowserStorageCard } from './BrowserStorageCard'
+import { ThemeToggle } from './ThemeToggle'
+import { useP2pCapability } from '../hooks/useP2pCapability'
+import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
+import { Icon } from './Icon'
+
+function WorkspaceUsageBadge({ usage }: { usage: WorkspaceUsage | undefined }) {
+  if (!usage) return null
+  return (
+    <span
+      className="shrink-0 font-mono text-[0.65rem] text-base-content/40"
+      title={`${formatUsage(usage.messagesBytes)} messages + ${formatUsage(usage.filesBytes)} in ${usage.fileCount} cached file${usage.fileCount === 1 ? '' : 's'}`}
+    >
+      {formatUsage(usage.totalBytes)} on device · {formatUsage(usage.sharedFilesBytes)} shared
+    </span>
+  )
+}
 
 function WorkspacePickerAvatar({ workspace }: { workspace: StoredWorkspace }) {
   const [preview, setPreview] = useState<string>()
@@ -74,6 +99,8 @@ function restoreSignedInIdentity(): SignedInIdentity | null {
 }
 
 export function JoinScreen({ onJoined }: Props) {
+  const browserStorage = useBrowserStorage()
+  const { capability: p2pCapability } = useP2pCapability()
   const saved = loadPersistedSession()
   const [mode, setMode] = useState<Mode>('create')
   const [workspaceName, setWorkspaceName] = useState(saved?.workspaceName ?? 'My team')
@@ -88,6 +115,23 @@ export function JoinScreen({ onJoined }: Props) {
   const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null)
   const [signedIn, setSignedIn] = useState<SignedInIdentity | null>(() => restoreSignedInIdentity())
   const [myWorkspaces, setMyWorkspaces] = useState<StoredWorkspace[]>([])
+  const [usageRefresh, setUsageRefresh] = useState(0)
+  const [workspaceUsages, setWorkspaceUsages] = useState<Map<string, WorkspaceUsage>>(new Map())
+
+  // One pass for every badge: per-badge estimation re-parsed all histories
+  // once per workspace (O(n^2) on the picker).
+  useEffect(() => {
+    if (myWorkspaces.length === 0) return
+    let cancelled = false
+    void estimateWorkspacesUsage(myWorkspaces.map(workspace => workspace.workspaceId)).then(
+      usages => {
+        if (!cancelled) setWorkspaceUsages(usages)
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [myWorkspaces, usageRefresh])
   const authManagerRef = useRef(
     new WorkspaceAuthManager({
       workspaceId: 'pending',
@@ -275,17 +319,23 @@ export function JoinScreen({ onJoined }: Props) {
   // that cannot be submitted only invites people to fill them in and fail.
   if (!signedIn) {
     return (
-      <div className="join-screen flex min-h-full items-center justify-center p-4">
-        <div className="join-card w-full max-w-md space-y-5">
+      <div className="join-screen flex min-h-full items-center justify-center p-4 sm:p-6">
+        <div className="fixed right-4 top-4 z-20"><ThemeToggle compact /></div>
+        <div className="join-auth-layout w-full max-w-5xl overflow-hidden rounded-[2rem] border border-base-300/70 bg-base-100/80 shadow-2xl shadow-violet-950/10 backdrop-blur-xl">
+          <section className="brand-showcase hidden lg:flex">
+            <img src={peerlyBrand} alt="Peerly — serverless team collaboration" className="brand-showcase-image" />
+            <div className="brand-showcase-copy">
+              <span className="brand-kicker">Private by design</span>
+              <h2>Your team space, directly between your devices.</h2>
+              <p>No message or file server in the middle. Invite-only workspaces connect through verified identities.</p>
+            </div>
+          </section>
+
+          <div className="join-card w-full space-y-5 p-5 sm:p-8 lg:p-10">
           <header className="space-y-2 text-center">
             <div className="join-logo flex items-center justify-center gap-2">
-              <img
-                src="/app-icon.png"
-                alt=""
-                className="logo-icon h-8 w-8 rounded-xl"
-                aria-hidden="true"
-              />
-              <h1 className="text-3xl font-semibold tracking-tight">{APP_NAME}</h1>
+              <span className="brand-mark" aria-hidden="true"><img src={peerlyBrand} alt="" /></span>
+              <h1 className="brand-wordmark text-3xl font-semibold tracking-tight">{APP_NAME}</h1>
             </div>
             <p className="text-sm text-base-content/60">
               Serverless team collaboration — chat, video, and files, peer-to-peer.
@@ -315,12 +365,14 @@ export function JoinScreen({ onJoined }: Props) {
             flows. Sign in with the account you were invited with — a different provider or email
             counts as a different person.
           </p>
+          <P2pCapabilityIndicator capability={p2pCapability} rtcPeerCount={0} compact />
           <p
             className="text-center font-mono text-[0.7rem] text-base-content/35"
             data-testid="app-version"
           >
             {appBuildLabel()}
           </p>
+          </div>
         </div>
       </div>
     )
@@ -328,21 +380,27 @@ export function JoinScreen({ onJoined }: Props) {
 
   return (
     <div className="join-screen flex min-h-full items-center justify-center p-4">
-      <div className="join-card w-full max-w-md space-y-5">
+      <div className="fixed right-4 top-4 z-20"><ThemeToggle compact /></div>
+      <div className="join-card w-full max-w-2xl space-y-5">
         <header className="space-y-2 text-center">
           <div className="join-logo flex items-center justify-center gap-2">
-            <img
-              src="/app-icon.png"
-              alt=""
-              className="logo-icon h-7 w-7 rounded-xl"
-              aria-hidden="true"
-            />
-            <h1 className="text-2xl font-semibold tracking-tight">{APP_NAME}</h1>
+            <span className="brand-mark brand-mark-sm" aria-hidden="true"><img src={peerlyBrand} alt="" /></span>
+            <h1 className="brand-wordmark text-2xl font-semibold tracking-tight">{APP_NAME}</h1>
           </div>
         </header>
 
         {/* Who you are, first — it decides which workspaces appear below. */}
         {identitySection}
+
+        <BrowserStorageCard
+          estimate={browserStorage.estimate}
+          pressure={browserStorage.pressure}
+          onRefresh={() => void browserStorage.refresh(true)}
+          onRequestPersistence={browserStorage.requestPersistence}
+          requestingPersistence={browserStorage.requestingPersistence}
+        />
+
+        <P2pCapabilityIndicator capability={p2pCapability} rtcPeerCount={0} compact />
 
         {inviteBanner}
 
@@ -365,10 +423,35 @@ export function JoinScreen({ onJoined }: Props) {
                       <WorkspacePickerAvatar workspace={workspace} />
                       <span className="truncate text-sm font-medium">{workspace.workspaceName}</span>
                     </span>
-                    <span className="shrink-0 text-xs text-base-content/50">
-                      {workspace.allowList.emails.length} member
-                      {workspace.allowList.emails.length === 1 ? '' : 's'}
+                    <span className="flex shrink-0 items-center gap-2">
+                      <WorkspaceUsageBadge usage={workspaceUsages.get(workspace.workspaceId)} />
+                      <span className="text-xs text-base-content/50">
+                        {workspace.allowList.emails.length} member
+                        {workspace.allowList.emails.length === 1 ? '' : 's'}
+                      </span>
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-square btn-sm text-base-content/40 hover:text-warning"
+                    title="Free local space by removing cached full-size files. Messages and previews stay available."
+                    aria-label={`Free local space for ${workspace.workspaceName}`}
+                    data-testid={`clear-workspace-${workspace.workspaceName}`}
+                    disabled={busy}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          `Remove cached full-size files for "${workspace.workspaceName}"? Messages and previews stay, and originals can be fetched again while a peer has them.`
+                        )
+                      ) {
+                        return
+                      }
+                      void clearWorkspaceFiles(workspace.workspaceId).then(() =>
+                        setUsageRefresh(token => token + 1)
+                      )
+                    }}
+                  >
+                    <Icon name="broom" />
                   </button>
                   <button
                     type="button"
@@ -381,7 +464,7 @@ export function JoinScreen({ onJoined }: Props) {
                       setMyWorkspaces(workspacesForEmail(signedIn.email))
                     }}
                   >
-                    ✕
+                    <Icon name="x" />
                   </button>
                 </li>
               ))}

@@ -6,10 +6,12 @@ import { APP_ID, buildRoomId } from '../config'
 import { routeDmChannel } from '../collab/dmStore'
 import { FileCache } from '../collab/fileCache'
 import type { ChatPayload } from '../protocol/types'
-import type { Message, UserProfile } from '../types'
+import type { Message, SharedFile, UserProfile } from '../types'
+import { estimateBrowserStorageCached, hasRoomForWrite } from '../utils/browserStorage'
+import { sanitizeHistoryEntries, type SignedFields } from '../collab/messageSigning'
 import { buildSenderDirectory } from '../utils/senderDirectory'
 import { useLatest } from './useLatest'
-import { chatPayloadToMessage, createChatPayload } from './collab/wireRoomProtocol'
+import { chatPayloadToMessage, clampMessageText, createChatPayload } from './collab/wireRoomProtocol'
 import type { RoomProtocolHandlers } from './collab/wireRoomProtocol'
 import { useChannelSync } from './collab/useChannelSync'
 import { useUnreadCounts } from './collab/useUnreadCounts'
@@ -45,6 +47,10 @@ export function useCollab(
      * else. (Relayed history stays best-effort; it is unsigned either way.)
      */
     resolvePeerUserId?: (peerId: string) => string | undefined
+    /** Signs outgoing messages; see collab/messageSigning. */
+    signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
+    /** Live-handshake key→user bindings for verifying relayed history. */
+    getBoundUserId?: (deviceKeyId: string) => string | undefined
   }
 ) {
   const roomId = buildRoomId(workspaceId)
@@ -108,33 +114,46 @@ export function useCollab(
   const channelSync = useChannelSync(workspaceId, onChannelsChange)
   const { bindChannelAction, unbindChannelAction } = channelSync
   const channelStore = useMultiChannelStore(workspaceId, activeChannelId, fileCache, channelIds)
-  const { resetWorkspace, appendMessage, syncSenderProfiles } = channelStore
+  const { resetWorkspace, appendMessage, syncSenderProfiles, setFileNsfw } = channelStore
   const files = useFileTransfer(
     activeChannelId,
     profileRef,
+    identityRef,
     fileCache,
     channelStore.blobUrls,
-    channelStore.upsertFileMessage
+    channelStore.upsertFileMessage,
+    setFileNsfw
   )
   const {
     reset: resetFileTransfer,
     bindFileAction,
     bindFileRequestAction,
+    bindFileMetaAction,
     unbindFileAction,
     unbindFileRequestAction,
+    unbindFileMetaAction,
     sendFile: sendFileTransfer,
   } = files
+  const sanitizeEntries = useCallback(
+    (entries: Parameters<typeof sanitizeHistoryEntries>[0]) =>
+      sanitizeHistoryEntries(entries, deviceKeyId =>
+        identityRef.current?.getBoundUserId?.(deviceKeyId)
+      ),
+    []
+  )
   const history = useHistorySync(
     channelStore.getHistoryEntries,
     channelStore.applyHistory,
     channelIds,
-    files.requestFilesFromPeers
+    files.requestFilesFromPeers,
+    sanitizeEntries
   )
   const {
     reset: resetHistory,
     syncFromPeers,
     bindHistoryAction,
     unbindHistoryAction,
+    progress: syncProgress,
   } = history
   const video = useVideoCall(room)
   const { reset: resetVideo } = video
@@ -176,6 +195,7 @@ export function useCollab(
     onChat: () => {},
     onFileProgress: () => {},
     onFile: () => {},
+    onFileMeta: () => {},
     onHistoryRequest: () => [],
     onFileRequest: () => {},
     onPeerJoin: () => {},
@@ -220,7 +240,21 @@ export function useCollab(
       if (route.kind === 'dm' && meta.senderId !== route.peerId && meta.senderId !== selfId) {
         return
       }
-      files.handleFileReceived(data, meta)
+      files.handleFileReceived(data, {
+        ...meta,
+        senderUserId: identityRef.current?.resolvePeerUserId?.(meta.senderId),
+      })
+    },
+    onFileMeta: (meta, peerId) => {
+      const route = routeDmChannel(meta.channelId, selfId)
+      if (route.kind === 'foreign-dm') return
+      if (route.kind === 'dm' && peerId !== route.peerId) return
+      // Same rule as onChat: the durable id comes from the peer's verified
+      // handshake or not at all — never from the payload.
+      void files.handleFileMeta(
+        { ...meta, senderUserId: identityRef.current?.resolvePeerUserId?.(peerId) },
+        peerId
+      )
     },
     onHistoryRequest: channelId => channelStore.getHistoryEntries(channelId),
     onFileRequest: (fileIds, peerId) => {
@@ -292,6 +326,7 @@ export function useCollab(
       onChat: (...args) => handlersRef.current.onChat(...args),
       onFileProgress: (...args) => handlersRef.current.onFileProgress(...args),
       onFile: (...args) => handlersRef.current.onFile(...args),
+      onFileMeta: (...args) => handlersRef.current.onFileMeta(...args),
       onHistoryRequest: channelId => handlersRef.current.onHistoryRequest(channelId),
       onFileRequest: (...args) => handlersRef.current.onFileRequest(...args),
       onPeerJoin: (...args) => handlersRef.current.onPeerJoin(...args),
@@ -305,6 +340,7 @@ export function useCollab(
       bindChatAction,
       bindProfileAction,
       bindFileAction,
+      bindFileMetaAction,
       bindHistoryAction,
       bindChannelAction,
       bindFileRequestAction,
@@ -316,6 +352,7 @@ export function useCollab(
       unbindChatAction()
       unbindProfileAction()
       unbindFileAction()
+      unbindFileMetaAction()
       unbindFileRequestAction()
       unbindHistoryAction()
       unbindChannelAction()
@@ -327,7 +364,9 @@ export function useCollab(
     bindProfileAction,
     unbindProfileAction,
     bindFileAction,
+    bindFileMetaAction,
     unbindFileAction,
+    unbindFileMetaAction,
     bindFileRequestAction,
     unbindFileRequestAction,
     bindHistoryAction,
@@ -338,7 +377,9 @@ export function useCollab(
   ])
 
   const sendMessage = useCallback(
-    (text: string) => {
+    (rawText: string) => {
+      const text = clampMessageText(rawText)
+      if (!text) return
       const channelId = activeChannelRef.current
       const route = routeDmChannel(channelId, selfId)
       // Never broadcast a message meant for a DM we can't resolve a peer for.
@@ -352,8 +393,27 @@ export function useCollab(
         identityRef.current?.selfUserId
       )
       const target = route.kind === 'dm' ? route.peerId : undefined
-      void sendChatPayload(payload, target ? { target } : undefined)
-      appendMessage(chatPayloadToMessage(payload), senderDirectoryRef.current)
+
+      // Sign before anything leaves or persists, so our local copy is the same
+      // relayable artifact peers will verify (~1–2 ms; see messageSigning).
+      void (async () => {
+        const signer = identityRef.current?.signMessage
+        const signed = signer
+          ? {
+              ...payload,
+              ...(await signer({
+                id: payload.id,
+                type: 'text',
+                text: payload.text,
+                senderUserId: payload.senderUserId,
+                timestamp: payload.timestamp,
+                channelId: payload.channelId,
+              })),
+            }
+          : payload
+        void sendChatPayload(signed, target ? { target } : undefined)
+        appendMessage(chatPayloadToMessage(signed), senderDirectoryRef.current)
+      })()
     },
     // The narrow deps are the point: `channelStore` and `chatAction` are fresh
     // objects every render, and depending on them made sendMessage — and with
@@ -373,6 +433,31 @@ export function useCollab(
       await sendFileTransfer(file, appendChannelMessage)
     },
     [appendChannelMessage, sendFileTransfer]
+  )
+
+  const requestFile = useCallback(
+    async (file: SharedFile, channelId: string) => {
+      if (file.url) return
+      const estimate = await estimateBrowserStorageCached()
+      if (!hasRoomForWrite(estimate, file.size)) {
+        files.reportFileError('Not enough browser storage for this file. Free local space and try again.')
+        return
+      }
+      // A DM attachment is asked for from the DM peer alone: broadcasting the
+      // request tells every member a DM contains a file with that hash.
+      const route = routeDmChannel(channelId, selfId)
+      if (route.kind === 'foreign-dm') return
+      const connected = room ? Object.keys(room.getPeers()) : []
+      const peerIds =
+        route.kind === 'dm' ? connected.filter(id => id === route.peerId) : connected
+      if (peerIds.length === 0) {
+        files.reportFileError('This original is waiting for a peer who has it.')
+        return
+      }
+      files.reportFileError(null)
+      await files.requestFilesFromPeers(peerIds, [file.id])
+    },
+    [files, room]
   )
 
   const sharedFiles = useMemo(
@@ -398,6 +483,8 @@ export function useCollab(
     connectionNotice: connection.connectionNotice,
     relayOnline: connection.relayOnline,
     rtcPeerCount: connection.rtcPeerCount,
+    p2pCapability: connection.p2pCapability,
+    retryP2pCapability: connection.retryP2pCapability,
     relayUrls: connection.relayUrls,
     isReady: connection.isReady,
     inCall: video.inCall,
@@ -408,6 +495,9 @@ export function useCollab(
     mediaError: video.mediaError,
     sendMessage,
     sendFile,
+    requestFile,
+    markFileNsfw: setFileNsfw,
+    syncProgress,
     startCall: video.startCall,
     endCall: video.endCall,
     toggleVideo: video.toggleVideo,

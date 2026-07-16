@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Peer } from '../types'
 import { getPeerColor } from '../config'
 import { safeColor } from '../utils/profileSanitize'
+import { isProbablyNsfwElement } from '../collab/nsfwGate'
+import { Icon } from './Icon'
 
 type Props = {
   localStream: MediaStream | null
@@ -27,6 +29,10 @@ function VideoTile({
   color?: string
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [flagged, setFlagged] = useState(false)
+  const [revealed, setRevealed] = useState(false)
+  const flaggedRef = useRef(false)
+  flaggedRef.current = flagged
 
   useEffect(() => {
     if (videoRef.current) {
@@ -34,7 +40,56 @@ function VideoTile({
     }
   }, [stream])
 
+  useEffect(() => {
+    if (muted) return
+    let cancelled = false
+    let running = false
+    let timer: number | undefined
+    // Back off after repeatedly-clean frames: a feed that has been fine for a
+    // while rarely flips, and per-tile inference every 3s for a whole call was
+    // the app's largest sustained main-thread cost. Any flag stops the loop
+    // (flags are sticky until the user reveals).
+    let cleanRuns = 0
+    const delayFor = () => (cleanRuns < 5 ? 3_000 : cleanRuns < 10 ? 10_000 : 30_000)
+    const schedule = (delay: number) => {
+      if (cancelled || flaggedRef.current) return
+      timer = window.setTimeout(() => void check(), delay)
+    }
+    const check = async () => {
+      const video = videoRef.current
+      if (cancelled || flaggedRef.current) return
+      if (
+        running ||
+        !video ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        document.visibilityState !== 'visible' ||
+        video.offsetParent === null
+      ) {
+        schedule(delayFor())
+        return
+      }
+      running = true
+      try {
+        if (await isProbablyNsfwElement(video)) {
+          setFlagged(true)
+          return
+        }
+        cleanRuns++
+      } finally {
+        running = false
+      }
+      schedule(delayFor())
+    }
+    schedule(1_000)
+    return () => {
+      cancelled = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [muted, stream])
+
   const hasVideo = stream.getVideoTracks().some(t => t.enabled)
+
+  const hidden = flagged && !revealed
 
   return (
     <div className="relative aspect-video overflow-hidden rounded-lg bg-base-300">
@@ -44,7 +99,7 @@ function VideoTile({
           autoPlay
           playsInline
           muted={muted}
-          className="h-full w-full object-cover"
+          className={`h-full w-full object-cover transition duration-200 ${hidden ? 'scale-110 blur-2xl' : ''}`}
         />
       ) : (
         <div
@@ -58,6 +113,19 @@ function VideoTile({
         {label}
         {muted ? ' (you)' : ''}
       </span>
+      {hidden && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/55 p-3 text-center text-white">
+          <Icon name="shield" size={20} />
+          <strong className="text-xs">Sensitive video hidden</strong>
+          <button
+            type="button"
+            className="btn btn-xs border-white/30 bg-white/15 text-white hover:bg-white/25"
+            onClick={() => setRevealed(true)}
+          >
+            Reveal stream
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -111,7 +179,7 @@ export function VideoCall({
           aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
           aria-pressed={!videoEnabled}
         >
-          <span aria-hidden="true">{videoEnabled ? '📹' : '🚫'}</span>
+          <Icon name={videoEnabled ? 'video' : 'video-off'} />
         </button>
         <button
           className={`btn btn-sm btn-circle ${audioEnabled ? 'btn-ghost' : 'btn-error'}`}
@@ -120,7 +188,7 @@ export function VideoCall({
           aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
           aria-pressed={!audioEnabled}
         >
-          <span aria-hidden="true">{audioEnabled ? '🎤' : '🔇'}</span>
+          <Icon name={audioEnabled ? 'mic' : 'mic-off'} />
         </button>
         <button className="btn btn-sm btn-error" onClick={onEnd}>
           End call

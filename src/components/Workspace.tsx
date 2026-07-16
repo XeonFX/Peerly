@@ -15,12 +15,15 @@ import {
   useWorkspaceSlice,
 } from '../context/useCollabSlices'
 import type { PeerHandshake } from '@trystero-p2p/core'
+import type { SignedFields } from '../collab/messageSigning'
 import { encodeInviteLink } from '../collab/inviteLink'
+import { useBrowserStorage } from '../hooks/useBrowserStorage'
 import type { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { rememberWorkspace, snapshotWorkspace } from '../collab/workspaceStore'
 import { sessionProfile, type Session } from '../session'
 import type { Channel, Peer, UserProfile } from '../types'
 import { FilesPanel } from './FilesPanel'
+import { StoragePressureBanner } from './BrowserStorageCard'
 import { Sidebar } from './Sidebar'
 import { ChannelPanel } from './workspace/ChannelPanel'
 import { ProfilePanel } from './workspace/ProfilePanel'
@@ -31,6 +34,8 @@ type Props = {
   peerHandshake?: PeerHandshake
   /** Handshake-verified peerId -> durable user id. See useWorkspaceAuth. */
   resolvePeerUserId?: (peerId: string) => string | undefined
+  signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
+  getBoundUserId?: (deviceKeyId: string) => string | undefined
   /** Needed to re-sign the allow-list when inviting; only the creator's device can. */
   authManager: WorkspaceAuthManager | null
   onSessionChange: (patch: Partial<Session>) => void
@@ -45,6 +50,7 @@ function WorkspaceShell({
   showFiles,
   canInvite,
   onInvite,
+  onRemoveMember,
   sidebarOpen,
   onSidebarOpenChange,
   onChannelSelect,
@@ -64,6 +70,7 @@ function WorkspaceShell({
   showFiles: boolean
   canInvite: boolean
   onInvite: (emails: string[]) => Promise<void>
+  onRemoveMember: (email: string) => Promise<void>
   sidebarOpen: boolean
   onSidebarOpenChange: (open: boolean) => void
   onChannelSelect: (id: string) => void
@@ -77,8 +84,17 @@ function WorkspaceShell({
   onWorkspaceAvatarClear: () => void
 }) {
   const { announceChannel } = useWorkspaceSlice()
-  const { connectionStatus, relayOnline, rtcPeerCount, relayUrls } = useConnectionSlice()
-  const { sharedFiles, transfers, unreadByChannel } = useChatSlice()
+  const {
+    connectionStatus,
+    connectionError,
+    relayOnline,
+    rtcPeerCount,
+    relayUrls,
+    p2pCapability,
+    retryP2pCapability,
+  } = useConnectionSlice()
+  const { sharedFiles, transfers, unreadByChannel, requestFile } = useChatSlice()
+  const browserStorage = useBrowserStorage(transfers.length > 0)
   const { selfId, profile, peers } = useProfileSlice()
   const channel = getChannelById(channels, activeChannel)
 
@@ -128,6 +144,8 @@ function WorkspaceShell({
         canInvite={canInvite}
         invitedEmails={session.allowList.emails}
         onInvite={onInvite}
+        onRemoveMember={onRemoveMember}
+        selfEmail={session.identityEmail}
         channels={channels}
         activeChannel={activeChannel}
         activeView={activeView}
@@ -136,6 +154,8 @@ function WorkspaceShell({
         connectionStatus={connectionStatus}
         relayOnline={relayOnline}
         rtcPeerCount={rtcPeerCount}
+        p2pCapability={p2pCapability}
+        connectionError={connectionError}
         relayUrls={relayUrls}
         onChannelSelect={selectAndClose}
         onAddChannel={handleAddChannel}
@@ -153,6 +173,11 @@ function WorkspaceShell({
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
+        <StoragePressureBanner
+          pressure={browserStorage.pressure}
+          availableBytes={browserStorage.estimate.availableBytes}
+          onManage={onWorkspaceSettings}
+        />
         {activeView === 'profile' ? (
           <ProfilePanel
             workspace={session.workspaceName}
@@ -167,9 +192,15 @@ function WorkspaceShell({
           />
         ) : activeView === 'workspace' ? (
           <WorkspaceSettingsPanel
+            workspaceId={session.workspaceId}
             workspaceName={session.workspaceName}
             workspaceAvatar={session.workspaceAvatar}
             workspaceAvatarId={session.workspaceAvatarId}
+            browserStorage={browserStorage}
+            p2pCapability={p2pCapability}
+            rtcPeerCount={rtcPeerCount}
+            connectionError={connectionError}
+            onRetryP2p={retryP2pCapability}
             onNameChange={onWorkspaceNameChange}
             onAvatarChange={onWorkspaceAvatarChange}
             onAvatarClear={onWorkspaceAvatarClear}
@@ -178,7 +209,6 @@ function WorkspaceShell({
         ) : (
           <ChannelPanel
             channel={channel}
-            workspaceProtected
             onToggleFiles={onToggleFiles}
             showFiles={showFiles}
             onOpenSidebar={() => onSidebarOpenChange(true)}
@@ -187,21 +217,23 @@ function WorkspaceShell({
       </main>
 
       {activeView === 'channel' && showFiles && (
-        <FilesPanel files={sharedFiles} transfers={transfers} />
+        <FilesPanel
+          files={sharedFiles}
+          transfers={transfers}
+          onRequestFile={file => requestFile(file, activeChannel)}
+        />
       )}
     </div>
   )
 }
 
-export function Workspace({ session, peerHandshake, resolvePeerUserId, authManager, onSessionChange, onLeave }: Props) {
+export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessage, getBoundUserId, authManager, onSessionChange, onLeave }: Props) {
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
   const [activeChannel, setActiveChannel] = useState(GENERAL_CHANNEL.id)
   const [activeView, setActiveView] = useState<'channel' | 'profile' | 'workspace'>('channel')
-  // The files panel is a third column on desktop but an overlay on phones, so
-  // defaulting it open there would bury the conversation behind it on load.
-  const [showFiles, setShowFiles] = useState(
-    () => typeof window === 'undefined' || window.innerWidth >= 1280
-  )
+  // Start with the conversation at full width. The files rail remains one click
+  // away and no longer opens as a large empty column in a new channel.
+  const [showFiles, setShowFiles] = useState(false)
   const [canInvite, setCanInvite] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -229,6 +261,17 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, authManag
     async (emails: string[]) => {
       if (!authManager) throw new Error('Workspace is still connecting — try again in a moment')
       const allowList = await authManager.addMembers(emails)
+      const next = { ...session, allowList }
+      onSessionChange({ allowList })
+      rememberWorkspace(snapshotWorkspace(next))
+    },
+    [authManager, onSessionChange, session]
+  )
+
+  const handleRemoveMember = useCallback(
+    async (email: string) => {
+      if (!authManager) throw new Error('Workspace is still connecting — try again in a moment')
+      const allowList = await authManager.removeMembers([email])
       const next = { ...session, allowList }
       onSessionChange({ allowList })
       rememberWorkspace(snapshotWorkspace(next))
@@ -277,6 +320,8 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, authManag
       peerHandshake={peerHandshake}
       selfUserId={session.identityUserId}
       resolvePeerUserId={resolvePeerUserId}
+      signMessage={signMessage}
+      getBoundUserId={getBoundUserId}
       onProfileChange={handleProfileChange}
       onChannelsChange={refreshChannels}
     >
@@ -288,6 +333,7 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, authManag
         showFiles={showFiles}
         canInvite={canInvite}
         onInvite={handleInvite}
+        onRemoveMember={handleRemoveMember}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
         onChannelSelect={openChannel}

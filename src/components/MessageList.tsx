@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react'
-import type { Message, Peer, UserProfile } from '../types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { FileTransfer, Message, Peer, SharedFile, UserProfile } from '../types'
 import { formatBytes, formatTime } from '../utils/format'
-import { isInlineImageType } from '../utils/fileType'
+import { isInlineImageType, isInlineVideoType } from '../utils/fileType'
+import { isProbablyNsfwUrlCached } from '../collab/nsfwGate'
 import { buildSenderDirectory, resolveSenderInfo } from '../utils/senderDirectory'
 import { Avatar } from './Avatar'
+import { Icon } from './Icon'
 
 type Props = {
   messages: Message[]
@@ -14,11 +16,129 @@ type Props = {
   pastSelfIds?: string[]
   selfProfile: UserProfile
   peers: Peer[]
+  transfers: FileTransfer[]
+  onRequestFile: (file: SharedFile, channelId: string) => Promise<void>
+  onNsfwVerdict: (fileId: string, nsfw: boolean) => void
 }
 
-// Not `mime.startsWith('image/')`: that matches image/svg+xml, which is a
-// script-capable document, not an image. See utils/fileType.
-const isImage = isInlineImageType
+function FileAttachment({
+  file,
+  transfer,
+  onRequest,
+  onNsfwVerdict,
+}: {
+  file: SharedFile
+  transfer?: FileTransfer
+  onRequest: (file: SharedFile) => Promise<void>
+  onNsfwVerdict: (fileId: string, nsfw: boolean) => void
+}) {
+  const [flagged, setFlagged] = useState(Boolean(file.nsfw))
+  const [revealed, setRevealed] = useState(false)
+  const source = file.url || file.thumbnail
+  const image = isInlineImageType(file.mimeType)
+  const video = isInlineVideoType(file.mimeType)
+
+  useEffect(() => {
+    // `undefined` means never screened; a stored true OR false is final —
+    // re-running the classifier on every mount was the app's biggest
+    // avoidable inference cost.
+    if (!source || !image || file.nsfw !== undefined) return
+    let cancelled = false
+    void isProbablyNsfwUrlCached(file.id, source).then(result => {
+      if (cancelled) return
+      if (result) setFlagged(true)
+      onNsfwVerdict(file.id, result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [file.id, file.nsfw, image, source, onNsfwVerdict])
+
+  const hidden = flagged && !revealed
+  const media = image ? (
+    <img
+      src={source}
+      alt={file.name}
+      className={`file-preview max-h-64 max-w-full transition duration-200 ${hidden ? 'scale-105 blur-2xl' : ''}`}
+    />
+  ) : video && file.url ? (
+    <video
+      src={file.url}
+      controls={!hidden}
+      preload="metadata"
+      className={`file-preview max-h-64 max-w-full transition duration-200 ${hidden ? 'scale-105 blur-2xl' : ''}`}
+    />
+  ) : null
+
+  return (
+    <div>
+      {media ? (
+        <div className="file-preview-shell relative inline-block max-w-full overflow-hidden rounded-xl border border-base-300 bg-base-200">
+          {file.url && image ? (
+            <a href={file.url} target="_blank" rel="noreferrer" tabIndex={hidden ? -1 : undefined}>
+              {media}
+            </a>
+          ) : (
+            media
+          )}
+          {!file.url && !hidden && (
+            <button
+              type="button"
+              className="absolute inset-x-0 bottom-0 flex w-full items-center justify-between gap-3 bg-linear-to-t from-black/85 to-transparent px-3 pb-2 pt-9 text-xs text-white"
+              onClick={() => void onRequest(file)}
+            >
+              <span>Preview</span>
+              <span>Download original · {formatBytes(file.size)}</span>
+            </button>
+          )}
+          {hidden && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/45 p-4 text-center text-white">
+              <Icon name="shield" size={22} />
+              <strong className="text-sm">Sensitive media hidden</strong>
+              <span className="text-xs text-white/75">Checked privately on this device</span>
+              <button type="button" className="btn btn-sm border-white/30 bg-white/15 text-white hover:bg-white/25" onClick={() => setRevealed(true)}>
+                Reveal
+              </button>
+            </div>
+          )}
+        </div>
+      ) : file.url ? (
+        <a
+          href={file.url}
+          download={file.name}
+          className="file-download inline-flex items-center gap-2.5 rounded-xl border border-base-300 bg-base-100 px-3 py-2.5 transition hover:border-primary/35 hover:shadow-sm"
+        >
+          <Icon name="paperclip" className="text-primary" />
+          <span className="flex min-w-0 flex-col">
+            <strong className="truncate text-sm font-medium">{file.name}</strong>
+            <span className="text-xs text-base-content/50">{formatBytes(file.size)} · Ready on this device</span>
+          </span>
+          <span className="ml-2 text-primary">Save</span>
+        </a>
+      ) : (
+        <button
+          type="button"
+          onClick={() => void onRequest(file)}
+          className="file-download inline-flex items-center gap-2.5 rounded-xl border border-base-300 bg-base-100 px-3 py-2.5 text-left transition hover:border-primary/35 hover:shadow-sm"
+        >
+          <Icon name="paperclip" className="text-primary" />
+          <span className="flex min-w-0 flex-col">
+            <strong className="truncate text-sm font-medium">{file.name}</strong>
+            <span className="text-xs text-base-content/50">{formatBytes(file.size)} · Download on demand</span>
+          </span>
+          <Icon name="download" size={17} className="ml-2 text-primary" />
+        </button>
+      )}
+
+      {transfer && (
+        <div className="mt-2 max-w-xs">
+          <progress className="progress progress-primary h-1.5 w-full" value={transfer.percent} max={1} />
+          <span className="text-[0.7rem] text-base-content/50">Receiving {Math.round(transfer.percent * 100)}%</span>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function MessageList({
   messages,
@@ -27,6 +147,9 @@ export function MessageList({
   pastSelfIds = [],
   selfProfile,
   peers,
+  transfers,
+  onRequestFile,
+  onNsfwVerdict,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const senderDirectory = useMemo(
@@ -42,14 +165,15 @@ export function MessageList({
     return (
       <div className="message-list flex flex-1 items-center justify-center p-6">
         <div className="max-w-sm text-center">
-          <span
-            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-base-300/70 bg-base-200/70 text-3xl shadow-lg shadow-black/10"
-            aria-hidden="true"
-          >
-            💬
-          </span>
-          <h3 className="mb-1 text-lg font-semibold">Start the conversation</h3>
-          <p className="text-sm text-base-content/50">
+          <div className="empty-state-art mx-auto mb-5" aria-hidden="true">
+            <span className="empty-state-orbit empty-state-orbit-one" />
+            <span className="empty-state-orbit empty-state-orbit-two" />
+            <span className="empty-state-icon">
+              <Icon name="message-circle" size={29} />
+            </span>
+          </div>
+          <h3 className="mb-1.5 text-lg font-semibold tracking-tight">Start the conversation</h3>
+          <p className="text-sm leading-relaxed text-base-content/50">
             Messages are sent directly peer-to-peer. No server stores your data.
           </p>
         </div>
@@ -87,29 +211,12 @@ export function MessageList({
                   <p className="break-words whitespace-pre-wrap">{msg.text}</p>
                 ) : msg.file ? (
                   <div className="mt-1">
-                    {isImage(msg.file.mimeType) ? (
-                      <a href={msg.file.url} target="_blank" rel="noreferrer">
-                        <img
-                          src={msg.file.url}
-                          alt={msg.file.name}
-                          className="file-preview max-h-64 max-w-full rounded-lg border border-base-300"
-                        />
-                      </a>
-                    ) : (
-                      <a
-                        href={msg.file.url}
-                        download={msg.file.name}
-                        className="file-download inline-flex items-center gap-2.5 rounded-lg border border-base-300 bg-base-200 px-3 py-2 transition-colors hover:border-primary/40 hover:bg-base-300"
-                      >
-                        <span aria-hidden="true">📎</span>
-                        <span className="flex min-w-0 flex-col">
-                          <strong className="truncate text-sm font-medium">{msg.file.name}</strong>
-                          <span className="text-xs text-base-content/50">
-                            {formatBytes(msg.file.size)}
-                          </span>
-                        </span>
-                      </a>
-                    )}
+                    <FileAttachment
+                      file={msg.file}
+                      transfer={transfers.find(t => t.id === msg.file?.id && t.direction === 'receive')}
+                      onRequest={file => onRequestFile(file, msg.channelId)}
+                      onNsfwVerdict={onNsfwVerdict}
+                    />
                   </div>
                 ) : null}
               </div>

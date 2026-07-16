@@ -1,6 +1,9 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { SignedAllowList } from '../collab/allowList'
+import { loadKeyBindings, rememberKeyBinding } from '../collab/keyBindings'
+import type { DeviceKeyId } from '../collab/deviceIdentity'
+import type { SignedFields } from '../collab/messageSigning'
 import { deriveUserId } from '../collab/userId'
 import { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { loadIdToken, loadIdentityProvider, type Session } from '../session'
@@ -18,6 +21,10 @@ export function useWorkspaceAuth(
    * claims about identity is attacker-controlled.
    */
   resolvePeerUserId: (peerId: string) => string | undefined
+  /** Sign message bytes with this device's key, or undefined pre-auth. */
+  signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
+  /** userId a device key was bound to in a live handshake — history's trust root. */
+  getBoundUserId: (deviceKeyId: DeviceKeyId) => string | undefined
 } {
   const onAllowListUpdatedRef = useRef(onAllowListUpdated)
   onAllowListUpdatedRef.current = onAllowListUpdated
@@ -46,19 +53,40 @@ export function useWorkspaceAuth(
   }, [manager, session?.allowList])
 
   const peerUserIdsRef = useRef(new Map<string, string>())
+  const keyBindingsRef = useRef<Record<string, string>>({})
 
   useEffect(() => {
     // New manager = new workspace (or re-auth): stale peer ids must not carry
-    // identities verified under the previous one.
+    // identities verified under the previous one. Key bindings reload from the
+    // per-workspace store instead of leaking across workspaces.
     peerUserIdsRef.current = new Map()
-  }, [manager])
+    keyBindingsRef.current = workspaceId ? loadKeyBindings(workspaceId) : {}
+  }, [manager, workspaceId])
+
+  // Bind our own key to our own durable id, so our messages relayed back to a
+  // fresh device of ours keep their identity claim.
+  const identityUserId = session?.identityUserId
+  useEffect(() => {
+    if (!manager || !workspaceId || !identityUserId) return
+    void manager.deviceKeyId().then(deviceKeyId => {
+      rememberKeyBinding(workspaceId, deviceKeyId, identityUserId)
+      keyBindingsRef.current[deviceKeyId] = identityUserId
+    })
+  }, [manager, workspaceId, identityUserId])
 
   const peerHandshake = useMemo(() => {
     if (!manager) return undefined
     return manager.buildPeerHandshake({
-      onPeerVerified: (peerId, claims) => {
+      onPeerVerified: (peerId, claims, deviceKeyId) => {
         void deriveUserId(claims.iss, claims.sub).then(userId => {
           peerUserIdsRef.current.set(peerId, userId)
+          // The one moment key, token, and possession-proof were all verified
+          // together — the only place a key↔user binding may be learned.
+          const boundWorkspaceId = sessionRef.current?.workspaceId
+          if (boundWorkspaceId) {
+            rememberKeyBinding(boundWorkspaceId, deviceKeyId, userId)
+            keyBindingsRef.current[deviceKeyId] = userId
+          }
         })
       },
       onAllowListUpdated: list => onAllowListUpdatedRef.current?.(list),
@@ -70,5 +98,15 @@ export function useWorkspaceAuth(
     []
   )
 
-  return { manager, peerHandshake, resolvePeerUserId }
+  const getBoundUserId = useCallback(
+    (deviceKeyId: DeviceKeyId) => keyBindingsRef.current[deviceKeyId],
+    []
+  )
+
+  const signMessage = useMemo(() => {
+    if (!manager) return undefined
+    return (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => manager.signMessage(fields)
+  }, [manager])
+
+  return { manager, peerHandshake, resolvePeerUserId, signMessage, getBoundUserId }
 }

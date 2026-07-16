@@ -8,10 +8,12 @@ import {
 } from '../../collab/constants'
 import { getConnectedRelayUrls, isRelayOnline } from '../../collab/relayHealth'
 import type { ConnectionStatus } from '../../types'
+import { useP2pCapability } from '../useP2pCapability'
 
 type Room = ReturnType<typeof joinRoom>
 
 export function useConnectionHealth(room: Room | null) {
+  const p2p = useP2pCapability()
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting')
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null)
@@ -95,6 +97,8 @@ export function useConnectionHealth(room: Room | null) {
     relayOnline,
     relayUrls,
     rtcPeerCount,
+    p2pCapability: p2p.capability,
+    retryP2pCapability: p2p.retry,
     setConnectionStatus,
     setConnectionError,
     setRtcPeerCount,

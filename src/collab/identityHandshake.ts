@@ -7,7 +7,7 @@ import {
   type IdentityProvider,
 } from './identityProviders'
 import { verifyOidcIdToken, type JwksFetcher, type OidcIdTokenClaims } from './oidcIdToken'
-import { isEmailAllowed, verifyAllowList, type SignedAllowList } from './allowList'
+import { isEmailAllowed, newerAllowList, verifyAllowList, type SignedAllowList } from './allowList'
 
 export const IDENTITY_DENIED_PREFIX = 'identity verification failed'
 
@@ -26,8 +26,17 @@ export type IdentityHandshakeDeps = {
   resolveProvider?: (providerId: string) => IdentityProvider | undefined
   /** Injectable for tests; overrides JWKS fetch for the google provider. */
   fetchJwks?: JwksFetcher
-  onPeerVerified?: (peerId: string, claims: OidcIdTokenClaims) => void
+  onPeerVerified?: (peerId: string, claims: OidcIdTokenClaims, deviceKeyId: DeviceKeyId) => void
   onAllowListSeen?: (list: SignedAllowList) => void
+  /**
+   * The newest creator-signed list this device holds. Authorization judges the
+   * peer against the newer of this and the list they present — a peer showing
+   * an old list that still names them is rejected once we hold a newer list
+   * that does not. This is what makes removal real for updated members; a
+   * removed member and a member who never saw the update can still pair, which
+   * is the honest limit of revocation without a server.
+   */
+  getKnownAllowList?: () => SignedAllowList
 }
 
 /**
@@ -122,7 +131,9 @@ export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandsh
     if (!(await verifyAllowList(theirs.allowList, deps.creatorKeyId))) {
       deny('allow-list signature does not match this workspace')
     }
-    if (!isEmailAllowed(theirs.allowList, claims.email)) {
+    const known = deps.getKnownAllowList?.()
+    const effective = known ? newerAllowList(known, theirs.allowList) : theirs.allowList
+    if (!isEmailAllowed(effective, claims.email)) {
       deny(`${claims.email} is not on this workspace's invite list`)
     }
 
@@ -158,7 +169,7 @@ export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandsh
       deny('device key proof-of-possession failed (likely a replayed ID token)')
     }
 
-    deps.onPeerVerified?.(_peerId, claims)
+    deps.onPeerVerified?.(_peerId, claims, theirs.deviceKeyId)
     deps.onAllowListSeen?.(theirs.allowList)
   }
 }

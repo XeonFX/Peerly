@@ -23,6 +23,13 @@ const INLINE_IMAGE_TYPES = new Set([
   'image/bmp',
 ])
 
+const INLINE_VIDEO_TYPES = new Set([
+  'video/mp4',
+  'video/webm',
+  'video/ogg',
+  'video/quicktime',
+])
+
 export const DOWNLOAD_MIME_TYPE = 'application/octet-stream'
 
 function normalize(mime: string | undefined): string {
@@ -35,11 +42,18 @@ export function isInlineImageType(mime: string | undefined): boolean {
   return INLINE_IMAGE_TYPES.has(normalize(mime))
 }
 
+/** Common inert media containers that may be rendered by a sandboxed browser video element. */
+export function isInlineVideoType(mime: string | undefined): boolean {
+  return INLINE_VIDEO_TYPES.has(normalize(mime))
+}
+
 /**
  * The type a Blob may be created with. Anything not provably inert renders as a
  * download rather than a document.
  */
 export function safeFileMimeType(mime: string | undefined): string {
   const normalized = normalize(mime)
-  return INLINE_IMAGE_TYPES.has(normalized) ? normalized : DOWNLOAD_MIME_TYPE
+  return INLINE_IMAGE_TYPES.has(normalized) || INLINE_VIDEO_TYPES.has(normalized)
+    ? normalized
+    : DOWNLOAD_MIME_TYPE
 }
