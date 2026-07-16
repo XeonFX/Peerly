@@ -1,9 +1,10 @@
 name: Release @peerly/core
 
-# Manual publish of packages/core to npm via Trusted Publishing (OIDC).
-# Configure on npmjs.com: @peerly/core → Settings → Trusted publishing
-#   Organization: XeonFX  Repository: Peerly  Workflow: release-core.yml
-# Bump packages/core/package.json, merge to main, then run this workflow.
+# Publish @peerly/core via npm Trusted Publishing (OIDC).
+# npmjs.com → @peerly/core → Trusted publishing → XeonFX/Peerly / release-core.yml
+#
+# Real release: dry_run=false, bump=patch|minor|major → tests → bump versions →
+# publish → commit + tag on main. Dry run: no bump, no publish, no git changes.
 
 on:
   workflow_dispatch:
@@ -12,13 +13,22 @@ on:
         description: 'npm publish --dry-run (inspect, publish nothing)'
         type: boolean
         default: true
+      bump:
+        description: 'Semver bump before publish (ignored when dry_run=true)'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - none
+        default: patch
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write # Required for npm Trusted Publishing
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v5
 
@@ -40,7 +50,15 @@ jobs:
           npm run lint
           npm test
 
+      - name: Bump versions
+        if: inputs.dry_run != true && inputs.bump != 'none'
+        id: bump
+        run: |
+          node scripts/bump-version.mjs "${{ inputs.bump }}" packages/core/package.json package.json
+          npm install --package-lock-only
+
       - name: Publish
+        id: publish
         working-directory: packages/core
         run: |
           npm run build
@@ -50,3 +68,14 @@ jobs:
           else
             npm publish --access public
           fi
+
+      - name: Commit version bump and tag
+        if: inputs.dry_run != true && inputs.bump != 'none'
+        run: |
+          VERSION="${{ steps.bump.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/core/package.json package.json package-lock.json
+          git commit -m "chore: release @peerly/core v${VERSION}"
+          git tag "core-v${VERSION}"
+          git push origin HEAD:main --follow-tags

@@ -41,7 +41,8 @@
     "preview": "vite preview",
     "guard:bundle": "node scripts/guard-bundle.mjs",
     "check:csp": "node scripts/check-csp.mjs",
-    "check:relays": "node scripts/check-relays.mjs"
+    "check:relays": "node scripts/check-relays.mjs",
+    "test:bump": "node --test scripts/bump-version.test.mjs"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
