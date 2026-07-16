@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { buildDefines } from './build-info.mjs'
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 function relayPortPlugin() {
   return {
     name: 'relay-port',
@@ -22,7 +24,7 @@ function relayPortPlugin() {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), relayPortPlugin()],
+  plugins: [react(), tailwindcss(), relayPortPlugin(), cloudflare()],
   define: buildDefines(),
   resolve: {
     dedupe: ['@trystero-p2p/core'],
