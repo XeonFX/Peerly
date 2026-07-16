@@ -1,5 +1,4 @@
 import { useContext, type Context } from 'react'
-import type { CollabState } from './collabTypes'
 import {
   ChatContext,
   ConnectionContext,
@@ -35,14 +34,4 @@ export function useProfileSlice(): ProfileSlice {
 
 export function useWorkspaceSlice(): WorkspaceSlice {
   return useSlice(WorkspaceContext, 'useWorkspaceSlice')
-}
-
-/** @deprecated Prefer scoped hooks: useConnectionSlice, useChatSlice, useMediaSlice, useProfileSlice */
-export function useCollabContext(): CollabState {
-  const connection = useConnectionSlice()
-  const chat = useChatSlice()
-  const media = useMediaSlice()
-  const profile = useProfileSlice()
-  const workspace = useWorkspaceSlice()
-  return { ...connection, ...chat, ...media, ...profile, ...workspace }
 }

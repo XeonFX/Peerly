@@ -21,6 +21,9 @@ export const DEFAULT_USER_COLOR = '#36c5f0'
 
 export { GENERAL_CHANNEL } from './collab/channelStore'
 
+/** Fallback tile colour for workspace avatars (brand emerald). */
+export const WORKSPACE_COLOR = '#2eb67d'
+
 export const PEER_COLORS = [
   '#e01e5a',
   '#36c5f0',

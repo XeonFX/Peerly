@@ -9,7 +9,6 @@ export type ConnectionSlice = {
   connectionNotice: string | null
   relayOnline: boolean
   rtcPeerCount: number
-  roomId: string
   relayUrls: string[]
   isReady: boolean
 }
@@ -40,6 +39,8 @@ export type MediaSlice = {
 
 export type ProfileSlice = {
   selfId: string
+  /** Ids that were "me" in earlier sessions — see collab/selfIdRegistry. */
+  pastSelfIds: string[]
   profile: UserProfile
   peers: Peer[]
   updateProfile: (next: Partial<UserProfile> & { avatarId?: string }) => void

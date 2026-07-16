@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { isEmailAllowed } from '../collab/allowList'
-import { APP_NAME, appBuildLabel } from '../config'
+import { APP_NAME, appBuildLabel, WORKSPACE_COLOR } from '../config'
 import {
   decodeInviteFromHash,
   encodeInviteLink,
@@ -29,8 +29,6 @@ import {
 } from '../session'
 import { Avatar } from './Avatar'
 import { IdentityLoginButtons, type SignedInIdentity } from './IdentityLoginButtons'
-
-const WORKSPACE_COLOR = '#2eb67d'
 
 function WorkspacePickerAvatar({ workspace }: { workspace: StoredWorkspace }) {
   const [preview, setPreview] = useState<string>()

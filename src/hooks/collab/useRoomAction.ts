@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 
 type SendableAction<T> = {
   send: (data: T, options?: { target?: string }) => Promise<void>
@@ -23,5 +23,5 @@ export function useRoomAction<T>() {
     []
   )
 
-  return { bind, unbind, send }
+  return useMemo(() => ({ bind, unbind, send }), [bind, unbind, send])
 }

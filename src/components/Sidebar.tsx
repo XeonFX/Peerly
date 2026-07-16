@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { appBuildLabel } from '../config'
+import { appBuildLabel, WORKSPACE_COLOR } from '../config'
 import type { Channel, ConnectionStatus, Peer, UserProfile } from '../types'
 import { Avatar } from './Avatar'
 import { ConnectionStatus as ConnectionStatusLabel } from './ConnectionStatus'
@@ -74,8 +74,6 @@ function ChannelButton({
     </li>
   )
 }
-
-const WORKSPACE_COLOR = '#2eb67d'
 
 export function Sidebar({
   workspace,

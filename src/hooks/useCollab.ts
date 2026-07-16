@@ -1,5 +1,6 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
 import { selfId } from '../collab/identity'
+import { loadSelfIds, rememberSelfId } from '../collab/selfIdRegistry'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { APP_ID, buildRoomId } from '../config'
 import { routeDmChannel } from '../collab/dmStore'
@@ -36,6 +37,17 @@ export function useCollab(
   peerHandshake?: PeerHandshake
 ) {
   const roomId = buildRoomId(workspaceId)
+
+  // Ids that were "me" in earlier sessions of this workspace. The current id is
+  // registered for future sessions; this one resolves itself directly.
+  const pastSelfIds = useMemo(
+    () => loadSelfIds(workspaceId).filter(id => id !== selfId),
+    [workspaceId]
+  )
+  useEffect(() => {
+    rememberSelfId(workspaceId, selfId)
+  }, [workspaceId])
+
   const activeChannelRef = useRef(activeChannelId)
   activeChannelRef.current = activeChannelId
 
@@ -82,7 +94,7 @@ export function useCollab(
   const channelSync = useChannelSync(workspaceId, onChannelsChange)
   const { bindChannelAction, unbindChannelAction } = channelSync
   const channelStore = useMultiChannelStore(workspaceId, activeChannelId, fileCache, channelIds)
-  const { resetWorkspace } = channelStore
+  const { resetWorkspace, appendMessage, syncSenderProfiles } = channelStore
   const files = useFileTransfer(
     activeChannelId,
     profileRef,
@@ -96,6 +108,7 @@ export function useCollab(
     bindFileRequestAction,
     unbindFileAction,
     unbindFileRequestAction,
+    sendFile: sendFileTransfer,
   } = files
   const history = useHistorySync(
     channelStore.getHistoryEntries,
@@ -112,7 +125,7 @@ export function useCollab(
   const video = useVideoCall(room)
   const { reset: resetVideo } = video
   const chatAction = useRoomAction<ChatPayload>()
-  const { bind: bindChatAction, unbind: unbindChatAction } = chatAction
+  const { bind: bindChatAction, unbind: unbindChatAction, send: sendChatPayload } = chatAction
   const { reset: resetConnection } = connection
 
   const profileManager = useProfileManager(displayProfile, avatarId, handleProfileChange)
@@ -131,16 +144,17 @@ export function useCollab(
         selfId,
         displayProfile,
         peers.peers,
-        Object.values(channelStore.messagesByChannel).flat()
+        Object.values(channelStore.messagesByChannel).flat(),
+        pastSelfIds
       ),
-    [displayProfile, peers.peers, channelStore.messagesByChannel]
+    [displayProfile, peers.peers, channelStore.messagesByChannel, pastSelfIds]
   )
   const senderDirectoryRef = useLatest(senderDirectory)
   const peersRef = useLatest(peers.peers)
 
   useEffect(() => {
-    channelStore.syncSenderProfiles(senderDirectory, peers.peers)
-  }, [senderDirectory, peers.peers, channelStore])
+    syncSenderProfiles(senderDirectory, peers.peers)
+  }, [senderDirectory, peers.peers, syncSenderProfiles])
 
   const handlersRef = useRef<RoomProtocolHandlers>({
     onProfile: () => {},
@@ -312,24 +326,27 @@ export function useCollab(
 
       const payload = createChatPayload(text, profileRef.current, selfId, channelId)
       const target = route.kind === 'dm' ? route.peerId : undefined
-      void chatAction.send(payload, target ? { target } : undefined)
-      channelStore.appendMessage(chatPayloadToMessage(payload), senderDirectoryRef.current)
+      void sendChatPayload(payload, target ? { target } : undefined)
+      appendMessage(chatPayloadToMessage(payload), senderDirectoryRef.current)
     },
-    [channelStore, chatAction, profileRef, senderDirectoryRef]
+    // The narrow deps are the point: `channelStore` and `chatAction` are fresh
+    // objects every render, and depending on them made sendMessage — and with
+    // it the whole ChatSlice — churn per render.
+    [sendChatPayload, appendMessage, profileRef, senderDirectoryRef]
   )
 
   const appendChannelMessage = useCallback(
     (message: Message) => {
-      channelStore.appendMessage(message, senderDirectoryRef.current, peersRef.current)
+      appendMessage(message, senderDirectoryRef.current, peersRef.current)
     },
-    [channelStore, senderDirectoryRef, peersRef]
+    [appendMessage, senderDirectoryRef, peersRef]
   )
 
   const sendFile = useCallback(
     async (file: File) => {
-      await files.sendFile(file, appendChannelMessage)
+      await sendFileTransfer(file, appendChannelMessage)
     },
-    [appendChannelMessage, files]
+    [appendChannelMessage, sendFileTransfer]
   )
 
   const sharedFiles = useMemo(
@@ -342,6 +359,7 @@ export function useCollab(
 
   return {
     selfId,
+    pastSelfIds,
     profile: displayProfile,
     peers: peers.peers,
     messages: channelStore.messages,
@@ -353,7 +371,6 @@ export function useCollab(
     connectionNotice: connection.connectionNotice,
     relayOnline: connection.relayOnline,
     rtcPeerCount: connection.rtcPeerCount,
-    roomId,
     relayUrls: connection.relayUrls,
     isReady: connection.isReady,
     inCall: video.inCall,

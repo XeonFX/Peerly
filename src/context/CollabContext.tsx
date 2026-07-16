@@ -67,7 +67,6 @@ export function CollabProvider({
       connectionNotice: collab.connectionNotice,
       relayOnline: collab.relayOnline,
       rtcPeerCount: collab.rtcPeerCount,
-      roomId: collab.roomId,
       relayUrls: collab.relayUrls,
       isReady: collab.isReady,
     }),
@@ -77,7 +76,6 @@ export function CollabProvider({
       collab.connectionNotice,
       collab.relayOnline,
       collab.rtcPeerCount,
-      collab.roomId,
       collab.relayUrls,
       collab.isReady,
     ]
@@ -136,6 +134,7 @@ export function CollabProvider({
   const profileSlice = useMemo<ProfileSlice>(
     () => ({
       selfId: collab.selfId,
+      pastSelfIds: collab.pastSelfIds,
       profile: collab.profile,
       peers: collab.peers,
       updateProfile: collab.updateProfile,
@@ -144,6 +143,7 @@ export function CollabProvider({
     }),
     [
       collab.selfId,
+      collab.pastSelfIds,
       collab.profile,
       collab.peers,
       collab.updateProfile,

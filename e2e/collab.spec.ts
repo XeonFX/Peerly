@@ -503,6 +503,29 @@ test.describe('Peerly P2P collaboration', () => {
     expect(stored).not.toContain(token ?? '')
   })
 
+  // selfId is random per page load. Before the self-id registry, a message sent
+  // in an earlier session kept the name/avatar snapshot frozen at send time and
+  // ignored later profile changes — "it's still me, but my old message didn't
+  // update".
+  test('own messages from before a refresh follow a rename', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await sendMessage(page, 'Sent before refresh')
+
+    await page.reload()
+    await waitForWorkspace(page)
+    await expectMessage(page, 'Sent before refresh')
+
+    await openProfile(page)
+    await page.getByTestId('profile-name').fill('Alicia')
+    await page.getByTestId('profile-back').click()
+
+    const oldMessage = page
+      .getByTestId('chat-message')
+      .filter({ hasText: 'Sent before refresh' })
+    await expect(oldMessage).toContainText('Alicia')
+    await expect(oldMessage).not.toContainText('Alice ')
+  })
+
   test('avatar image appears in chat messages', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await openProfile(page)

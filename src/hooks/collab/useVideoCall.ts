@@ -14,9 +14,16 @@ export function useVideoCall(room: Room | null) {
   const localStreamRef = useRef<MediaStream | null>(null)
   localStreamRef.current = localStream
 
+  const roomRef = useRef(room)
+  roomRef.current = room
+
+  // Reads `room` through a ref so its identity is stable. useCollab's
+  // workspace-reset effect depends on this function; giving it [room] deps made
+  // that effect wipe the entire workspace state whenever the room reconnected.
   const reset = useCallback(() => {
-    if (room && localStreamRef.current) {
-      room.removeStream(localStreamRef.current)
+    const activeRoom = roomRef.current
+    if (activeRoom && localStreamRef.current) {
+      activeRoom.removeStream(localStreamRef.current)
       localStreamRef.current.getTracks().forEach(track => track.stop())
     }
     setLocalStream(null)
@@ -25,7 +32,7 @@ export function useVideoCall(room: Room | null) {
     setVideoEnabled(true)
     setAudioEnabled(true)
     setMediaError(null)
-  }, [room])
+  }, [])
 
   const onPeerStream = useCallback((stream: MediaStream, peerId: string) => {
     setPeerStreams(prev => ({ ...prev, [peerId]: stream }))

@@ -22,14 +22,21 @@ export function buildSenderDirectory(
   selfId: string,
   selfProfile: UserProfile,
   peers: Peer[],
-  messages: Message[] = []
+  messages: Message[] = [],
+  pastSelfIds: string[] = []
 ): Record<string, SenderInfo> {
-  const directory: Record<string, SenderInfo> = {
-    [selfId]: {
-      name: selfProfile.name,
-      color: selfProfile.color,
-      avatar: selfProfile.avatar,
-    },
+  const self: SenderInfo = {
+    name: selfProfile.name,
+    color: selfProfile.color,
+    avatar: selfProfile.avatar,
+  }
+
+  // Past-session ids were also "me": selfId changes every page load, so our own
+  // pre-refresh messages would otherwise freeze at their stored snapshot (peers
+  // recover via the name fallback below, but we are not in the peers list).
+  const directory: Record<string, SenderInfo> = { [selfId]: self }
+  for (const id of pastSelfIds) {
+    directory[id] = self
   }
 
   for (const peer of peers) {

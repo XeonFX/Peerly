@@ -1,8 +1,7 @@
 import { useRef, useState } from 'react'
 import { uploadAvatar, removeAvatar } from '../../collab/avatarService'
+import { WORKSPACE_COLOR } from '../../config'
 import { Avatar } from '../Avatar'
-
-const WORKSPACE_COLOR = '#2eb67d'
 
 type Props = {
   workspaceName: string
@@ -24,6 +23,9 @@ export function WorkspaceSettingsPanel({
   onBack,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
+  // Local draft so the field can be cleared while typing without persisting an
+  // empty name; only trimmed non-empty values are saved.
+  const [nameDraft, setNameDraft] = useState(workspaceName)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
@@ -64,8 +66,8 @@ export function WorkspaceSettingsPanel({
           </button>
           <h2 className="text-2xl font-bold">Workspace settings</h2>
           <p className="mt-1 text-sm text-base-content/50">
-            Customize how this workspace appears on your devices. Name and icon are stored locally
-            and included in invite links you copy from here.
+            Customize how this workspace appears on this device. The name travels with invite
+            links you copy from here; the icon stays local.
           </p>
         </header>
 
@@ -91,8 +93,15 @@ export function WorkspaceSettingsPanel({
               <input
                 type="text"
                 className="input input-bordered w-full"
-                value={workspaceName}
-                onChange={e => onNameChange(e.target.value)}
+                value={nameDraft}
+                onChange={e => {
+                  setNameDraft(e.target.value)
+                  const trimmed = e.target.value.trim()
+                  if (trimmed) onNameChange(trimmed)
+                }}
+                onBlur={() => {
+                  if (!nameDraft.trim()) setNameDraft(workspaceName)
+                }}
                 data-testid="workspace-name"
                 placeholder="My team"
               />
