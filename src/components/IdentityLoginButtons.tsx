@@ -8,6 +8,7 @@ import {
   type IdentityProviderId,
 } from '../collab/identityProviders'
 import { signInWithProvider } from '../collab/providerSignIn'
+import { deriveUserId } from '../collab/userId'
 import { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { Avatar } from './Avatar'
 
@@ -16,6 +17,8 @@ export type SignedInIdentity = {
   name?: string
   token: string
   providerId: IdentityProviderId
+  /** Durable user id (hash of the token's iss+sub) — see collab/userId. */
+  userId?: string
 }
 
 type Props = {
@@ -84,7 +87,8 @@ export function IdentityLoginButtons({
   const completeSignIn = useCallback(
     async (providerId: IdentityProviderId, token: string) => {
       const claims = await authManager.verifyAndStoreIdToken(token, providerId)
-      onSignedIn({ email: claims.email, name: claims.name, token, providerId })
+      const userId = await deriveUserId(claims.iss, claims.sub)
+      onSignedIn({ email: claims.email, name: claims.name, token, providerId, userId })
     },
     [authManager, onSignedIn]
   )
@@ -115,7 +119,8 @@ export function IdentityLoginButtons({
       const claims = await authManager.signInWithE2eEmail(email)
       const token = authManager.getIdToken()
       if (!token) throw new Error('Sign-in failed')
-      onSignedIn({ email: claims.email, name: claims.name, token, providerId: 'google' })
+      const userId = await deriveUserId(claims.iss, claims.sub)
+      onSignedIn({ email: claims.email, name: claims.name, token, providerId: 'google', userId })
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err))
     } finally {

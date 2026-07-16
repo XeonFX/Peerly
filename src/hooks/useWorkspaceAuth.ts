@@ -1,13 +1,24 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { SignedAllowList } from '../collab/allowList'
+import { deriveUserId } from '../collab/userId'
 import { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { loadIdToken, loadIdentityProvider, type Session } from '../session'
 
 export function useWorkspaceAuth(
   session: Session | null,
   onAllowListUpdated?: (list: SignedAllowList) => void
-): { manager: WorkspaceAuthManager | null; peerHandshake: PeerHandshake | undefined } {
+): {
+  manager: WorkspaceAuthManager | null
+  peerHandshake: PeerHandshake | undefined
+  /**
+   * Durable user id verified during `peerId`'s handshake, or undefined while
+   * the hash is still computing or for peers that never handshook. This is the
+   * only source messages may take a sender's user id from — anything a payload
+   * claims about identity is attacker-controlled.
+   */
+  resolvePeerUserId: (peerId: string) => string | undefined
+} {
   const onAllowListUpdatedRef = useRef(onAllowListUpdated)
   onAllowListUpdatedRef.current = onAllowListUpdated
 
@@ -34,12 +45,30 @@ export function useWorkspaceAuth(
     manager?.setAllowList(session?.allowList ?? manager.getAllowList())
   }, [manager, session?.allowList])
 
+  const peerUserIdsRef = useRef(new Map<string, string>())
+
+  useEffect(() => {
+    // New manager = new workspace (or re-auth): stale peer ids must not carry
+    // identities verified under the previous one.
+    peerUserIdsRef.current = new Map()
+  }, [manager])
+
   const peerHandshake = useMemo(() => {
     if (!manager) return undefined
     return manager.buildPeerHandshake({
+      onPeerVerified: (peerId, claims) => {
+        void deriveUserId(claims.iss, claims.sub).then(userId => {
+          peerUserIdsRef.current.set(peerId, userId)
+        })
+      },
       onAllowListUpdated: list => onAllowListUpdatedRef.current?.(list),
     })
   }, [manager])
 
-  return { manager, peerHandshake }
+  const resolvePeerUserId = useCallback(
+    (peerId: string) => peerUserIdsRef.current.get(peerId),
+    []
+  )
+
+  return { manager, peerHandshake, resolvePeerUserId }
 }

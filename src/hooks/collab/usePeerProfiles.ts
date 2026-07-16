@@ -17,28 +17,34 @@ export function usePeerProfiles(profile: UserProfile) {
     setPeers({})
   }, [])
 
-  const upsertPeer = useCallback((peerId: string, peerProfile?: Partial<UserProfile>) => {
-    setPeers(prev => {
-      const previous = prev[peerId]
-      const defaultName = previous?.name ?? `Peer ${peerId.slice(0, 6)}`
-      const defaultColor = previous?.color ?? DEFAULT_PEER_COLOR
+  const upsertPeer = useCallback(
+    (peerId: string, peerProfile?: Partial<UserProfile>, userId?: string) => {
+      setPeers(prev => {
+        const previous = prev[peerId]
+        const defaultName = previous?.name ?? `Peer ${peerId.slice(0, 6)}`
+        const defaultColor = previous?.color ?? DEFAULT_PEER_COLOR
 
-      // Everything here crosses the wire from an untrusted peer.
-      const clean = peerProfile
-        ? sanitizePeerProfile(peerProfile, { name: defaultName, color: defaultColor })
-        : { name: defaultName, color: defaultColor, avatar: undefined }
+        // Everything here crosses the wire from an untrusted peer — except
+        // `userId`, which the caller resolves from the peer's verified
+        // handshake and which is deliberately not part of the profile payload.
+        const clean = peerProfile
+          ? sanitizePeerProfile(peerProfile, { name: defaultName, color: defaultColor })
+          : { name: defaultName, color: defaultColor, avatar: undefined }
 
-      return {
-        ...prev,
-        [peerId]: {
-          id: peerId,
-          name: clean.name,
-          color: clean.color,
-          avatar: clean.avatar || previous?.avatar,
-        },
-      }
-    })
-  }, [])
+        return {
+          ...prev,
+          [peerId]: {
+            id: peerId,
+            userId: userId ?? previous?.userId,
+            name: clean.name,
+            color: clean.color,
+            avatar: clean.avatar || previous?.avatar,
+          },
+        }
+      })
+    },
+    []
+  )
 
   const removePeer = useCallback((peerId: string) => {
     setPeers(prev => {

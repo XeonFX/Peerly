@@ -152,12 +152,14 @@ export function createChatPayload(
   text: string,
   profile: UserProfile,
   senderId: string,
-  channelId: string
+  channelId: string,
+  senderUserId?: string
 ): ChatPayload {
   return {
     id: crypto.randomUUID(),
     text,
     ...senderFromProfile(profile, senderId),
+    senderUserId,
     timestamp: Date.now(),
     channelId,
     type: 'text',

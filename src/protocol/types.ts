@@ -5,6 +5,11 @@ export type ChatPayload = {
   id: string
   text: string
   senderId: string
+  /**
+   * Durable identity (see collab/userId). Never trusted from the wire: the
+   * receiver overwrites it with the id verified during that peer's handshake.
+   */
+  senderUserId?: string
   senderName: string
   senderColor: string
   senderAvatar?: string

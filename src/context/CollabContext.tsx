@@ -29,6 +29,10 @@ type CollabProviderProps = {
   avatarId?: string
   workspaceSecret?: string
   peerHandshake?: PeerHandshake
+  /** Durable id of the signed-in user; stamped into messages we send. */
+  selfUserId?: string
+  /** Handshake-verified peerId -> user id; the only trusted source for peers. */
+  resolvePeerUserId?: (peerId: string) => string | undefined
   onProfileChange?: (profile: UserProfile & { avatarId?: string }) => void
   onChannelsChange?: () => void
   children: ReactNode
@@ -43,6 +47,8 @@ export function CollabProvider({
   avatarId,
   workspaceSecret,
   peerHandshake,
+  selfUserId,
+  resolvePeerUserId,
   onProfileChange,
   onChannelsChange,
   children,
@@ -57,7 +63,8 @@ export function CollabProvider({
     channelIds,
     onChannelsChange,
     activeView,
-    peerHandshake
+    peerHandshake,
+    { selfUserId, resolvePeerUserId }
   )
 
   const connection = useMemo<ConnectionSlice>(
@@ -134,6 +141,7 @@ export function CollabProvider({
   const profileSlice = useMemo<ProfileSlice>(
     () => ({
       selfId: collab.selfId,
+      selfUserId: collab.selfUserId,
       pastSelfIds: collab.pastSelfIds,
       profile: collab.profile,
       peers: collab.peers,
@@ -143,6 +151,7 @@ export function CollabProvider({
     }),
     [
       collab.selfId,
+      collab.selfUserId,
       collab.pastSelfIds,
       collab.profile,
       collab.peers,

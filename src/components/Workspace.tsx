@@ -29,6 +29,8 @@ import { WorkspaceSettingsPanel } from './workspace/WorkspaceSettingsPanel'
 type Props = {
   session: Session
   peerHandshake?: PeerHandshake
+  /** Handshake-verified peerId -> durable user id. See useWorkspaceAuth. */
+  resolvePeerUserId?: (peerId: string) => string | undefined
   /** Needed to re-sign the allow-list when inviting; only the creator's device can. */
   authManager: WorkspaceAuthManager | null
   onSessionChange: (patch: Partial<Session>) => void
@@ -191,7 +193,7 @@ function WorkspaceShell({
   )
 }
 
-export function Workspace({ session, peerHandshake, authManager, onSessionChange, onLeave }: Props) {
+export function Workspace({ session, peerHandshake, resolvePeerUserId, authManager, onSessionChange, onLeave }: Props) {
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
   const [activeChannel, setActiveChannel] = useState(GENERAL_CHANNEL.id)
   const [activeView, setActiveView] = useState<'channel' | 'profile' | 'workspace'>('channel')
@@ -273,6 +275,8 @@ export function Workspace({ session, peerHandshake, authManager, onSessionChange
       avatarId={session.avatarId}
       workspaceSecret={session.workspaceId}
       peerHandshake={peerHandshake}
+      selfUserId={session.identityUserId}
+      resolvePeerUserId={resolvePeerUserId}
       onProfileChange={handleProfileChange}
       onChannelsChange={refreshChannels}
     >

@@ -34,7 +34,18 @@ export function useCollab(
   channelIds: string[] = ['general'],
   onChannelsChange?: () => void,
   activeView: 'channel' | 'profile' | 'workspace' = 'channel',
-  peerHandshake?: PeerHandshake
+  peerHandshake?: PeerHandshake,
+  identity?: {
+    /** Durable id of the signed-in user; stamped into messages we send. */
+    selfUserId?: string
+    /**
+     * Handshake-verified peerId -> user id. Live incoming messages take their
+     * senderUserId from here and ONLY here — payload claims are discarded,
+     * because any verified member could otherwise write history as someone
+     * else. (Relayed history stays best-effort; it is unsigned either way.)
+     */
+    resolvePeerUserId?: (peerId: string) => string | undefined
+  }
 ) {
   const roomId = buildRoomId(workspaceId)
 
@@ -50,6 +61,9 @@ export function useCollab(
 
   const activeChannelRef = useRef(activeChannelId)
   activeChannelRef.current = activeChannelId
+
+  const identityRef = useRef(identity)
+  identityRef.current = identity
 
   const [displayProfile, setDisplayProfile] = useState(profile)
 
@@ -145,9 +159,10 @@ export function useCollab(
         displayProfile,
         peers.peers,
         Object.values(channelStore.messagesByChannel).flat(),
-        pastSelfIds
+        pastSelfIds,
+        identity?.selfUserId
       ),
-    [displayProfile, peers.peers, channelStore.messagesByChannel, pastSelfIds]
+    [displayProfile, peers.peers, channelStore.messagesByChannel, pastSelfIds, identity?.selfUserId]
   )
   const senderDirectoryRef = useLatest(senderDirectory)
   const peersRef = useLatest(peers.peers)
@@ -172,7 +187,7 @@ export function useCollab(
 
   handlersRef.current = {
     onProfile: (peerProfile, peerId) => {
-      peers.upsertPeer(peerId, peerProfile)
+      peers.upsertPeer(peerId, peerProfile, identityRef.current?.resolvePeerUserId?.(peerId))
       connection.markConnected()
     },
     onChat: payload => {
@@ -185,8 +200,13 @@ export function useCollab(
       ) {
         return
       }
+      // senderId was stamped with the transport peerId by wireRoomProtocol, so
+      // this lookup binds the message to the identity verified in that peer's
+      // handshake. The payload's own senderUserId is deliberately not a
+      // fallback: a verified member must not be able to write as someone else.
+      const senderUserId = identityRef.current?.resolvePeerUserId?.(payload.senderId)
       channelStore.appendMessage(
-        chatPayloadToMessage(payload),
+        chatPayloadToMessage({ ...payload, senderUserId }),
         senderDirectoryRef.current,
         peersRef.current
       )
@@ -324,7 +344,13 @@ export function useCollab(
       // Never broadcast a message meant for a DM we can't resolve a peer for.
       if (route.kind === 'foreign-dm') return
 
-      const payload = createChatPayload(text, profileRef.current, selfId, channelId)
+      const payload = createChatPayload(
+        text,
+        profileRef.current,
+        selfId,
+        channelId,
+        identityRef.current?.selfUserId
+      )
       const target = route.kind === 'dm' ? route.peerId : undefined
       void sendChatPayload(payload, target ? { target } : undefined)
       appendMessage(chatPayloadToMessage(payload), senderDirectoryRef.current)
@@ -359,6 +385,7 @@ export function useCollab(
 
   return {
     selfId,
+    selfUserId: identity?.selfUserId,
     pastSelfIds,
     profile: displayProfile,
     peers: peers.peers,

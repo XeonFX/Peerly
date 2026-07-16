@@ -8,6 +8,8 @@ import { Avatar } from './Avatar'
 type Props = {
   messages: Message[]
   selfId: string
+  /** Durable id of the signed-in user — links messages across devices. */
+  selfUserId?: string
   /** Past sessions' ids for this workspace — our old messages carry them. */
   pastSelfIds?: string[]
   selfProfile: UserProfile
@@ -18,11 +20,18 @@ type Props = {
 // script-capable document, not an image. See utils/fileType.
 const isImage = isInlineImageType
 
-export function MessageList({ messages, selfId, pastSelfIds = [], selfProfile, peers }: Props) {
+export function MessageList({
+  messages,
+  selfId,
+  selfUserId,
+  pastSelfIds = [],
+  selfProfile,
+  peers,
+}: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const senderDirectory = useMemo(
-    () => buildSenderDirectory(selfId, selfProfile, peers, messages, pastSelfIds),
-    [selfId, selfProfile, peers, messages, pastSelfIds]
+    () => buildSenderDirectory(selfId, selfProfile, peers, messages, pastSelfIds, selfUserId),
+    [selfId, selfProfile, peers, messages, pastSelfIds, selfUserId]
   )
 
   useEffect(() => {

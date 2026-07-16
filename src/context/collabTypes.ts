@@ -39,6 +39,8 @@ export type MediaSlice = {
 
 export type ProfileSlice = {
   selfId: string
+  /** Durable id of the signed-in user (hash of OIDC iss+sub). */
+  selfUserId?: string
   /** Ids that were "me" in earlier sessions — see collab/selfIdRegistry. */
   pastSelfIds: string[]
   profile: UserProfile

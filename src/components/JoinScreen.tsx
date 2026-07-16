@@ -20,6 +20,7 @@ import {
   createSessionFromInvite,
   loadIdToken,
   loadIdentityEmail,
+  loadIdentityUserId,
   loadIdentityProvider,
   loadPersistedSession,
   clearIdCredentials,
@@ -69,7 +70,7 @@ function restoreSignedInIdentity(): SignedInIdentity | null {
   const providerId = loadIdentityProvider()
   const email = loadIdentityEmail()
   if (!token || !providerId || !email) return null
-  return { email, token, providerId }
+  return { email, token, providerId, userId: loadIdentityUserId() ?? undefined }
 }
 
 export function JoinScreen({ onJoined }: Props) {
@@ -147,12 +148,13 @@ export function JoinScreen({ onJoined }: Props) {
       throw new Error(`${identity.email} is not on this workspace's invite list`)
     }
 
-    saveIdCredentials(identity.token, identity.providerId, identity.email)
+    saveIdCredentials(identity.token, identity.providerId, identity.email, identity.userId)
     const session = createSessionFromInvite(
       { ...nextInvite, workspaceAvatarId },
       identity.email,
       identity.providerId,
-      name ?? identity.name
+      name ?? identity.name,
+      identity.userId
     )
     saveSession(session)
     // Remember it so the next sign-in offers it without the invite link.
@@ -310,7 +312,8 @@ export function JoinScreen({ onJoined }: Props) {
 
           <p className="text-center text-xs leading-relaxed text-base-content/50">
             Only invited accounts can connect. Peers verify each other's identity before any data
-            flows.
+            flows. Sign in with the account you were invited with — a different provider or email
+            counts as a different person.
           </p>
           <p
             className="text-center font-mono text-[0.7rem] text-base-content/35"

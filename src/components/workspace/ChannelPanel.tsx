@@ -40,7 +40,7 @@ export function ChannelPanel({
     toggleVideo,
     toggleAudio,
   } = useMediaSlice()
-  const { selfId, pastSelfIds, profile, peers } = useProfileSlice()
+  const { selfId, selfUserId, pastSelfIds, profile, peers } = useProfileSlice()
   const dmPeer = channel.kind === 'dm' ? peers.find(peer => peer.id === channel.peerId) : undefined
   const title = dmPeer?.name ?? channel.name
   const dmAvatar = dmPeer?.avatar
@@ -166,6 +166,7 @@ export function ChannelPanel({
       <MessageList
         messages={messages}
         selfId={selfId}
+        selfUserId={selfUserId}
         pastSelfIds={pastSelfIds}
         selfProfile={profile}
         peers={peers}

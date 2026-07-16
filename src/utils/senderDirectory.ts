@@ -6,6 +6,15 @@ export type SenderInfo = {
   avatar?: string
 }
 
+/**
+ * Durable-identity entries share the sender-id record under a `user:` prefix.
+ * Transport ids never contain a colon, so the namespaces cannot collide, and
+ * every existing consumer of the record keeps working unchanged.
+ */
+export function userKey(userId: string): string {
+  return `user:${userId}`
+}
+
 function peerInfo(peer: Peer): SenderInfo {
   return {
     name: peer.name,
@@ -23,7 +32,8 @@ export function buildSenderDirectory(
   selfProfile: UserProfile,
   peers: Peer[],
   messages: Message[] = [],
-  pastSelfIds: string[] = []
+  pastSelfIds: string[] = [],
+  selfUserId?: string
 ): Record<string, SenderInfo> {
   const self: SenderInfo = {
     name: selfProfile.name,
@@ -41,6 +51,16 @@ export function buildSenderDirectory(
 
   for (const peer of peers) {
     directory[peer.id] = peerInfo(peer)
+    if (peer.userId) {
+      directory[userKey(peer.userId)] = peerInfo(peer)
+    }
+  }
+
+  // After the peers so it wins a shared-id collision: if a peer carries my own
+  // user id, that is me on another device, and "me" should render as this
+  // device's live profile.
+  if (selfUserId) {
+    directory[userKey(selfUserId)] = self
   }
 
   for (const message of messages) {
@@ -60,10 +80,21 @@ export function buildSenderDirectory(
 }
 
 export function resolveSenderInfo(
-  message: Pick<Message, 'senderId' | 'senderName' | 'senderColor' | 'senderAvatar'>,
+  message: Pick<Message, 'senderId' | 'senderUserId' | 'senderName' | 'senderColor' | 'senderAvatar'>,
   directory: Record<string, SenderInfo>,
   peers: Peer[] = []
 ): SenderInfo {
+  // Durable identity first: it survives refreshes and devices, and for live
+  // messages it was stamped from the sender's verified handshake.
+  const byUser = message.senderUserId ? directory[userKey(message.senderUserId)] : undefined
+  if (byUser) {
+    return {
+      name: byUser.name,
+      color: byUser.color,
+      avatar: byUser.avatar || message.senderAvatar,
+    }
+  }
+
   const direct = directory[message.senderId]
   if (direct) {
     return {
@@ -90,7 +121,7 @@ export function resolveSenderInfo(
 }
 
 export function resolveSenderAvatar(
-  message: Pick<Message, 'senderId' | 'senderName' | 'senderColor' | 'senderAvatar'>,
+  message: Pick<Message, 'senderId' | 'senderUserId' | 'senderName' | 'senderColor' | 'senderAvatar'>,
   directory: Record<string, SenderInfo>,
   peers: Peer[] = []
 ): string | undefined {
@@ -106,6 +137,10 @@ export function enrichMessage(
 
   return {
     ...message,
+    // Backfill the durable id when the transport id still matches a live peer:
+    // this heals messages that raced the handshake's userId derivation.
+    senderUserId:
+      message.senderUserId ?? peers.find(peer => peer.id === message.senderId)?.userId,
     senderName: sender.name,
     senderColor: sender.color,
     senderAvatar: sender.avatar || message.senderAvatar,

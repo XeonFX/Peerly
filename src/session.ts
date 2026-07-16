@@ -16,6 +16,8 @@ export type PersistedSession = {
   creatorKeyId: DeviceKeyId
   allowList: SignedAllowList
   identityEmail: string
+  /** Durable user id (hash of OIDC iss+sub) — see collab/userId. */
+  identityUserId?: string
   identityProvider: IdentityProviderId
   userName: string
   color: string
@@ -37,6 +39,7 @@ const PERSIST_KEY = 'peerly-session'
  * should re-authenticate.
  */
 const ID_TOKEN_KEY = 'peerly-id-token'
+const ID_USER_ID_KEY = 'peerly-id-user-id'
 const ID_PROVIDER_KEY = 'peerly-id-provider'
 const ID_EMAIL_KEY = 'peerly-id-email'
 
@@ -69,6 +72,7 @@ export function loadPersistedSession(): PersistedSession | null {
       creatorKeyId: data.creatorKeyId,
       allowList: data.allowList,
       identityEmail: data.identityEmail,
+      identityUserId: typeof data.identityUserId === 'string' ? data.identityUserId : undefined,
       identityProvider: data.identityProvider,
       userName: data.userName,
       color: typeof data.color === 'string' ? data.color : DEFAULT_USER_COLOR,
@@ -144,15 +148,26 @@ export function loadIdentityEmail(): string | null {
 export function saveIdCredentials(
   token: string,
   providerId: IdentityProviderId,
-  email: string
+  email: string,
+  userId?: string
 ): void {
   sessionStorage.setItem(ID_TOKEN_KEY, token)
   sessionStorage.setItem(ID_PROVIDER_KEY, providerId)
   sessionStorage.setItem(ID_EMAIL_KEY, email)
+  if (userId) {
+    sessionStorage.setItem(ID_USER_ID_KEY, userId)
+  } else {
+    sessionStorage.removeItem(ID_USER_ID_KEY)
+  }
+}
+
+export function loadIdentityUserId(): string | null {
+  return sessionStorage.getItem(ID_USER_ID_KEY)
 }
 
 export function clearIdCredentials(): void {
   sessionStorage.removeItem(ID_TOKEN_KEY)
+  sessionStorage.removeItem(ID_USER_ID_KEY)
   sessionStorage.removeItem(ID_PROVIDER_KEY)
   sessionStorage.removeItem(ID_EMAIL_KEY)
 }
@@ -198,7 +213,8 @@ export function createSessionFromInvite(
   },
   identityEmail: string,
   identityProvider: IdentityProviderId,
-  displayName?: string
+  displayName?: string,
+  identityUserId?: string
 ): Session {
   const saved = loadPersistedSession()
   return {
@@ -208,6 +224,7 @@ export function createSessionFromInvite(
     creatorKeyId: invite.creatorKeyId,
     allowList: invite.allowList,
     identityEmail,
+    identityUserId,
     identityProvider,
     userName: saved?.userName ?? displayName ?? identityEmail.split('@')[0],
     color: saved?.color ?? DEFAULT_USER_COLOR,

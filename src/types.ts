@@ -18,6 +18,8 @@ export type Message = {
   id: string
   text: string
   senderId: string
+  /** Durable identity of the sender — stable across sessions and devices. */
+  senderUserId?: string
   senderName: string
   senderColor: string
   senderAvatar?: string
@@ -37,6 +39,8 @@ export type SharedFile = {
 
 export type Peer = {
   id: string
+  /** Durable identity verified during this peer's handshake; never wire-claimed. */
+  userId?: string
   name: string
   color: string
   avatar?: string

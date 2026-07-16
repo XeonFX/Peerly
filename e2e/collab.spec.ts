@@ -526,6 +526,42 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(oldMessage).not.toContainText('Alice ')
   })
 
+  // Same account on two devices: messages are linked by the durable user id
+  // (hash of the OIDC issuer+subject, verified in the handshake), so a message
+  // sent from one device follows profile changes made on another — even after
+  // the sending device disconnects and its transport id means nothing.
+  test('messages from my other device follow a rename here', async ({ browser }) => {
+    const deviceA = await browser.newContext()
+    const deviceB = await browser.newContext()
+    const here = await deviceA.newPage()
+    const laptop = await deviceB.newPage()
+
+    try {
+      await joinWorkspace(here, { name: 'Alice', email: 'alice@e2e.test' })
+      await waitForRelay(here)
+      await joinWorkspace(laptop, { name: 'Alice', email: 'alice@e2e.test' })
+      await waitForPeerConnection(here)
+      await waitForPeerConnection(laptop)
+
+      await sendMessage(laptop, 'Sent from my laptop')
+      await expectMessage(here, 'Sent from my laptop')
+
+      // The sending device goes away; only the durable id can link its message.
+      await deviceB.close()
+
+      await openProfile(here)
+      await here.getByTestId('profile-name').fill('Alicia')
+      await here.getByTestId('profile-back').click()
+
+      const laptopMessage = here
+        .getByTestId('chat-message')
+        .filter({ hasText: 'Sent from my laptop' })
+      await expect(laptopMessage).toContainText('Alicia')
+    } finally {
+      await deviceA.close()
+    }
+  })
+
   test('avatar image appears in chat messages', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await openProfile(page)
