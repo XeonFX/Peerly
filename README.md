@@ -26,12 +26,12 @@ Serverless peer-to-peer team collaboration — channels, chat, progressive file 
 
 ## Quick start
 
-Requires **Node 22.23.1 and npm 10.9.8**. These exact versions are enforced before install, CI, or package scripts because different npm releases can rewrite optional dependency records incompatibly.
+Requires **Node 24.18.0 and npm 11.16.0**. These exact versions are enforced before install, CI, or package scripts because different npm releases can rewrite optional dependency records incompatibly.
 
 ```bash
-nvm install 22.23.1
-nvm use 22.23.1
-npm --version            # must print 10.9.8
+nvm install 24.18.0
+nvm use 24.18.0
+npm --version            # must print 11.16.0
 git clone https://github.com/XeonFX/Peerly.git
 cd Peerly
 npm ci
@@ -185,11 +185,11 @@ The committed [`wrangler.jsonc`](wrangler.jsonc) deploys `dist/` as an assets-on
 | Deploy command | `npx wrangler deploy` (default) |
 | Non-production deploy | `npx wrangler versions upload` (default) |
 | Root directory | *(repo root)* |
-| Node version | `22.23.1` (or env var `NODE_VERSION=22.23.1`) |
+| Node version | `24.18.0` (or env var `NODE_VERSION=24.18.0`) |
 
 The connected Worker must be named `peerly`, matching `wrangler.jsonc`. The default deploy commands obtain Wrangler through `npx`; it is intentionally not installed as an application dependency.
 
-Cloudflare may print `npm@10.9.2` during its initial tool-detection phase. Installing Node 22.23.1 then exposes that runtime's bundled npm 10.9.8, which is the executable that runs `npm clean-install` and the version Peerly enforces.
+Cloudflare may print its image-default `npm@10.9.2` during initial tool detection. Installing the `.nvmrc` Node 24.18.0 override then exposes that runtime's bundled npm 11.16.0, which is the executable that runs `npm clean-install` and the version Peerly enforces.
 
 **Environment variables** (Production → Settings → Environment variables):
 
@@ -248,7 +248,7 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 │   └── session.ts          Active workspace session persistence
 ├── build-info.mjs          Version + commit injected at build time
 ├── .env.example            Environment template (copy to .env)
-├── .nvmrc                  Node 22.23.1 (npm 10.9.8 / CI alignment)
+├── .nvmrc                  Node 24.18.0 (npm 11.16.0 / CI alignment)
 ├── playwright.config.ts
 ├── vite.config.ts
 ├── wrangler.jsonc          Cloudflare assets-only SPA deployment
@@ -312,7 +312,7 @@ working until two peers fail to find each other.
 
 GitHub Actions on push/PR to `main` / `master` (see [.github/workflows/ci.yml](.github/workflows/ci.yml)):
 
-1. Install Node `22.23.1` with its bundled npm `10.9.8`, then verify both exact versions.
+1. Install Node `24.18.0` with its bundled npm `11.16.0`, then verify both exact versions.
 2. Run a clean `npm ci` from the committed lockfile.
 3. Run lint and 172 unit tests.
 4. Run the TypeScript/Vite production build and bundle guard.

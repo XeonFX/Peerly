@@ -8,20 +8,20 @@
     "type": "git",
     "url": "https://github.com/XeonFX/Peerly.git"
   },
-  "packageManager": "npm@10.9.8",
+  "packageManager": "npm@11.16.0",
   "engines": {
-    "node": "22.23.1",
-    "npm": "10.9.8"
+    "node": "24.18.0",
+    "npm": "11.16.0"
   },
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "22.23.1",
+      "version": "24.18.0",
       "onFail": "error"
     },
     "packageManager": {
       "name": "npm",
-      "version": "10.9.8",
+      "version": "11.16.0",
       "onFail": "error"
     }
   },
