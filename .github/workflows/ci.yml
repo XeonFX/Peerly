@@ -13,13 +13,17 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24.18.0
+          node-version: '24'
           package-manager-cache: false
 
-      - name: Verify pinned toolchain
+      - name: Verify toolchain majors
+        # npm ci only needs the same MAJORS that wrote the lockfile (node 24 /
+        # npm 11). Byte-exact patch pins here and in .nvmrc are what kept
+        # breaking installs: any registry/mirror gap for that one version fails
+        # the build — Cloudflare's tool installer hit exactly that.
         run: |
-          test "$(node --version)" = "v24.18.0"
-          test "$(npm --version)" = "11.16.0"
+          node --version | grep -Eq '^v24\.' || (echo "need Node 24.x, got $(node --version)" && exit 1)
+          npm --version | grep -Eq '^11\.' || (echo "need npm 11.x, got $(npm --version)" && exit 1)
 
       - run: npm ci
 

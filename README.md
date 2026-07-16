@@ -36,12 +36,12 @@ Serverless peer-to-peer team collaboration — channels, chat, progressive file 
 
 ## Quick start
 
-Requires **Node 24.18.0 and npm 11.16.0**. These exact versions are enforced before install, CI, or package scripts because different npm releases can rewrite optional dependency records incompatibly.
+Requires **Node 24.x and npm 11.x** — the majors that wrote the lockfile. Majors are what matter: different npm MAJOR releases can rewrite optional dependency records incompatibly, while patch releases do not. Exact-patch pins were tried and abandoned twice — they turn any tool-mirror gap into a failed install (Cloudflare's builder could not fetch one specific patch and every deploy failed).
 
 ```bash
-nvm install 24.18.0
-nvm use 24.18.0
-npm --version            # must print 11.16.0
+nvm install 24
+nvm use 24
+npm --version            # must print 11.x
 git clone https://github.com/XeonFX/Peerly.git
 cd Peerly
 npm ci
@@ -199,11 +199,11 @@ The committed [`wrangler.jsonc`](wrangler.jsonc) deploys `dist/` as an assets-on
 | Deploy command | `npx wrangler deploy` (default) |
 | Non-production deploy | `npx wrangler versions upload` (default) |
 | Root directory | *(repo root)* |
-| Node version | `24.18.0` (or env var `NODE_VERSION=24.18.0`) |
+| Node version | `24` via `.nvmrc` (any 24.x the builder has) |
 
 The connected Worker must be named `peerly`, matching `wrangler.jsonc`. The default deploy commands obtain Wrangler through `npx`; it is intentionally not installed as an application dependency.
 
-Cloudflare may print its image-default `npm@10.9.2` during initial tool detection. Installing the `.nvmrc` Node 24.18.0 override then exposes that runtime's bundled npm 11.16.0, which is the executable that runs `npm clean-install` and the version Peerly enforces.
+Cloudflare may print its image-default `npm@10.9.2` during initial tool detection. Installing the `.nvmrc` Node 24 override then exposes that runtime's bundled npm 11.x, which is what runs `npm clean-install`. `devEngines` still hard-fails any non-24/non-11 pair before it can touch the lockfile.
 
 **Environment variables** (Production → Settings → Environment variables):
 
