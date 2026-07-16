@@ -2,7 +2,7 @@
 
 Serverless peer-to-peer team collaboration — channels, chat, progressive file sharing, and video calls over WebRTC. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), and [Trystero](https://github.com/dmotz/trystero). Peerly has no application backend that stores workspace messages or files; signaling services are used only to help browsers discover each other.
 
-**v0.2.0** — messenger attention, signed message actions, richer file/call workflows, channel management, installable offline shell, complete English/Polish UI, and accessibility hardening.
+**v0.2.1** — the P2P room core now ships as the npm package [`@peerly/core`](packages/core), reusable by other apps, on top of v0.2.0's messenger attention, signed message actions, richer file/call workflows, channel management, installable offline shell, complete English/Polish UI, and accessibility hardening.
 
 **Live app:** [peerly.cc](https://peerly.cc)
 
@@ -164,7 +164,7 @@ Browsers need a **signaling channel** to discover each other (WebRTC handshake).
 | **ws-relay** | Offline / local CI | `npm run dev:relay` or `VITE_SIGNALING=ws-relay` |
 | **Supabase** | Relay you control | `VITE_SIGNALING=supabase` + Supabase URL/key |
 
-`npm run test:e2e` uses a local relay (many connections from one IP would throttle public Nostr relays). `npm run test:e2e:nostr` runs a subset against public relays.
+`npm run test:e2e` uses a local relay (many connections from one IP would throttle public Nostr relays) and runs 4 workers in parallel — each worker gets its own workspace/room, so tests never meet each other. `npm run test:e2e:nostr` runs a small subset against public relays, deliberately serial.
 
 Deployment owners can replace the curated Nostr set with the build-time `VITE_NOSTR_RELAYS` variable. Peerly does **not** currently expose relay editing to end users: members need at least one signaling relay in common, so a safe user-facing design must distribute a workspace relay profile rather than silently changing one device.
 
@@ -215,7 +215,7 @@ Add TURN, signaling overrides, or other providers as needed (see `.env.example`)
 
 Register the production origin (`https://peerly.cc`) in each OAuth provider's allowed JavaScript origins / redirect URIs. Add the direct `workers.dev` address too if you use it for testing.
 
-Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v0.2.0 · abc1234`.
+Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v0.2.1 · abc1234`.
 
 Cloudflare Pages also works: use `npm run build`, publish `dist/`, and set the same build-time environment variables.
 
@@ -238,21 +238,22 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 ## @peerly/core
 
 The generic P2P room core — room-code generation, signaling strategy selection,
-`joinRoomByCode`, the `useRoom` React hook, device identity, and signing
-primitives — lives in [`packages/core`](packages/core) and is published to npm
-as [`@peerly/core`](packages/core/README.md). The app consumes it from source
-via a Vite/tsconfig alias; other apps (e.g. HeyHubs) consume the published
-package. Workspace semantics — creator-signed allow-lists, OIDC verification,
-history sanitization — deliberately stay in the app, not the package. Publishing
-is manual via the `release-core.yml` workflow (needs the `peerly` npm org and an
-`NPM_TOKEN` secret).
+`joinRoomByCode`, the `useRoom` React hook, device identity, signing
+primitives, and browser-side OIDC token verification — lives in
+[`packages/core`](packages/core) and is published to npm as
+[`@peerly/core`](packages/core/README.md). The app consumes it from source via
+a Vite/tsconfig alias; other apps consume the published package.
+Workspace semantics — creator-signed allow-lists, peer handshakes, history
+sanitization — deliberately stay in the app, not the package. Releases run
+through the `release-core.yml` workflow: manual trigger, npm Trusted Publishing
+with provenance, automatic version bump committed back to `main`.
 
 ## Project structure
 
 ```
 .
 ├── e2e/                    Playwright end-to-end tests
-├── docs/                   Implementation notes and deferred matchmaking design
+├── docs/                   Implementation notes
 ├── public/                 Static assets (favicon, etc.)
 ├── scripts/
 │   ├── guard-bundle.mjs    Fail build if E2E keys reached dist/
@@ -293,7 +294,7 @@ is manual via the `release-core.yml` workflow (needs the `peerly` npm org and an
 | `npm run build` | Typecheck + production build + bundle guard |
 | `npm test` | Vitest unit/component tests (210 tests) |
 | `npm run test:watch` | Vitest in watch mode |
-| `npm run test:e2e` | Playwright E2E (48 tests, local relay) |
+| `npm run test:e2e` | Playwright E2E (50 tests, local relay, 4 parallel workers) |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
 | `npm run test:e2e:ui` | Playwright interactive UI |
 | `npm run preview` | Preview the production build locally |
@@ -328,53 +329,16 @@ working until two peers fail to find each other.
 - **Relay metadata** — signaling relays do not receive message/file bodies, but relay and TURN operators can still observe connection metadata such as IP addresses, timing, and traffic volume
 - **Production bundle guard** — E2E fake-issuer keys are isolated and scanned out of `dist/` on every build
 
-## Future matchmaking
+## Design limits
 
-Matchmaking is discovery, not transport. Once compatible people receive a
-private room identifier, Peerly already handles their chat, files, and calls
-directly over P2P. The unresolved decision is who maintains the waiting pool,
-chooses a group, and has authority to rate-limit or reject abusive accounts.
+Consequences of having no server, stated as the trade-offs they are:
 
-| Approach | Peerly-operated service | Moderation | Reliability | Main trade-off |
-|----------|-------------------------|------------|-------------|----------------|
-| Community or invite discovery | None | Community-based | Medium | Safe and simple, but not automatic |
-| Pure P2P lobby | None | Local blocks only | Low | Cheapest, but exposes metadata and has no global bans |
-| User/community coordinators | Optional | Per coordinator | Medium | Decentralized, but fragments users and trust |
-| Federated matchmakers | Multiple independent services | Distributed | High | Portable and resilient, but protocol-heavy |
-| Privacy-preserving ticket schemes | Usually | Good | High | Strong privacy with substantial cryptographic complexity |
-| Minimal Peerly matchmaker | One tiny queue/ticket authority | Strongest | High | Central matching authority, while content remains P2P |
-
-A public stranger-matching flow should use short-lived signed admission tickets:
-
-1. The user proves a verified Peerly identity and submits coarse preferences.
-2. A temporary queue rate-limits the identity and finds compatible users.
-3. The matchmaker creates a random room ID and issues single-use, expiring tickets.
-4. Clients verify the tickets, enter the room, and communicate directly P2P.
-5. Queue state expires; the service never carries messages, files, or calls.
-
-For a controlled friends-of-friends experiment, preference-derived P2P lobbies
-are viable. For public strangers they are not sufficient: no peer can enforce a
-global ban, stop fresh-account abuse, protect preference metadata from lobby
-enumeration, or make a sparse waiting pool feel reliable. Local NSFW screening
-can hide content on one device but cannot act as a moderation authority.
-
-The recommended sequence is community discovery first, an explicitly
-unmoderated P2P experiment only if useful, and a minimal ticket-signing authority
-before opening automated stranger matching publicly. Room admission should
-accept a generic signed ticket so a future signer can be Peerly, a community
-coordinator, or a federated provider without changing the P2P collaboration
-layer. Implementation remains deferred pending a separate approved design; see
-[`docs/MATCHMAKING.md`](docs/MATCHMAKING.md).
-
-## Current boundaries
-
-- **No global delete/reset** — storage cleanup affects one browser only. A safe workspace-wide reset needs a signed monotonic reset epoch so an offline peer cannot resurrect old state.
-- **No automatic archive** — manual JSON backup covers workspace-channel messages and access, but DMs and file bodies still depend on local copies or online peers.
-- **No resumable range transfer** — file bodies are content-addressed and integrity-checked, but transfers are whole-file and join progress is channel-based rather than byte-accurate.
-- **Member removal reaches only updated devices** — see the revocation note above; a stale device still honours the old list until it hears the new one.
-- **No user-facing relay editor** — deployment-time overrides exist, but per-user relay changes could partition a workspace.
-- **No stranger matchmaking** — it remains an intentionally undecided future feature; see [`docs/MATCHMAKING.md`](docs/MATCHMAKING.md).
-- **No centralized moderation** — local NSFW screening is advisory, and the current product has no workspace-wide block or ban authority.
+- **Deletion is local, by design** — with no authority that owns the data, storage cleanup affects one browser only. A safe workspace-wide reset would need a signed monotonic reset epoch so an offline peer cannot resurrect old state; until then, Peerly does not pretend to a global delete it cannot enforce.
+- **You are the archive** — manual JSON backup covers workspace-channel messages and access; DMs and file bodies live in local copies and online peers. No cloud archive is the point, not a gap.
+- **Transfers are whole-file** — file bodies are content-addressed and integrity-checked; resumable byte-range transfer is traded away for that simplicity, and join progress is channel-based rather than byte-accurate.
+- **Revocation is eventual** — a removed member stops being admitted as devices learn the newer creator-signed list; a stale device honours the old list until it hears the new one. Nothing short of a server closes that gap, and Peerly chooses no server.
+- **Relays are deployment-time configuration** — members need at least one signaling relay in common, so per-user relay editing could silently partition a workspace. Overrides exist at build time instead.
+- **Moderation stays on your device** — local NSFW screening is advisory, and there is deliberately no workspace-wide block or ban authority: any such authority would be a server with power over content.
 
 ## CI
 
@@ -384,7 +348,7 @@ GitHub Actions on push/PR to `main` / `master` (see [.github/workflows/ci.yml](.
 2. Run a clean `npm ci` from the committed lockfile.
 3. Run lint and 210 unit/component tests.
 4. Run the TypeScript/Vite production build and bundle guard.
-5. Install Chromium, verify CSP plus the offline shell, and run all 48 Playwright tests against the local relay.
+5. Install Chromium, verify CSP plus the offline shell, and run all 50 Playwright tests against the local relay (2 parallel workers in CI, each with an isolated workspace).
 
 `package.json` `devEngines`, `.npmrc`, `.nvmrc`, and CI all enforce the same toolchain. A mismatched Node or npm exits before it can rewrite `package-lock.json`.
 

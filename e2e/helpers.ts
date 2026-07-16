@@ -1,4 +1,9 @@
-import { expect, type Browser, type Page } from '@playwright/test'
+import { expect, test, type Browser, type Page } from '@playwright/test'
+import {
+  E2E_ALLOW_LIST,
+  E2E_CREATOR_KEY_ID,
+  E2E_WORKSPACE_NAME,
+} from '../src/collab/e2eConstants'
 
 export type JoinOptions = {
   name?: string
@@ -6,12 +11,29 @@ export type JoinOptions = {
   color?: string
 }
 
-/** Fixed workspace id used by E2E — matches src/collab/e2eAuth.ts */
-export const E2E_WORKSPACE_ID = 'e2e00000000000000000000000000001'
+/**
+ * One workspace per Playwright worker, so workers can run in parallel without
+ * meeting each other: the workspace id doubles as the Trystero room id, and
+ * tests sharing a room see each other's peers and messages.
+ *
+ * No new signing is needed per worker — the creator's allow-list signature
+ * covers only `emails|signedAt` (see src/collab/allowList.ts), not the
+ * workspace id, so the fixed signed fixture is valid for every derived id.
+ */
+export function e2eWorkspaceId(workerIndex = test.info().workerIndex): string {
+  return `e2e${String(workerIndex + 1).padStart(29, '0')}`
+}
 
-/** Fixed invite used by E2E — matches src/collab/e2eAuth.ts */
-export const E2E_INVITE_HASH =
-  'invite=eyJ2IjoxLCJ3b3Jrc3BhY2VJZCI6ImUyZTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAxIiwid29ya3NwYWNlTmFtZSI6InRlc3Qtd3MiLCJjcmVhdG9yS2V5SWQiOiJQLTI1Njo4UDRaMmxOZEp0NFlRMEpId1VsZjZWWWpMUEJhd2x6R1lFSWZPcDZpR1ZrOmV6NFJZeEEteGxPZERueDIyZTdXVnZzYUNpRDdqc0F4T1JobnZMbElOQm8iLCJhbGxvd0xpc3QiOnsiZW1haWxzIjpbImFsaWNlQGUyZS50ZXN0IiwiYm9iQGUyZS50ZXN0Il0sInNpZ25lZEF0IjoxNzAwMDAwMDAwMDAwLCJzaWduYXR1cmUiOiJOLWNSd0Zkbk1VU01PdnFPVDM1U3NacmFqZEpiZ3dTVlRIcG1JYWExOXFiRGpCa2lUUHpES1BJb0JzdzVHblhsZDgwbWlHdlRkMFVRejdmWFFDNXdxdyJ9fQ'
+export function e2eInviteHash(workerIndex = test.info().workerIndex): string {
+  const invite = {
+    v: 1,
+    workspaceId: e2eWorkspaceId(workerIndex),
+    workspaceName: E2E_WORKSPACE_NAME,
+    creatorKeyId: E2E_CREATOR_KEY_ID,
+    allowList: E2E_ALLOW_LIST,
+  }
+  return `invite=${Buffer.from(JSON.stringify(invite)).toString('base64url')}`
+}
 
 function emailFor(opts: JoinOptions): string {
   if (opts.email) return opts.email
@@ -61,7 +83,7 @@ export async function openProfile(page: Page) {
  * Only the invite banner is asserted here: the join/create tabs render after
  * sign-in, since every action behind them needs a verified identity.
  */
-export async function openInviteJoin(page: Page, inviteHash = E2E_INVITE_HASH) {
+export async function openInviteJoin(page: Page, inviteHash = e2eInviteHash()) {
   await installFreshSession(page)
   await page.goto(`/#${inviteHash}`)
   await expect(page.getByTestId('signin-e2e')).toBeVisible({ timeout: 15_000 })

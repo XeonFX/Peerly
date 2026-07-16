@@ -1,6 +1,6 @@
 # Storage, progressive sync, sensitive media, and redesign
 
-Status: active implementation plan (matchmaking excluded)
+Status: active implementation plan
 
 This plan reflects the codebase as audited on 2026-07-16. It replaces the
 architecture-neutral draft with work mapped to Peerly's current React,
@@ -100,13 +100,6 @@ advanced resilience/privacy control, but two members who choose disjoint relay s
 one another. A safe design should keep a recommended fallback set, validate and cap `wss://` URLs,
 show relay health, and share a workspace relay profile through the signed invite rather than silently
 changing it on only one device.
-
-## Matchmaking boundary
-
-No matchmaking implementation, provider selection, queue schema, admission
-ticket, or server dependency is included. `docs/MATCHMAKING.md` records the
-open decision space only; alternatives will be discussed before a direction is
-chosen.
 
 ## Verification
 

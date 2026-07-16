@@ -73,7 +73,7 @@ export async function resolveRelayUrls(): Promise<string[]> {
 import type { SignalingStrategy } from './collab/signaling'
 
 // The relay list, TURN, and Supabase config logic moved to @peerly/core
-// (packages/core/src/relays.ts) so HeyHubs shares them; these wrappers bind
+// (packages/core/src/relays.ts) so other apps can share them; these wrappers bind
 // them to this app's build-time env. `npm run check:relays` now reads the
 // list out of the package source.
 export { buildRelayUrls, DEFAULT_NOSTR_RELAYS, type TurnServer } from '@peerly/core'

@@ -6,8 +6,7 @@ with device identity, signing primitives, and signaling-strategy selection.
 No application server: signaling (Nostr by default) is used only so browsers can
 find each other; everything after the handshake is direct WebRTC.
 
-Powers Peerly (invite-only team workspaces) and HeyHubs (interest-based
-networking). MIT.
+Extracted from and battle-tested by Peerly's invite-only team workspaces. MIT.
 
 ## Install
 
@@ -40,9 +39,9 @@ const room = await joinRoomByCode({
   env: import.meta.env,
 })
 
-const [sendHello, onHello] = room.makeAction('hello')
-room.onPeerJoin(peerId => sendHello('hi', peerId))
-onHello((msg, peerId) => console.log(peerId, msg))
+const hello = room.makeAction<string>('hello')
+hello.onMessage = (msg, { peerId }) => console.log(peerId, msg)
+room.onPeerJoin = peerId => void hello.send('hi', { target: peerId })
 ```
 
 Functions never read `import.meta.env` themselves — Vite substitutes that
@@ -62,7 +61,9 @@ function Chat({ code }: { code: string }) {
     env: import.meta.env,
     onError: message => toast(message),
   })
-  // room is null until joined; stable across re-renders; leaves on unmount
+  // room is null until joined; stable across re-renders; leaves on unmount.
+  // An empty roomId means "no room yet" and joins nothing — safe for callers
+  // whose room is still being negotiated (hooks must run unconditionally).
 }
 ```
 
@@ -98,25 +99,45 @@ const userId = await deriveUserId(jwt.iss, jwt.sub)  // durable, provider-namesp
 The private key is generated non-extractable and never leaves WebCrypto — an
 XSS can sign while it runs, but cannot copy the key out.
 
+## OIDC verification (browser-only)
+
+```ts
+import { renderGoogleSignInButton, verifyOidcIdToken } from '@peerly/core'
+
+const nonce = await device.publicKeyId() // bind the token to this device key
+const token = await renderGoogleSignInButton(container, nonce, clientId)
+const claims = await verifyOidcIdToken(token, {
+  expectedAudience: clientId,
+  expectedNonce: nonce,
+  issuers: new Set(['https://accounts.google.com', 'accounts.google.com']),
+  fetchJwks: async () => (await fetch('https://www.googleapis.com/oauth2/v3/certs')).json(),
+})
+```
+
+`verifyOidcIdToken` checks the RS256 signature against the issuer's JWKS,
+pins exact issuers, requires a **verified** email claim, and rejects tokens
+whose nonce doesn't match the presenting device key — all client-side, no
+token ever leaves the browser.
+
 Also exported: `probeP2pCapability()` (WebRTC self-test), `createRelayHealth()`
 (live relay socket visibility), `classifyJoinError()` (password mismatch vs.
 needs-TURN vs. unknown), `createKvStore` (IndexedDB KV), and base64url helpers.
 
 ## What this package is not
 
-It carries no opinion about *who may join*: Peerly's creator-signed allow-lists,
-OIDC verification, and message-history sanitization stay in the app layer.
+It carries no opinion about *who may join a room*: Peerly's creator-signed
+allow-lists, peer handshakes, and message-history sanitization stay in the app
+layer (OIDC token verification is provided, but what a verified identity is
+*allowed to do* is your app's decision).
 Room-code possession is the only access control here — treat codes like
 credentials and share them in URL fragments, never query strings.
 
 ## Publishing (maintainers)
 
-```bash
-cd packages/core
-npm run build        # tsc → dist/
-npm pack --dry-run   # inspect the tarball
-npm publish --access public
-```
+Releases go through the `release-core.yml` GitHub Actions workflow (manual
+trigger): it lints and tests the repo, bumps the version (patch/minor/major),
+publishes with npm **Trusted Publishing** + provenance, and commits the bump
+back to `main`. Run it with `dry_run=true` first to inspect the tarball.
 
-`prepack` builds automatically. The GitHub Actions workflow
-`release-code.yml` does the same with `--provenance` on a manual trigger.
+For a local sanity check: `cd packages/core && npm run build && npm pack --dry-run`
+(`prepack` builds automatically).
