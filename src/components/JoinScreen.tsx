@@ -82,6 +82,8 @@ function WorkspacePickerAvatar({ workspace }: { workspace: StoredWorkspace }) {
 }
 
 type Props = {
+  pickerTab: 'create' | 'join'
+  onPickerTabChange: (tab: 'create' | 'join') => void
   onJoined: (session: Session) => void
 }
 
@@ -101,19 +103,18 @@ function restoreSignedInIdentity(): SignedInIdentity | null {
   return { email, token, providerId, userId: loadIdentityUserId() ?? undefined }
 }
 
-export function JoinScreen({ onJoined }: Props) {
+export function JoinScreen({ pickerTab, onPickerTabChange, onJoined }: Props) {
   const { tr } = useI18n()
   const browserStorage = useBrowserStorage()
   const { capability: p2pCapability } = useP2pCapability()
   const saved = loadPersistedSession()
-  const [mode, setMode] = useState<Mode>('create')
   const [workspaceName, setWorkspaceName] = useState(saved?.workspaceName ?? tr('My team'))
   const [guestEmails, setGuestEmails] = useState('')
   const [invite, setInvite] = useState<WorkspaceInvite | null>(null)
   const hashInvite =
     typeof window !== 'undefined' ? decodeInviteFromHash(window.location.hash) : null
   const activeInvite = invite ?? hashInvite
-  const activeMode: Mode = activeInvite ? 'join' : mode
+  const activeMode: Mode = activeInvite ? 'join' : pickerTab
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null)
@@ -182,13 +183,13 @@ export function JoinScreen({ onJoined }: Props) {
       const parsed = decodeInviteFromHash(window.location.hash)
       if (parsed) {
         setInvite(parsed)
-        setMode('join')
+        onPickerTabChange('join')
       }
     }
     syncInviteFromHash()
     window.addEventListener('hashchange', syncInviteFromHash)
     return () => window.removeEventListener('hashchange', syncInviteFromHash)
-  }, [])
+  }, [onPickerTabChange])
 
   const authManagerForInvite = (nextInvite: WorkspaceAccess) => {
     const manager = new WorkspaceAuthManager({
@@ -239,7 +240,6 @@ export function JoinScreen({ onJoined }: Props) {
         workspaceAvatarId,
       })
     )
-    history.replaceState(null, '', location.pathname)
     onJoined(session)
   }
 
@@ -536,7 +536,7 @@ export function JoinScreen({ onJoined }: Props) {
                 type="button"
                 role="tab"
                 className={`tab flex-1 ${activeMode === 'create' ? 'tab-active' : ''}`}
-                onClick={() => setMode('create')}
+                onClick={() => onPickerTabChange('create')}
                 data-testid="create-workspace-tab"
               >
                 {tr('Create workspace')}
@@ -545,7 +545,7 @@ export function JoinScreen({ onJoined }: Props) {
                 type="button"
                 role="tab"
                 className={`tab flex-1 ${activeMode === 'join' ? 'tab-active' : ''}`}
-                onClick={() => setMode('join')}
+                onClick={() => onPickerTabChange('join')}
                 data-testid="join-workspace-tab"
               >
                 {tr('Join with invite')}
