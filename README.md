@@ -21,9 +21,12 @@ Serverless peer-to-peer team collaboration — channels, chat, file sharing, and
 
 ## Quick start
 
-Requires **Node 22** (see `.nvmrc`). The lockfile is generated for npm 10; using Node 24/npm 11 locally can break `npm ci` on CI and Cloudflare.
+Requires **Node 22.23.1 and npm 10.9.2**. These exact versions are enforced because different npm majors can rewrite optional dependency records in incompatible ways.
 
 ```bash
+nvm install 22.23.1
+nvm use 22.23.1
+(cd /tmp && npm install --global npm@10.9.2)
 git clone https://github.com/XeonFX/Peerly.git
 cd Peerly
 npm install
@@ -152,7 +155,7 @@ Use **Pages**, not Workers. Ignore the auto-generated "Cloudflare Workers config
 | Build command | `npm run build` |
 | Build output directory | `dist` |
 | Root directory | *(repo root)* |
-| Node version | `22` (or env var `NODE_VERSION=22`) |
+| Node version | `22.23.1` (or env var `NODE_VERSION=22.23.1`) |
 | Deploy command | *(leave empty)* |
 
 **Environment variables** (Production → Settings → Environment variables):
@@ -208,7 +211,7 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 │   └── session.ts          Active workspace session persistence
 ├── build-info.mjs          Version + commit injected at build time
 ├── .env.example            Environment template (copy to .env)
-├── .nvmrc                  Node 22 (lockfile / CI alignment)
+├── .nvmrc                  Node 22.23.1 (npm 10.9.2 / CI alignment)
 ├── playwright.config.ts
 ├── vite.config.ts
 └── vitest.config.ts
