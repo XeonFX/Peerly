@@ -1,10 +1,9 @@
 name: Release @peerly/core
 
-# Manual publish of packages/core to npm with provenance. Requires:
-#  - the `peerly` npm org (package is @peerly/core, published --access public)
-#  - an npm automation token stored as the NPM_TOKEN repository secret
-# Version bumps stay a human decision: edit packages/core/package.json, merge,
-# then trigger this workflow.
+# Manual publish of packages/core to npm via Trusted Publishing (OIDC).
+# Configure on npmjs.com: @peerly/core → Settings → Trusted publishing
+#   Organization: XeonFX  Repository: Peerly  Workflow: release-core.yml
+# Bump packages/core/package.json, merge to main, then run this workflow.
 
 on:
   workflow_dispatch:
@@ -19,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # Required for npm Trusted Publishing
     steps:
       - uses: actions/checkout@v5
 
@@ -34,8 +33,6 @@ jobs:
           node --version | grep -Eq '^v24\.' || (echo "need Node 24.x, got $(node --version)" && exit 1)
           npm --version | grep -Eq '^11\.' || (echo "need npm 11.x, got $(npm --version)" && exit 1)
 
-      # Root install: the package builds with the repo's pinned TypeScript and
-      # trystero types from the root lockfile, same as CI.
       - run: npm ci
 
       - name: Build and test against the package
@@ -45,13 +42,11 @@ jobs:
 
       - name: Publish
         working-directory: packages/core
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm run build
           npm pack --dry-run
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            npm publish --access public --provenance --dry-run
+            npm publish --access public --dry-run
           else
-            npm publish --access public --provenance
+            npm publish --access public
           fi
