@@ -61,21 +61,27 @@ export const DEFAULT_NOSTR_RELAYS = [
   'wss://nos.lol',
   'wss://relay.primal.net',
   'wss://purplerelay.com',
-  'wss://nostr.mom',
-  'wss://offchain.pub',
+  'wss://relay.snort.social',
+  'wss://relay.wellorder.net',
 ]
 // Relays deliberately absent, for different reasons:
 //
+// - nostr.mom and offchain.pub were in this list and rotted in place
+//   (2026-07-17): both keep the socket open, so they look connected, then
+//   reject every publish — mom now demands 28-bit proof-of-work, offchain
+//   gates on a web-of-trust. That failure mode is invisible to a socket
+//   count; only the echo probe (check:relays / probeNostrRelays) catches it.
 // - relay.damus.io and nostr.oxtr.dev accept one-off ephemeral events (they
 //   pass check:relays) but rate-limit this traffic pattern in normal use —
 //   oxtr throttled a single quiet client. A relay like that logs failures
 //   without carrying signaling, and every connected relay receives every
 //   publish, so keep the pool at five vetted hosts rather than growing it:
 //   more relays means more fan-out, which is what trips the limits.
-// - Of ten public candidates probed 3x on 2026-07-16, only offchain.pub
-//   (healthy, ~1.7s) and relay.snort.social (slow, throttle-prone) were
-//   usable; the rest were dead or gated (NIP-05 required). Public relay
-//   capacity is donated and thinning.
+// - relay.snort.social was skipped in 2026-07-16 probing as slow and
+//   throttle-prone; re-probed 3x on 2026-07-17 at a consistent ~1.1s and
+//   promoted. relay.wellorder.net likewise passed 3x (~1.9s). Candidates
+//   gated by NIP-05 (einundzwanzig, nostrplebs) or erroring (bitcoiner,
+//   nostr.band) stay out.
 // - relay.mostr.pub stopped accepting connections entirely (it was in this list
 //   and produced a stream of "WebSocket connection failed" in the console).
 //

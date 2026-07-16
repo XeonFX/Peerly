@@ -25,6 +25,7 @@ const DEFAULT_ERROR_TEXT: Record<RoomErrorKind, (raw: string) => string> = {
 
 export type UseRoomOptions = {
   appId: string
+  /** Room to join; an empty string means "no room yet" and joins nothing. */
   roomId: string
   /** Room password; for invite-only rooms this is the room code itself. */
   password?: string
@@ -84,6 +85,11 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
   const resolvedRelayUrls = strategy === 'ws-relay' ? relayUrls : null
 
   useEffect(() => {
+    // No room id yet means "not joined", not "join the '' room": hooks must be
+    // called unconditionally, so callers whose room is not decided yet pass an
+    // empty id. Joining anyway would put every such caller into one shared,
+    // unprotected room per app id.
+    if (!roomId) return
     if (strategy === 'ws-relay' && (resolvedRelayUrls === null || resolvedRelayUrls.length === 0)) {
       return
     }

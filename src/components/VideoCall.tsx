@@ -45,11 +45,17 @@ function VideoTile({
   const flaggedRef = useRef(false)
   flaggedRef.current = flagged
 
+  const hasVideo = stream.getVideoTracks().some(t => t.enabled)
+
   useEffect(() => {
-    if (videoRef.current) {
+    // Keyed on hasVideo too: turning the camera off unmounts the <video> and
+    // turning it back on mounts a fresh element with no srcObject. The stream
+    // reference is unchanged, so a [stream]-only effect never re-attaches it
+    // and the re-enabled camera showed an empty gray tile forever.
+    if (hasVideo && videoRef.current && videoRef.current.srcObject !== stream) {
       videoRef.current.srcObject = stream
     }
-  }, [stream])
+  }, [stream, hasVideo])
 
   useEffect(() => {
     if (muted) return
@@ -96,8 +102,6 @@ function VideoTile({
       if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [muted, stream])
-
-  const hasVideo = stream.getVideoTracks().some(t => t.enabled)
 
   const hidden = flagged && !revealed
 
