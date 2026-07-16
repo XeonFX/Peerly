@@ -4,6 +4,8 @@ Serverless peer-to-peer team collaboration — channels, chat, progressive file 
 
 **v0.1.3** — storage-aware progressive sync, local sensitive-media screening, light/dark themes, P2P readiness diagnostics, and the redesigned Peerly interface.
 
+**Live app:** [peerly.cc](https://peerly.cc)
+
 ## Features
 
 - **Invite-only workspaces** — a high-entropy workspace ID in the URL fragment doubles as the room encryption secret; share the full signed invite to grant access
@@ -199,7 +201,7 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 
 Add TURN, signaling overrides, or other providers as needed (see `.env.example`).
 
-Register your production origin (`https://peerly.<your-subdomain>.workers.dev` and any custom domain) in each OAuth provider's allowed JavaScript origins / redirect URIs.
+Register the production origin (`https://peerly.cc`) in each OAuth provider's allowed JavaScript origins / redirect URIs. Add the direct `workers.dev` address too if you use it for testing.
 
 Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v0.1.3 · abc1234`.
 
