@@ -7,6 +7,6 @@ export default defineConfig({
   define: buildDefines(),
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 })

@@ -18,7 +18,16 @@ export function useUnreadCounts(
   selfId: string
 ) {
   const [readState, setReadState] = useState<ReadState>(() => loadReadState(workspaceId))
+  const [documentVisible, setDocumentVisible] = useState(
+    () => document.visibilityState === 'visible'
+  )
   const channelSeenAtRef = useRef<Record<string, number>>({})
+
+  useEffect(() => {
+    const handleVisibility = () => setDocumentVisible(document.visibilityState === 'visible')
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
 
   useEffect(() => {
     setReadState(loadReadState(workspaceId))
@@ -38,7 +47,7 @@ export function useUnreadCounts(
   }, [channelIds])
 
   useEffect(() => {
-    if (activeView !== 'channel') return
+    if (activeView !== 'channel' || !documentVisible) return
 
     const messages = messagesByChannel[activeChannelId] ?? []
     const latest = latestMessageTimestamp(messages)
@@ -50,7 +59,7 @@ export function useUnreadCounts(
       saveReadState(workspaceId, next)
       return next
     })
-  }, [activeChannelId, activeView, messagesByChannel, workspaceId])
+  }, [activeChannelId, activeView, documentVisible, messagesByChannel, workspaceId])
 
   const unreadByChannel = useMemo(
     () => countUnreadByChannel(messagesByChannel, readState, selfId, channelSeenAt),

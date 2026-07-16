@@ -8,7 +8,7 @@ export const APP_NAME = 'Peerly'
 export const APP_VERSION = __APP_VERSION__
 export const APP_COMMIT = __APP_COMMIT__
 
-/** e.g. "v0.1.2 · a1b2c3d" — falls back gracefully when the commit is unknown. */
+/** e.g. "v0.2.0 · a1b2c3d" — falls back gracefully when the commit is unknown. */
 export function appBuildLabel(): string {
   return APP_COMMIT && APP_COMMIT !== 'unknown'
     ? `v${APP_VERSION} · ${APP_COMMIT}`

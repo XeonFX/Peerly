@@ -1,6 +1,7 @@
 import type { FileTransfer, SharedFile } from '../types'
 import { formatBytes } from '../utils/format'
 import { Icon, type IconName } from './Icon'
+import { useI18n } from '../i18n'
 
 type Props = {
   files: SharedFile[]
@@ -18,10 +19,11 @@ function fileIcon(mime: string): IconName {
 }
 
 export function FilesPanel({ files, transfers, onRequestFile }: Props) {
+  const { tr } = useI18n()
   return (
     <aside className="files-panel w-64 shrink-0 overflow-y-auto border-l border-base-300/70 bg-base-200/75 p-4 backdrop-blur-xl max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-35 max-lg:w-[min(20rem,85vw)] max-lg:shadow-2xl">
       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-base-content/50">
-        Shared files
+        {tr('Shared files')}
       </h3>
 
       {transfers.length > 0 && (
@@ -35,7 +37,7 @@ export function FilesPanel({ files, transfers, onRequestFile }: Props) {
                 max={100}
               />
               <span className="text-[0.65rem] text-base-content/50">
-                {t.direction === 'send' ? 'Sending' : 'Receiving'} {Math.round(t.percent * 100)}%
+                {tr(t.direction === 'send' ? 'Sending' : 'Receiving')} {Math.round(t.percent * 100)}%
               </span>
             </div>
           ))}
@@ -47,9 +49,9 @@ export function FilesPanel({ files, transfers, onRequestFile }: Props) {
           <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/15 bg-primary/8 text-primary shadow-sm">
             <Icon name="folder" size={23} />
           </span>
-          <p className="text-sm font-medium text-base-content/75">No shared files yet</p>
+          <p className="text-sm font-medium text-base-content/75">{tr('No shared files yet')}</p>
           <p className="mt-1.5 text-xs leading-relaxed">
-            Use the paperclip beside the message box to share the first file.
+            {tr('Use the paperclip beside the message box to share the first file.')}
           </p>
         </div>
       ) : (
@@ -65,9 +67,9 @@ export function FilesPanel({ files, transfers, onRequestFile }: Props) {
                   <Icon name={fileIcon(file.mimeType)} size={19} className="text-primary" />
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate text-xs font-medium">{file.name}</span>
-                    <span className="text-[0.65rem] text-base-content/50">{formatBytes(file.size)} · cached</span>
+                    <span className="text-[0.65rem] text-base-content/50">{formatBytes(file.size)} · {tr('cached')}</span>
                   </span>
-                  <span className="ml-auto text-xs font-medium text-primary">Save</span>
+                  <span className="ml-auto text-xs font-medium text-primary">{tr('Save')}</span>
                 </a>
               ) : (
                 <button
@@ -79,7 +81,7 @@ export function FilesPanel({ files, transfers, onRequestFile }: Props) {
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate text-xs font-medium">{file.name}</span>
                   <span className="text-[0.65rem] text-base-content/50">
-                    {formatBytes(file.size)} · on demand
+                    {formatBytes(file.size)} · {tr('on demand')}
                   </span>
                 </span>
                 <Icon name="download" size={16} className="ml-auto text-primary" />

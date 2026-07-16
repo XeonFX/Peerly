@@ -264,6 +264,11 @@
     box-shadow: 0 12px 35px rgb(70 58 125 / 0.06);
   }
 
+  .chat-message-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 64px;
+  }
+
   [data-theme='peerly-dark'] .sidebar,
   [data-theme='peerly-dark'] .files-panel,
   [data-theme='peerly-dark'] .card {

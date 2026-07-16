@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addWorkspaceChannel,
   channelIds,
   GENERAL_CHANNEL,
   getChannelById,
   loadAllWorkspaceChannels,
+  moveWorkspaceChannel,
+  removeWorkspaceChannel,
+  renameWorkspaceChannel,
 } from '../collab/channelStore'
-import { ensureDmChannel } from '../collab/dmStore'
+import { ensureDmChannel, removeDmChannel } from '../collab/dmStore'
 import { CollabProvider } from '../context/CollabContext'
 import {
   useChatSlice,
@@ -16,6 +19,7 @@ import {
 } from '../context/useCollabSlices'
 import type { PeerHandshake } from '@trystero-p2p/core'
 import type { SignedFields } from '../collab/messageSigning'
+import type { SignedReactionFields } from '../collab/reactionSigning'
 import { encodeInviteLink } from '../collab/inviteLink'
 import { useBrowserStorage } from '../hooks/useBrowserStorage'
 import type { WorkspaceAuthManager } from '../collab/workspaceAuth'
@@ -30,6 +34,7 @@ import { Sidebar } from './Sidebar'
 import { ChannelPanel } from './workspace/ChannelPanel'
 import { ProfilePanel } from './workspace/ProfilePanel'
 import { WorkspaceSettingsPanel } from './workspace/WorkspaceSettingsPanel'
+import { useI18n } from '../i18n'
 
 type Props = {
   session: Session
@@ -37,6 +42,7 @@ type Props = {
   /** Handshake-verified peerId -> durable user id. See useWorkspaceAuth. */
   resolvePeerUserId?: (peerId: string) => string | undefined
   signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
+  signReaction?: (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => Promise<{ actorDeviceKeyId: string; signature: string }>
   getBoundUserId?: (deviceKeyId: string) => string | undefined
   /** Needed to re-sign the allow-list when inviting; only the creator's device can. */
   authManager: WorkspaceAuthManager | null
@@ -87,7 +93,8 @@ function WorkspaceShell({
   onWorkspaceAvatarChange: (avatarId: string, preview: string) => void
   onWorkspaceAvatarClear: () => void
 }) {
-  const { announceChannel } = useWorkspaceSlice()
+  const { tr } = useI18n()
+  const { announceChannel, announceChannelDeletion } = useWorkspaceSlice()
   const {
     connectionStatus,
     connectionError,
@@ -104,10 +111,26 @@ function WorkspaceShell({
     requestFile,
     flushHistory,
     resetLocalHistory,
+    notificationsSupported,
+    notificationsEnabled,
+    notificationPermission,
+    enableNotifications,
+    disableNotifications,
+    soundsEnabled,
+    enableSounds,
+    disableSounds,
   } = useChatSlice()
   const browserStorage = useBrowserStorage(transfers.length > 0)
+  const mainRef = useRef<HTMLElement>(null)
   const { selfId, profile, peers } = useProfileSlice()
   const channel = getChannelById(channels, activeChannel)
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      mainRef.current?.querySelector<HTMLElement>('[data-view-heading]')?.focus()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeChannel, activeView])
 
   const handleAddChannel = async (name: string) => {
     const created = addWorkspaceChannel(session.workspaceId, name)
@@ -124,6 +147,33 @@ function WorkspaceShell({
     onChannelSelect(dm.id)
   }
 
+  const handleRenameChannel = async (channelId: string, name: string) => {
+    const updated = renameWorkspaceChannel(session.workspaceId, channelId, name)
+    if (!updated) return
+    onChannelsUpdated()
+    await announceChannel(updated)
+  }
+
+  const handleDeleteChannel = async (channelId: string) => {
+    const deletedAt = Date.now()
+    if (!removeWorkspaceChannel(session.workspaceId, channelId, deletedAt)) return
+    onChannelsUpdated()
+    if (activeChannel === channelId) onChannelSelect(GENERAL_CHANNEL.id)
+    await announceChannelDeletion(channelId, deletedAt)
+  }
+
+  const handleMoveChannel = async (channelId: string, direction: -1 | 1) => {
+    const reordered = moveWorkspaceChannel(session.workspaceId, channelId, direction)
+    onChannelsUpdated()
+    for (const updated of reordered) await announceChannel(updated)
+  }
+
+  const handleCloseDm = (channelId: string) => {
+    if (!removeDmChannel(session.workspaceId, channelId)) return
+    onChannelsUpdated()
+    if (activeChannel === channelId) onChannelSelect(GENERAL_CHANNEL.id)
+  }
+
   // Selecting anything on a phone should reveal what you selected.
   const selectAndClose = (id: string) => {
     onChannelSelect(id)
@@ -137,7 +187,7 @@ function WorkspaceShell({
         <button
           type="button"
           className="fixed inset-0 z-30 cursor-pointer bg-black/55 lg:hidden"
-          aria-label="Close workspace menu"
+          aria-label={tr('Close workspace menu')}
           onClick={() => onSidebarOpenChange(false)}
         />
       )}
@@ -170,6 +220,10 @@ function WorkspaceShell({
         relayUrls={relayUrls}
         onChannelSelect={selectAndClose}
         onAddChannel={handleAddChannel}
+        onRenameChannel={handleRenameChannel}
+        onDeleteChannel={handleDeleteChannel}
+        onMoveChannel={handleMoveChannel}
+        onCloseDirectMessage={handleCloseDm}
         onStartDirectMessage={handleStartDirectMessage}
         onProfileSelect={() => {
           onProfileSelect()
@@ -183,7 +237,7 @@ function WorkspaceShell({
         unreadByChannel={unreadByChannel}
       />
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main ref={mainRef} className="flex min-w-0 flex-1 flex-col">
         {banner}
         <StoragePressureBanner
           pressure={browserStorage.pressure}
@@ -215,6 +269,14 @@ function WorkspaceShell({
             onRetryP2p={retryP2pCapability}
             onBeforeExport={flushHistory}
             onLocalHistoryCleared={resetLocalHistory}
+            notificationsSupported={notificationsSupported}
+            notificationsEnabled={notificationsEnabled}
+            notificationPermission={notificationPermission}
+            onEnableNotifications={enableNotifications}
+            onDisableNotifications={disableNotifications}
+            soundsEnabled={soundsEnabled}
+            onEnableSounds={enableSounds}
+            onDisableSounds={disableSounds}
             onNameChange={onWorkspaceNameChange}
             onAvatarChange={onWorkspaceAvatarChange}
             onAvatarClear={onWorkspaceAvatarClear}
@@ -241,7 +303,7 @@ function WorkspaceShell({
   )
 }
 
-export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessage, getBoundUserId, authManager, onSessionChange, onLeave }: Props) {
+export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessage, signReaction, getBoundUserId, authManager, onSessionChange, onLeave }: Props) {
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
   const [activeChannel, setActiveChannel] = useState(GENERAL_CHANNEL.id)
   const [activeView, setActiveView] = useState<'channel' | 'profile' | 'workspace'>('channel')
@@ -326,6 +388,7 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessa
   return (
     <CollabProvider
       workspaceId={session.workspaceId}
+      workspaceName={session.workspaceName}
       channelId={activeChannel}
       channelIds={ids}
       activeView={activeView}
@@ -336,6 +399,7 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessa
       selfUserId={session.identityUserId}
       resolvePeerUserId={resolvePeerUserId}
       signMessage={signMessage}
+      signReaction={signReaction}
       getBoundUserId={getBoundUserId}
       onProfileChange={handleProfileChange}
       onChannelsChange={refreshChannels}

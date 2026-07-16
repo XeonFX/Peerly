@@ -5,6 +5,7 @@ import {
   ensureDmChannel,
   getDmPeerId,
   mergeDmChannel,
+  removeDmChannel,
   routeDmChannel,
 } from './dmStore'
 
@@ -65,5 +66,7 @@ describe('dmStore', () => {
     expect(mergeDmChannel('team', channel)).toBe(true)
     expect(mergeDmChannel('team', channel)).toBe(false)
     expect(ensureDmChannel('team', peer, 'alice').id).toBe(channel.id)
+    expect(removeDmChannel('team', channel.id)).toBe(true)
+    expect(removeDmChannel('team', channel.id)).toBe(false)
   })
 })

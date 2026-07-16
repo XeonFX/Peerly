@@ -15,6 +15,7 @@ import {
 } from './identityProviders'
 import { verifyOidcIdToken, type JwksFetcher, type OidcIdTokenClaims } from './oidcIdToken'
 import { signedMessageBytes, type SignedFields } from './messageSigning'
+import { signedReactionBytes, type SignedReactionFields } from './reactionSigning'
 import { createIdentityHandshake } from './identityHandshake'
 import { generateWorkspaceId, type WorkspaceAccess, type WorkspaceInvite } from './inviteLink'
 
@@ -79,6 +80,16 @@ export class WorkspaceAuthManager {
       signature: await this.identity.sign(
         signedMessageBytes({ ...fields, senderDeviceKeyId })
       ),
+    }
+  }
+
+  async signReaction(
+    fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>
+  ): Promise<{ actorDeviceKeyId: DeviceKeyId; signature: string }> {
+    const actorDeviceKeyId = await this.deviceKeyId()
+    return {
+      actorDeviceKeyId,
+      signature: await this.identity.sign(signedReactionBytes({ ...fields, actorDeviceKeyId })),
     }
   }
 

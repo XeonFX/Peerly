@@ -11,6 +11,7 @@ import { signInWithProvider } from '../collab/providerSignIn'
 import { deriveUserId } from '../collab/userId'
 import { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { Avatar } from './Avatar'
+import { useI18n } from '../i18n'
 
 export type SignedInIdentity = {
   email: string
@@ -41,6 +42,7 @@ function SignedInChip({
   busy: boolean
   onSignOut: () => void
 }) {
+  const { tr } = useI18n()
   const label = getIdentityProvider(signedIn.providerId)?.label
   return (
     <div
@@ -64,7 +66,7 @@ function SignedInChip({
         onClick={onSignOut}
         disabled={busy}
       >
-        Sign out
+        {tr('Sign out')}
       </button>
     </div>
   )
@@ -79,6 +81,7 @@ export function IdentityLoginButtons({
   onBusyChange,
   onError,
 }: Props) {
+  const { tr } = useI18n()
   const providers = getConfiguredIdentityProviders()
   const googleContainerRef = useRef<HTMLDivElement>(null)
   const [googleMountKey, setGoogleMountKey] = useState(0)
@@ -98,7 +101,7 @@ export function IdentityLoginButtons({
     onBusyChange(true)
     try {
       const provider = getIdentityProvider(providerId)
-      if (!provider) throw new Error(`Identity provider "${providerId}" is not configured`)
+      if (!provider) throw new Error(tr('Identity provider “{provider}” is not configured', { provider: providerId }))
 
       const keyId = await authManager.deviceKeyId()
       const token = await signInWithProvider(providerId, keyId)
@@ -115,10 +118,10 @@ export function IdentityLoginButtons({
     onBusyChange(true)
     try {
       const email = e2eEmail.trim()
-      if (!email) throw new Error('Enter your email to continue')
+      if (!email) throw new Error(tr('Enter your email to continue'))
       const claims = await authManager.signInWithE2eEmail(email)
       const token = authManager.getIdToken()
-      if (!token) throw new Error('Sign-in failed')
+      if (!token) throw new Error(tr('Sign-in failed'))
       const userId = await deriveUserId(claims.iss, claims.sub)
       onSignedIn({ email: claims.email, name: claims.name, token, providerId: 'google', userId })
     } catch (err) {
@@ -179,9 +182,11 @@ export function IdentityLoginButtons({
       <div className="flex flex-col gap-3" data-testid="identity-login">
         <label className="w-full">
           <span className="mb-1 block text-xs font-medium text-base-content/70">
-            Your email (test mode)
+            {tr('Your email (test mode)')}
           </span>
           <input
+            id="e2e-sign-in-email"
+            name="email"
             type="email"
             className="input input-bordered w-full"
             placeholder="alice@e2e.test"
@@ -197,7 +202,7 @@ export function IdentityLoginButtons({
           onClick={() => void handleE2eSignIn()}
           disabled={busy}
         >
-          {busy ? 'Signing in…' : 'Sign in (test mode)'}
+          {busy ? `${tr('Signing in')}…` : tr('Sign in (test mode)')}
         </button>
       </div>
     )
@@ -234,7 +239,7 @@ export function IdentityLoginButtons({
               onClick={() => void handleProviderSignIn(provider.id)}
               disabled={busy}
             >
-              Continue with {provider.label}
+              {tr('Continue with')} {provider.label}
             </button>
           )
         )}

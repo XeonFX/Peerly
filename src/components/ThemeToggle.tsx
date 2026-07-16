@@ -6,8 +6,10 @@ import {
   type ThemePreference,
 } from '../collab/themePreference'
 import { Icon } from './Icon'
+import { useI18n } from '../i18n'
 
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
+  const { tr } = useI18n()
   const [theme, setTheme] = useState<ThemePreference>(() => loadThemePreference())
 
   useEffect(() => {
@@ -23,8 +25,8 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
     <button
       type="button"
       className={compact ? 'btn btn-ghost btn-square btn-sm' : 'btn btn-outline btn-sm'}
-      aria-label={`Switch to ${next} mode`}
-      title={`Switch to ${next} mode`}
+      aria-label={tr(next === 'light' ? 'Switch to light mode' : 'Switch to dark mode')}
+      title={tr(next === 'light' ? 'Switch to light mode' : 'Switch to dark mode')}
       data-testid="theme-toggle"
       onClick={() => {
         saveThemePreference(next)
@@ -32,7 +34,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
       }}
     >
       <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-      {!compact && <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
+      {!compact && <span>{tr(theme === 'dark' ? 'Light mode' : 'Dark mode')}</span>}
     </button>
   )
 }

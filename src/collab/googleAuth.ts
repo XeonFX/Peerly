@@ -25,6 +25,7 @@ type GoogleAccountsId = {
     callback: (response: CredentialResponse) => void
     auto_select?: boolean
     itp_support?: boolean
+    use_fedcm_for_button?: boolean
   }): void
   prompt(listener?: (notification: PromptMomentNotification) => void): void
   renderButton(
@@ -92,6 +93,11 @@ export async function renderGoogleSignInButton(
         client_id: clientId,
         nonce,
         auto_select: false,
+        // Let supported Chromium browsers mediate the button flow. Besides
+        // improving third-party-cookie resilience, this avoids the legacy
+        // cross-window postMessage path that can emit misleading COOP errors.
+        // GIS falls back to its normal popup flow in unsupported browsers.
+        use_fedcm_for_button: true,
         callback: response => resolve(response.credential),
       })
       accounts.renderButton(container, { type: 'standard', theme: 'outline', size: 'large', width: 320 })

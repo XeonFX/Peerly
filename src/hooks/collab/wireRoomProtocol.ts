@@ -6,6 +6,7 @@ import type {
   FileMetaPayload,
   HistoryEntry,
   HistoryRequest,
+  ReactionPayload,
 } from '../../protocol/types'
 import { senderFromProfile } from '../../protocol/types'
 import { chatPayloadToMessage, clampMessageText } from '../../protocol/mappers'
@@ -26,6 +27,7 @@ export type RoomProtocolHandlers = {
   onPeerStream: (stream: MediaStream, peerId: string) => void
   onInitialPeers: (peerIds: string[]) => void
   onChannel: (payload: ChannelPayload, peerId: string) => void
+  onReaction: (payload: ReactionPayload, peerId: string) => void
 }
 
 export type RoomProtocolBindings = {
@@ -65,6 +67,9 @@ export type RoomProtocolBindings = {
   bindFileRequestAction: (action: {
     send: (data: string[], options?: { target?: string }) => Promise<void>
   }) => void
+  bindReactionAction: (action: {
+    send: (data: ReactionPayload, options?: { target?: string }) => Promise<void>
+  }) => void
   broadcastProfile: (target?: string) => void
 }
 
@@ -83,6 +88,7 @@ export function wireRoomProtocol(
   })
   const channelAction = room.makeAction<ChannelPayload>(ACTION_IDS.channelSync)
   const fileRequestAction = room.makeAction<string[]>(ACTION_IDS.fileRequest)
+  const reactionAction = room.makeAction<ReactionPayload>(ACTION_IDS.reaction)
 
   bindings.bindChatAction(chatAction)
   bindings.bindProfileAction(profileAction)
@@ -91,6 +97,7 @@ export function wireRoomProtocol(
   bindings.bindHistoryAction(historyAction)
   bindings.bindChannelAction(channelAction)
   bindings.bindFileRequestAction(fileRequestAction)
+  bindings.bindReactionAction(reactionAction)
 
   profileAction.onMessage = (peerProfile, { peerId }) => {
     handlers.onProfile(peerProfile, peerId)
@@ -126,6 +133,10 @@ export function wireRoomProtocol(
     handlers.onFileRequest(fileIds, peerId)
   }
 
+  reactionAction.onMessage = (payload, { peerId }) => {
+    handlers.onReaction({ ...payload, actorId: peerId }, peerId)
+  }
+
   room.onPeerJoin = peerId => {
     bindings.broadcastProfile(peerId)
     handlers.onPeerJoin(peerId)
@@ -153,6 +164,7 @@ export function wireRoomProtocol(
     historyAction.onRequest = null
     channelAction.onMessage = null
     fileRequestAction.onMessage = null
+    reactionAction.onMessage = null
     room.onPeerJoin = null
     room.onPeerLeave = null
     room.onPeerStream = null

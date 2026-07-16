@@ -45,6 +45,8 @@ async function signedEntry(
       senderDeviceKeyId: deviceKeyId,
       timestamp: entry.timestamp,
       channelId: entry.channelId,
+      editedAt: entry.editedAt,
+      deletedAt: entry.deletedAt,
     })
   )
   return entry
@@ -64,6 +66,17 @@ describe('messageSigning', () => {
     expect(await verifyHistoryEntry({ ...entry, senderUserId: 'user-mallory' })).toBe('invalid')
     expect(await verifyHistoryEntry({ ...entry, timestamp: 9999 })).toBe('invalid')
     expect(await verifyHistoryEntry({ ...entry, channelId: 'other' })).toBe('invalid')
+  })
+
+  it('makes edited and deleted revisions tamper-evident', async () => {
+    const identity = new DeviceIdentity(memoryStore())
+    const edited = await signedEntry(identity, { text: 'edited', editedAt: 2000 })
+    expect(await verifyHistoryEntry(edited)).toBe('valid')
+    expect(await verifyHistoryEntry({ ...edited, editedAt: 2001 })).toBe('invalid')
+
+    const deleted = await signedEntry(identity, { text: '', deletedAt: 3000 })
+    expect(await verifyHistoryEntry(deleted)).toBe('valid')
+    expect(await verifyHistoryEntry({ ...deleted, deletedAt: undefined })).toBe('invalid')
   })
 
   it('drops forged entries, keeps text of unsigned ones without identity', async () => {

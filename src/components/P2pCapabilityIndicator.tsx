@@ -1,4 +1,5 @@
 import type { P2pCapability } from '../types'
+import { useI18n } from '../i18n'
 
 type Props = {
   capability: P2pCapability
@@ -35,7 +36,16 @@ function presentation({ capability, rtcPeerCount, connectionError }: Props) {
 }
 
 export function P2pCapabilityIndicator(props: Props) {
+  const { tr } = useI18n()
   const state = presentation(props)
+  const detail = props.rtcPeerCount > 0
+    ? tr(
+        props.rtcPeerCount === 1
+          ? '{count} direct peer connection verified on this network.'
+          : '{count} direct peer connections verified on this network.',
+        { count: props.rtcPeerCount }
+      )
+    : tr(state.detail)
   const toneClass =
     state.tone === 'success'
       ? 'border-success/25 bg-success/10 text-success'
@@ -48,12 +58,12 @@ export function P2pCapabilityIndicator(props: Props) {
       <div
         className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 ${toneClass}`}
         data-testid="p2p-capability"
-        title={state.detail}
+        title={detail}
       >
         <span aria-hidden="true" className="text-[0.65rem]">●</span>
-        <span className="min-w-0 flex-1 text-[0.68rem] font-semibold">{state.label}</span>
+        <span className="min-w-0 flex-1 text-[0.68rem] font-semibold">{tr(state.label.replace('…', ''))}{state.label.endsWith('…') ? '…' : ''}</span>
         {props.rtcPeerCount === 0 && props.capability.status === 'available' && (
-          <span className="text-[0.6rem] font-normal opacity-70">local check</span>
+          <span className="text-[0.6rem] font-normal opacity-70">{tr('local check')}</span>
         )}
       </div>
     )
@@ -67,23 +77,22 @@ export function P2pCapabilityIndicator(props: Props) {
       <div className="card-body gap-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="eyebrow">Connectivity</p>
-            <h3 className="mt-1 text-base font-semibold">{state.label}</h3>
+            <p className="eyebrow">{tr('Connectivity')}</p>
+            <h3 className="mt-1 text-base font-semibold">{tr(state.label.replace('…', ''))}{state.label.endsWith('…') ? '…' : ''}</h3>
           </div>
           <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${toneClass}`}>
-            {state.tone === 'success' ? '● Ready' : state.tone === 'error' ? '● Attention' : '● Testing'}
+            ● {tr(state.tone === 'success' ? 'Ready' : state.tone === 'error' ? 'Attention' : 'Testing')}
           </span>
         </div>
-        <p className="text-sm leading-relaxed text-base-content/60">{state.detail}</p>
+        <p className="text-sm leading-relaxed text-base-content/60">{detail}</p>
         {props.rtcPeerCount === 0 && props.capability.status === 'available' && (
           <p className="text-xs leading-relaxed text-base-content/45">
-            This local test catches disabled WebRTC. Strict NAT and corporate firewalls can only be
-            confirmed when another device attempts to connect.
+            {tr('This local test catches disabled WebRTC. Strict NAT and corporate firewalls can only be confirmed when another device attempts to connect.')}
           </p>
         )}
         {props.onRetry && props.capability.status === 'unavailable' && (
           <button type="button" className="btn btn-outline btn-sm self-start" onClick={props.onRetry}>
-            Test again
+            {tr('Test again')}
           </button>
         )}
       </div>

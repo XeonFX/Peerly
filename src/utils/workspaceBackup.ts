@@ -11,10 +11,11 @@ import { rememberWorkspace, snapshotWorkspace, type StoredWorkspace } from '../c
 import { verifyInviteAllowList } from '../collab/workspaceAuth'
 import { clampMessageText } from '../protocol/mappers'
 import type { HistoryEntry } from '../protocol/types'
-import type { Channel } from '../types'
+import type { Channel, ReactionRecord } from '../types'
 import { safeThumbnailUrl } from './avatarUrl'
 import { loadLocalHistory, saveLocalHistory } from './historyStorage'
 import { historyEntryToMessage } from '../protocol/mappers'
+import { mergeHistoryEntries } from './historyMerge'
 
 /**
  * A workspace's local record as a file the user owns.
@@ -116,8 +117,42 @@ function sanitizeEntry(raw: unknown, channelId: string): HistoryEntry | null {
     senderColor: typeof raw.senderColor === 'string' ? raw.senderColor.slice(0, 100) : '#ababad',
     senderAvatar: undefined,
     timestamp: raw.timestamp,
+    editedAt:
+      typeof raw.editedAt === 'number' && Number.isFinite(raw.editedAt) ? raw.editedAt : undefined,
+    deletedAt:
+      typeof raw.deletedAt === 'number' && Number.isFinite(raw.deletedAt)
+        ? raw.deletedAt
+        : undefined,
     channelId,
     type: raw.type,
+  }
+  if (Array.isArray(raw.reactions)) {
+    entry.reactions = raw.reactions
+      .slice(-200)
+      .map((reaction): ReactionRecord | null => {
+        if (!isRecord(reaction)) return null
+        const actorId = boundedString(reaction.actorId, MAX_SENDER_ID_CHARS)
+        const emoji = boundedString(reaction.emoji, 8)
+        if (
+          !actorId ||
+          !emoji ||
+          typeof reaction.active !== 'boolean' ||
+          typeof reaction.timestamp !== 'number' ||
+          !Number.isFinite(reaction.timestamp)
+        ) {
+          return null
+        }
+        return {
+          actorId,
+          emoji,
+          active: reaction.active,
+          actorUserId: boundedString(reaction.actorUserId, MAX_MESSAGE_ID_CHARS),
+          actorDeviceKeyId: boundedString(reaction.actorDeviceKeyId, MAX_DEVICE_KEY_ID_CHARS),
+          signature: boundedString(reaction.signature, MAX_SIGNATURE_CHARS),
+          timestamp: reaction.timestamp,
+        }
+      })
+      .filter((reaction): reaction is ReactionRecord => reaction !== null)
   }
   if (raw.type === 'file') {
     if (!isRecord(raw.fileMeta)) return null
@@ -231,21 +266,16 @@ export async function applyWorkspaceBackup(
       const entries = await sanitizeHistoryEntries(structurallySafe, () => undefined)
 
       const existing = loadLocalHistory(access.workspaceId, channelId)
-      const byId = new Map(existing.map(entry => [entry.id, entry]))
-      let addedMessages = 0
-      for (const entry of entries) {
-        if (!byId.has(entry.id)) {
-          byId.set(entry.id, entry)
-          addedMessages++
-        }
-      }
-      const merged = [...byId.values()]
-        .sort((a, b) => a.timestamp - b.timestamp)
-        .slice(-MAX_HISTORY_ENTRIES)
+      const existingIds = new Set(existing.map(entry => entry.id))
+      const addedMessages = entries.filter(entry => !existingIds.has(entry.id)).length
+      const merged = mergeHistoryEntries(
+        existing.map(entry => historyEntryToMessage(entry)),
+        entries
+      ).slice(-MAX_HISTORY_ENTRIES)
       const saved = saveLocalHistory(
         access.workspaceId,
         channelId,
-        merged.map(entry => historyEntryToMessage(entry))
+        merged
       )
       if (saved) importedMessages += addedMessages
     }

@@ -3,6 +3,7 @@ import {
   GENERAL_CHANNEL,
   getCustomChannels,
   mergeWorkspaceChannel,
+  removeWorkspaceChannel,
 } from '../../collab/channelStore'
 import { loadWorkspaceDms, mergeDmChannel, routeDmChannel } from '../../collab/dmStore'
 import { selfId } from '../../collab/identity'
@@ -16,6 +17,9 @@ function toChannelPayload(channel: Channel): ChannelPayload {
     description: channel.description,
     kind: channel.kind,
     peerId: channel.peerId,
+    operation: 'upsert',
+    updatedAt: channel.updatedAt,
+    order: channel.order,
   }
 }
 
@@ -26,6 +30,8 @@ function payloadToChannel(payload: ChannelPayload): Channel {
     description: payload.description ?? '',
     kind: payload.kind ?? 'channel',
     peerId: payload.peerId,
+    updatedAt: payload.updatedAt,
+    order: payload.order,
   }
 }
 
@@ -39,6 +45,12 @@ export function useChannelSync(workspaceId: string, onChannelsChange?: () => voi
 
   const handleChannel = useCallback(
     (payload: ChannelPayload, fromPeerId: string) => {
+      if (payload.operation === 'delete') {
+        if (removeWorkspaceChannel(workspaceIdRef.current, payload.id, payload.updatedAt)) {
+          onChannelsChange?.()
+        }
+        return
+      }
       const channel = payloadToChannel(payload)
 
       if (channel.kind === 'dm') {
@@ -77,6 +89,16 @@ export function useChannelSync(workspaceId: string, onChannelsChange?: () => voi
     [sendChannel]
   )
 
+  const announceChannelDeletion = useCallback(async (channelId: string, deletedAt: number) => {
+    if (!channelActionRef.current || channelId === GENERAL_CHANNEL.id) return
+    await channelActionRef.current.send({
+      id: channelId,
+      name: channelId,
+      operation: 'delete',
+      updatedAt: deletedAt,
+    })
+  }, [])
+
   const broadcastAllToPeer = useCallback(
     async (peerId: string) => {
       if (!channelActionRef.current) return
@@ -108,6 +130,7 @@ export function useChannelSync(workspaceId: string, onChannelsChange?: () => voi
   return {
     handleChannel,
     announceChannel,
+    announceChannelDeletion,
     broadcastAllToPeer,
     bindChannelAction,
     unbindChannelAction,

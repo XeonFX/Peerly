@@ -41,6 +41,7 @@ function noopHandlers(): RoomProtocolHandlers {
     onPeerStream: vi.fn(),
     onInitialPeers: vi.fn(),
     onChannel: vi.fn(),
+    onReaction: vi.fn(),
   }
 }
 
@@ -53,6 +54,7 @@ function noopBindings() {
     bindHistoryAction: vi.fn(),
     bindChannelAction: vi.fn(),
     bindFileRequestAction: vi.fn(),
+    bindReactionAction: vi.fn(),
     broadcastProfile: vi.fn(),
   }
 }

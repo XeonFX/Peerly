@@ -1,6 +1,7 @@
 import type { BrowserStorageEstimate, StoragePressure } from '../utils/browserStorage'
 import { formatBytes } from '../utils/format'
 import { Icon } from './Icon'
+import { useI18n } from '../i18n'
 
 type Props = {
   estimate: BrowserStorageEstimate
@@ -23,6 +24,7 @@ export function BrowserStorageCard({
   onRequestPersistence,
   requestingPersistence,
 }: Props) {
+  const { tr } = useI18n()
   const percent = estimate.usageRatio === undefined ? undefined : Math.round(estimate.usageRatio * 100)
   const hasNumbers = estimate.usageBytes !== undefined && estimate.quotaBytes !== undefined
 
@@ -40,23 +42,23 @@ export function BrowserStorageCard({
       <div className="card-body gap-4 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="eyebrow">Browser storage</p>
+            <p className="eyebrow">{tr('Browser storage')}</p>
             <h3 className="mt-1 text-xl font-semibold tracking-tight">
               {estimate.availableBytes === undefined
-                ? 'Availability unknown'
-                : `${formatBytes(estimate.availableBytes)} available`}
+                ? tr('Availability unknown')
+                : `${formatBytes(estimate.availableBytes)} ${tr('available')}`}
             </h3>
             <p className="mt-1 text-sm text-base-content/55">
               {hasNumbers
-                ? `${formatBytes(estimate.usageBytes!)} used of approximately ${formatBytes(estimate.quotaBytes!)}`
+                ? `${formatBytes(estimate.usageBytes!)} ${tr('used')} / ~${formatBytes(estimate.quotaBytes!)}`
                 : estimate.supported
-                  ? 'The browser did not provide a quota estimate.'
-                  : 'Storage estimates are unavailable in this browser.'}
+                  ? tr('The browser did not provide a quota estimate.')
+                  : tr('Storage estimates are unavailable in this browser.')}
             </p>
           </div>
           {percent !== undefined && (
             <span className={`storage-pressure-pill storage-pressure-${pressure}`}>
-              {percent}% used
+              {percent}% {tr('used')}
             </span>
           )}
         </div>
@@ -73,17 +75,17 @@ export function BrowserStorageCard({
               }`}
               value={percent}
               max={100}
-              aria-label={`${percent}% of browser storage used`}
+              aria-label={`${percent}% ${tr('used')} — ${tr('Browser storage')}`}
             />
             <p className="mt-2 text-xs leading-relaxed text-base-content/55">
-              {pressureCopy[pressure]} Browser quota is an estimate, not a guaranteed reservation.
+              {tr(pressureCopy[pressure])} {tr('Browser quota is an estimate, not a guaranteed reservation.')}
             </p>
           </div>
         )}
 
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn btn-ghost btn-sm" onClick={onRefresh}>
-            Refresh estimate
+            {tr('Refresh estimate')}
           </button>
           {estimate.supported && estimate.persisted === false && (
             <button
@@ -91,14 +93,14 @@ export function BrowserStorageCard({
               className="btn btn-outline btn-primary btn-sm"
               disabled={requestingPersistence}
               onClick={() => void onRequestPersistence()}
-              title="Ask the browser not to evict Peerly data automatically. This does not increase quota."
+              title={tr('Ask the browser not to evict Peerly data automatically. This does not increase quota.')}
             >
-              {requestingPersistence ? 'Requesting…' : 'Protect local data'}
+              {requestingPersistence ? `${tr('Requesting')}…` : tr('Protect local data')}
             </button>
           )}
           {estimate.persisted && (
             <span className="badge badge-success badge-soft gap-1 self-center">
-              <Icon name="check" size={14} /> Local data protected
+              <Icon name="check" size={14} /> {tr('Local data protected')}
             </span>
           )}
         </div>
@@ -116,6 +118,7 @@ export function StoragePressureBanner({
   availableBytes?: number
   onManage: () => void
 }) {
+  const { tr } = useI18n()
   if (pressure === 'ok') return null
   const serious = pressure === 'warning' || pressure === 'critical'
   return (
@@ -127,12 +130,12 @@ export function StoragePressureBanner({
     >
       <Icon name={pressure === 'critical' ? 'alert-triangle' : 'gauge'} size={17} />
       <span className="min-w-0 flex-1">
-        <strong>{pressure === 'critical' ? 'Browser storage almost full' : 'Browser storage is getting low'}</strong>
-        {availableBytes !== undefined && ` · approximately ${formatBytes(availableBytes)} available`}
-        {serious && ' · background file downloads are paused'}
+        <strong>{tr(pressure === 'critical' ? 'Browser storage almost full' : 'Browser storage is getting low')}</strong>
+        {availableBytes !== undefined && ` · ~${formatBytes(availableBytes)} ${tr('available')}`}
+        {serious && ` · ${tr('background file downloads are paused')}`}
       </span>
       <button type="button" className="btn btn-sm btn-ghost" onClick={onManage}>
-        Manage storage
+        {tr('Manage storage')}
       </button>
     </div>
   )

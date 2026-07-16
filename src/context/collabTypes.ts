@@ -23,7 +23,11 @@ export type ChatSlice = {
   unreadByChannel: Record<string, number>
   totalUnread: number
   sendMessage: (text: string) => void
+  editMessage: (messageId: string, text: string) => void
+  deleteMessage: (messageId: string) => void
+  toggleReaction: (messageId: string, emoji: string) => void
   sendFile: (file: File) => Promise<void>
+  sendFiles: (files: File[]) => Promise<void>
   requestFile: (file: SharedFile, channelId: string) => Promise<void>
   /** Persist every in-memory channel before backup/export or navigation. */
   flushHistory: () => void
@@ -32,19 +36,37 @@ export type ChatSlice = {
   /** Persist a screening verdict so a file is classified once per device. */
   markFileNsfw: (fileId: string, nsfw: boolean) => void
   syncProgress: WorkspaceSyncProgress
+  notificationsSupported: boolean
+  notificationsEnabled: boolean
+  notificationPermission: NotificationPermission | 'unsupported'
+  enableNotifications: () => Promise<void>
+  disableNotifications: () => void
+  soundsEnabled: boolean
+  enableSounds: () => Promise<boolean>
+  disableSounds: () => void
 }
 
 export type MediaSlice = {
   inCall: boolean
+  incomingCallPeerId: string | null
   localStream: MediaStream | null
   peerStreams: Record<string, MediaStream>
   videoEnabled: boolean
   audioEnabled: boolean
+  screenSharing: boolean
+  audioInputs: MediaDeviceInfo[]
+  videoInputs: MediaDeviceInfo[]
+  selectedAudioInput: string
+  selectedVideoInput: string
   mediaError: string | null
   startCall: () => Promise<void>
+  declineCall: () => void
   endCall: () => void
   toggleVideo: () => void
   toggleAudio: () => void
+  startScreenShare: () => Promise<void>
+  stopScreenShare: () => void
+  switchDevices: (audioId: string, videoId: string) => Promise<void>
 }
 
 export type ProfileSlice = {
@@ -62,4 +84,5 @@ export type ProfileSlice = {
 
 export type WorkspaceSlice = {
   announceChannel: (channel: Channel) => Promise<void>
+  announceChannelDeletion: (channelId: string, deletedAt: number) => Promise<void>
 }

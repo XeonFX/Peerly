@@ -88,4 +88,38 @@ describe('mergeHistoryEntries', () => {
 
     expect(merged[0].file?.url).toBe('blob:file')
   })
+
+  it('adopts newer same-author revisions and reaction events', () => {
+    const existing = {
+      id: 'm1',
+      text: 'original',
+      senderId: 'peer-a',
+      senderUserId: 'user-a',
+      senderName: 'Alice',
+      senderColor: '#fff',
+      timestamp: 1,
+      channelId: 'general',
+      type: 'text' as const,
+    }
+    const merged = mergeHistoryEntries([existing], [
+      {
+        ...existing,
+        text: 'edited',
+        editedAt: 2,
+        reactions: [
+          {
+            emoji: '👍',
+            active: true,
+            actorId: 'peer-b',
+            actorUserId: 'user-b',
+            timestamp: 3,
+          },
+        ],
+      },
+    ])
+
+    expect(merged[0].text).toBe('edited')
+    expect(merged[0].editedAt).toBe(2)
+    expect(merged[0].reactions?.[0].emoji).toBe('👍')
+  })
 })

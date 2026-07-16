@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_HISTORY_ENTRIES } from '../../collab/constants'
 import { toHistoryEntry } from '../../protocol/mappers'
 import type { HistoryEntry } from '../../protocol/types'
-import type { Message, Peer } from '../../types'
+import type { Message, Peer, ReactionRecord } from '../../types'
 import { enrichMessage, type SenderInfo } from '../../utils/senderDirectory'
 import {
   entriesToMessages,
@@ -77,6 +77,59 @@ export function useMultiChannelStore(
         if (nextMessage.type === 'file') {
           persistChannelMessages(nextMessage.channelId, next)
         }
+        return next
+      })
+    },
+    [persistChannelMessages, updateChannelMessages]
+  )
+
+  const applyMessageRevision = useCallback(
+    (message: Message) => {
+      updateChannelMessages(message.channelId, current => {
+        const index = current.findIndex(existing => existing.id === message.id)
+        if (index === -1) return current
+        const existing = current[index]
+        const incomingRevision = Math.max(message.editedAt ?? 0, message.deletedAt ?? 0)
+        const existingRevision = Math.max(existing.editedAt ?? 0, existing.deletedAt ?? 0)
+        const sameAuthor =
+          (message.senderUserId && message.senderUserId === existing.senderUserId) ||
+          (message.senderDeviceKeyId &&
+            message.senderDeviceKeyId === existing.senderDeviceKeyId) ||
+          (!message.senderUserId && message.senderId === existing.senderId)
+        if (!sameAuthor || incomingRevision <= existingRevision) return current
+        const next = [...current]
+        next[index] = { ...message, senderAvatar: existing.senderAvatar }
+        persistChannelMessages(message.channelId, next)
+        return next
+      })
+    },
+    [persistChannelMessages, updateChannelMessages]
+  )
+
+  const applyReaction = useCallback(
+    (messageId: string, channelId: string, reaction: ReactionRecord) => {
+      updateChannelMessages(channelId, current => {
+        const index = current.findIndex(message => message.id === messageId)
+        if (index === -1) return current
+        const message = current[index]
+        const actorKey = reaction.actorUserId ?? reaction.actorDeviceKeyId ?? reaction.actorId
+        const previous = message.reactions?.find(
+          item =>
+            (item.actorUserId ?? item.actorDeviceKeyId ?? item.actorId) === actorKey &&
+            item.emoji === reaction.emoji
+        )
+        if (previous && previous.timestamp >= reaction.timestamp) return current
+        const reactions = [
+          ...(message.reactions ?? []).filter(
+            item =>
+              (item.actorUserId ?? item.actorDeviceKeyId ?? item.actorId) !== actorKey ||
+              item.emoji !== reaction.emoji
+          ),
+          reaction,
+        ]
+        const next = [...current]
+        next[index] = { ...message, reactions }
+        persistChannelMessages(channelId, next)
         return next
       })
     },
@@ -315,6 +368,8 @@ export function useMultiChannelStore(
     messages,
     messagesByChannel,
     appendMessage,
+    applyMessageRevision,
+    applyReaction,
     syncSenderProfiles,
     upsertFileMessage,
     getHistoryEntries,

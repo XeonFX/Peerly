@@ -5,10 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { APP_ID, buildRoomId } from '../config'
 import { routeDmChannel } from '../collab/dmStore'
 import { FileCache } from '../collab/fileCache'
-import type { ChatPayload } from '../protocol/types'
+import type { ChatPayload, ReactionPayload } from '../protocol/types'
 import type { Message, SharedFile, UserProfile } from '../types'
 import { estimateBrowserStorageCached, hasRoomForWrite } from '../utils/browserStorage'
 import { sanitizeHistoryEntries, type SignedFields } from '../collab/messageSigning'
+import type { SignedReactionFields } from '../collab/reactionSigning'
+import { verifyReaction } from '../collab/reactionSigning'
 import { buildSenderDirectory } from '../utils/senderDirectory'
 import { useLatest } from './useLatest'
 import { chatPayloadToMessage, clampMessageText, createChatPayload } from './collab/wireRoomProtocol'
@@ -25,18 +27,21 @@ import { useRoomAction } from './collab/useRoomAction'
 import { useVideoCall } from './collab/useVideoCall'
 import { wireRoomProtocol } from './collab/wireRoomProtocol'
 import { useRoom } from './useRoom'
+import { useAttention } from './useAttention'
+import { messageFromFileMeta } from '../protocol/mappers'
 
-export function useCollab(
-  workspaceId: string,
-  activeChannelId: string,
-  profile: UserProfile,
-  workspaceSecret?: string,
-  onProfileChange?: (profile: UserProfile & { avatarId?: string }) => void,
-  avatarId?: string,
-  channelIds: string[] = ['general'],
-  onChannelsChange?: () => void,
-  activeView: 'channel' | 'profile' | 'workspace' = 'channel',
-  peerHandshake?: PeerHandshake,
+export type UseCollabOptions = {
+  workspaceId: string
+  workspaceName: string
+  activeChannelId: string
+  profile: UserProfile
+  workspaceSecret?: string
+  onProfileChange?: (profile: UserProfile & { avatarId?: string }) => void
+  avatarId?: string
+  channelIds?: string[]
+  onChannelsChange?: () => void
+  activeView?: 'channel' | 'profile' | 'workspace'
+  peerHandshake?: PeerHandshake
   identity?: {
     /** Durable id of the signed-in user; stamped into messages we send. */
     selfUserId?: string
@@ -49,10 +54,26 @@ export function useCollab(
     resolvePeerUserId?: (peerId: string) => string | undefined
     /** Signs outgoing messages; see collab/messageSigning. */
     signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
+    signReaction?: (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => Promise<{ actorDeviceKeyId: string; signature: string }>
     /** Live-handshake key→user bindings for verifying relayed history. */
     getBoundUserId?: (deviceKeyId: string) => string | undefined
   }
-) {
+}
+
+export function useCollab({
+  workspaceId,
+  workspaceName,
+  activeChannelId,
+  profile,
+  workspaceSecret,
+  onProfileChange,
+  avatarId,
+  channelIds = ['general'],
+  onChannelsChange,
+  activeView = 'channel',
+  peerHandshake,
+  identity,
+}: UseCollabOptions) {
   const roomId = buildRoomId(workspaceId)
 
   // Ids that were "me" in earlier sessions of this workspace. The current id is
@@ -114,8 +135,15 @@ export function useCollab(
   const channelSync = useChannelSync(workspaceId, onChannelsChange)
   const { bindChannelAction, unbindChannelAction } = channelSync
   const channelStore = useMultiChannelStore(workspaceId, activeChannelId, fileCache, channelIds)
-  const { resetWorkspace, appendMessage, syncSenderProfiles, setFileNsfw, flushHistory } =
-    channelStore
+  const {
+    resetWorkspace,
+    appendMessage,
+    applyMessageRevision,
+    applyReaction,
+    syncSenderProfiles,
+    setFileNsfw,
+    flushHistory,
+  } = channelStore
   const files = useFileTransfer(
     activeChannelId,
     profileRef,
@@ -160,6 +188,12 @@ export function useCollab(
   const { reset: resetVideo } = video
   const chatAction = useRoomAction<ChatPayload>()
   const { bind: bindChatAction, unbind: unbindChatAction, send: sendChatPayload } = chatAction
+  const reactionAction = useRoomAction<ReactionPayload>()
+  const {
+    bind: bindReactionAction,
+    unbind: unbindReactionAction,
+    send: sendReactionPayload,
+  } = reactionAction
   const { reset: resetConnection } = connection
 
   const profileManager = useProfileManager(displayProfile, avatarId, handleProfileChange)
@@ -171,6 +205,8 @@ export function useCollab(
     activeView,
     selfId
   )
+  const attention = useAttention(unread.totalUnread, workspaceName)
+  const notifyDirectMessageRef = useLatest(attention.notifyDirectMessage)
 
   const senderDirectory = useMemo(
     () =>
@@ -204,6 +240,7 @@ export function useCollab(
     onPeerStream: () => {},
     onInitialPeers: () => {},
     onChannel: () => {},
+    onReaction: () => {},
   })
 
   handlersRef.current = {
@@ -226,11 +263,10 @@ export function useCollab(
       // handshake. The payload's own senderUserId is deliberately not a
       // fallback: a verified member must not be able to write as someone else.
       const senderUserId = identityRef.current?.resolvePeerUserId?.(payload.senderId)
-      channelStore.appendMessage(
-        chatPayloadToMessage({ ...payload, senderUserId }),
-        senderDirectoryRef.current,
-        peersRef.current
-      )
+      const message = chatPayloadToMessage({ ...payload, senderUserId })
+      if (message.editedAt || message.deletedAt) applyMessageRevision(message)
+      else channelStore.appendMessage(message, senderDirectoryRef.current, peersRef.current)
+      if (route.kind === 'dm') notifyDirectMessageRef.current(message)
     },
     onFileProgress: (percent, peerId, meta) => {
       files.handleReceiveProgress(percent, peerId, meta)
@@ -252,10 +288,13 @@ export function useCollab(
       if (route.kind === 'dm' && peerId !== route.peerId) return
       // Same rule as onChat: the durable id comes from the peer's verified
       // handshake or not at all — never from the payload.
-      void files.handleFileMeta(
-        { ...meta, senderUserId: identityRef.current?.resolvePeerUserId?.(peerId) },
-        peerId
-      )
+      const safeMeta = {
+        ...meta,
+        senderUserId: identityRef.current?.resolvePeerUserId?.(peerId),
+      }
+      void files.handleFileMeta(safeMeta, peerId).then(() => {
+        if (route.kind === 'dm') notifyDirectMessageRef.current(messageFromFileMeta(safeMeta, ''))
+      })
     },
     onHistoryRequest: channelId => channelStore.getHistoryEntries(channelId),
     onFileRequest: (fileIds, peerId) => {
@@ -290,6 +329,29 @@ export function useCollab(
     },
     onChannel: (payload, peerId) => {
       channelSync.handleChannel(payload, peerId)
+    },
+    onReaction: (payload, peerId) => {
+      const route = routeDmChannel(payload.channelId, selfId)
+      if (route.kind === 'foreign-dm' || (route.kind === 'dm' && route.peerId !== peerId)) return
+      const actorUserId = identityRef.current?.resolvePeerUserId?.(peerId)
+      void (async () => {
+        // Verify exactly what was signed before replacing the claimed identity
+        // with the one established by this live peer's handshake.
+        if (!(await verifyReaction(payload, payload.messageId, payload.channelId))) return
+        if (payload.actorUserId && actorUserId !== payload.actorUserId) return
+        const boundUserId = payload.actorDeviceKeyId
+          ? identityRef.current?.getBoundUserId?.(payload.actorDeviceKeyId)
+          : undefined
+        if (
+          boundUserId &&
+          actorUserId &&
+          boundUserId !== actorUserId
+        ) {
+          return
+        }
+        const reaction = { ...payload, actorId: peerId, actorUserId }
+        applyReaction(payload.messageId, payload.channelId, reaction)
+      })()
     },
   }
 
@@ -335,6 +397,7 @@ export function useCollab(
       onPeerStream: (...args) => handlersRef.current.onPeerStream(...args),
       onInitialPeers: (...args) => handlersRef.current.onInitialPeers(...args),
       onChannel: (...args) => handlersRef.current.onChannel(...args),
+      onReaction: (...args) => handlersRef.current.onReaction(...args),
     }
 
     const cleanup = wireRoomProtocol(room, stableHandlers, {
@@ -345,6 +408,7 @@ export function useCollab(
       bindHistoryAction,
       bindChannelAction,
       bindFileRequestAction,
+      bindReactionAction,
       broadcastProfile,
     })
 
@@ -357,6 +421,7 @@ export function useCollab(
       unbindFileRequestAction()
       unbindHistoryAction()
       unbindChannelAction()
+      unbindReactionAction()
     }
   }, [
     room,
@@ -374,6 +439,8 @@ export function useCollab(
     unbindHistoryAction,
     bindChannelAction,
     unbindChannelAction,
+    bindReactionAction,
+    unbindReactionAction,
     broadcastProfile,
   ])
 
@@ -422,6 +489,110 @@ export function useCollab(
     [sendChatPayload, appendMessage, profileRef, senderDirectoryRef]
   )
 
+  const reviseMessage = useCallback(
+    (messageId: string, nextText: string | null) => {
+      const existing = channelStore.messages.find(message => message.id === messageId)
+      if (!existing || existing.type !== 'text') return
+      const selfUserId = identityRef.current?.selfUserId
+      const ownMessage = selfUserId
+        ? existing.senderUserId === selfUserId
+        : existing.senderId === selfId || pastSelfIds.includes(existing.senderId)
+      if (!ownMessage) return
+      const channelId = existing.channelId
+      const route = routeDmChannel(channelId, selfId)
+      if (route.kind === 'foreign-dm') return
+      const now = Date.now()
+      const payload: ChatPayload = {
+        id: existing.id,
+        text: nextText === null ? '' : clampMessageText(nextText),
+        senderId: selfId,
+        senderUserId: selfUserId,
+        senderName: profileRef.current.name,
+        senderColor: profileRef.current.color,
+        senderAvatar: profileRef.current.avatar,
+        timestamp: existing.timestamp,
+        editedAt: nextText === null ? existing.editedAt : now,
+        deletedAt: nextText === null ? now : undefined,
+        channelId,
+        type: 'text',
+      }
+      void (async () => {
+        const signer = identityRef.current?.signMessage
+        const signed = signer
+          ? {
+              ...payload,
+              ...(await signer({
+                id: payload.id,
+                type: 'text',
+                text: payload.text,
+                senderUserId: payload.senderUserId,
+                timestamp: payload.timestamp,
+                channelId: payload.channelId,
+                editedAt: payload.editedAt,
+                deletedAt: payload.deletedAt,
+              })),
+            }
+          : payload
+        const target = route.kind === 'dm' ? route.peerId : undefined
+        await sendChatPayload(signed, target ? { target } : undefined)
+        applyMessageRevision(chatPayloadToMessage(signed))
+      })()
+    },
+    [applyMessageRevision, channelStore.messages, pastSelfIds, profileRef, sendChatPayload]
+  )
+
+  const editMessage = useCallback(
+    (messageId: string, text: string) => reviseMessage(messageId, text),
+    [reviseMessage]
+  )
+  const deleteMessage = useCallback(
+    (messageId: string) => reviseMessage(messageId, null),
+    [reviseMessage]
+  )
+
+  const toggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      if (!['👍', '❤️', '😂', '🎉'].includes(emoji)) return
+      const message = channelStore.messages.find(entry => entry.id === messageId)
+      const signer = identityRef.current?.signReaction
+      if (!message || message.deletedAt || !signer) return
+      const channelId = message.channelId
+      const route = routeDmChannel(channelId, selfId)
+      if (route.kind === 'foreign-dm') return
+      const actorUserId = identityRef.current?.selfUserId
+      const existing = message.reactions?.find(
+        reaction =>
+          reaction.emoji === emoji &&
+          (actorUserId ? reaction.actorUserId === actorUserId : reaction.actorId === selfId)
+      )
+      void (async () => {
+        const timestamp = Date.now()
+        const signed = await signer({
+          messageId,
+          channelId,
+          emoji,
+          active: !existing?.active,
+          actorUserId,
+          timestamp,
+        })
+        const payload: ReactionPayload = {
+          messageId,
+          channelId,
+          emoji,
+          active: !existing?.active,
+          actorId: selfId,
+          actorUserId,
+          timestamp,
+          ...signed,
+        }
+        const target = route.kind === 'dm' ? route.peerId : undefined
+        await sendReactionPayload(payload, target ? { target } : undefined)
+        applyReaction(messageId, channelId, payload)
+      })()
+    },
+    [applyReaction, channelStore.messages, sendReactionPayload]
+  )
+
   const appendChannelMessage = useCallback(
     (message: Message) => {
       appendMessage(message, senderDirectoryRef.current, peersRef.current)
@@ -432,6 +603,17 @@ export function useCollab(
   const sendFile = useCallback(
     async (file: File) => {
       await sendFileTransfer(file, appendChannelMessage)
+    },
+    [appendChannelMessage, sendFileTransfer]
+  )
+
+  const sendFiles = useCallback(
+    async (selectedFiles: File[]) => {
+      // Bound peak memory and thumbnail inference by processing a multi-file
+      // selection in order rather than loading all originals at once.
+      for (const file of selectedFiles) {
+        await sendFileTransfer(file, appendChannelMessage)
+      }
     },
     [appendChannelMessage, sendFileTransfer]
   )
@@ -489,27 +671,50 @@ export function useCollab(
     relayUrls: connection.relayUrls,
     isReady: connection.isReady,
     inCall: video.inCall,
+    incomingCallPeerId: video.incomingCallPeerId,
     localStream: video.localStream,
     peerStreams: video.peerStreams,
     videoEnabled: video.videoEnabled,
     audioEnabled: video.audioEnabled,
+    screenSharing: video.screenSharing,
+    audioInputs: video.audioInputs,
+    videoInputs: video.videoInputs,
+    selectedAudioInput: video.selectedAudioInput,
+    selectedVideoInput: video.selectedVideoInput,
     mediaError: video.mediaError,
     sendMessage,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
     sendFile,
+    sendFiles,
     requestFile,
     flushHistory,
     resetLocalHistory: resetWorkspace,
     markFileNsfw: setFileNsfw,
     syncProgress,
     startCall: video.startCall,
+    declineCall: video.declineCall,
     endCall: video.endCall,
     toggleVideo: video.toggleVideo,
     toggleAudio: video.toggleAudio,
+    startScreenShare: video.startScreenShare,
+    stopScreenShare: video.stopScreenShare,
+    switchDevices: video.switchDevices,
     updateProfile: profileManager.updateProfile,
     setAvatar: profileManager.setAvatar,
     clearAvatar: profileManager.clearAvatar,
     announceChannel: channelSync.announceChannel,
+    announceChannelDeletion: channelSync.announceChannelDeletion,
     unreadByChannel: unread.unreadByChannel,
     totalUnread: unread.totalUnread,
+    notificationsSupported: attention.notificationsSupported,
+    notificationsEnabled: attention.notificationsEnabled,
+    notificationPermission: attention.notificationPermission,
+    enableNotifications: attention.enableNotifications,
+    disableNotifications: attention.disableNotifications,
+    soundsEnabled: attention.soundsEnabled,
+    enableSounds: attention.enableSounds,
+    disableSounds: attention.disableSounds,
   }
 }

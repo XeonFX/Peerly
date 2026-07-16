@@ -453,6 +453,77 @@ test.describe('Peerly P2P collaboration', () => {
     await bobCtx.close()
   })
 
+  test('safe links, signed edits, reactions, and deletes sync between peers', async ({ browser }) => {
+    await withTwoUsers(browser, async (alice, bob) => {
+      await sendMessage(alice, 'Read https://example.com/docs.')
+      await expectMessage(bob, 'Read https://example.com/docs.')
+      const link = bob.getByRole('link', { name: 'https://example.com/docs' })
+      await expect(link).toHaveAttribute('href', 'https://example.com/docs')
+      await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+
+      alice.once('dialog', dialog => void dialog.accept('Read the updated note'))
+      await alice.getByLabel('Edit message').last().click()
+      await expectMessage(bob, 'Read the updated note')
+      await expect(bob.locator('.message-list')).not.toContainText('Read https://example.com/docs.')
+
+      await bob.getByLabel('React 👍').last().click()
+      await expect(alice.getByLabel('👍 reaction, 1')).toBeVisible({ timeout: 15_000 })
+
+      alice.once('dialog', dialog => void dialog.accept())
+      await alice.getByLabel('Delete message').last().click()
+      await expect(bob.locator('.message-list')).toContainText('Message deleted', {
+        timeout: 15_000,
+      })
+      await expect(bob.locator('.message-list')).not.toContainText('Read the updated note')
+    })
+  })
+
+  test('composer accepts multiple files in one selection', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await page.getByTestId('file-input').setInputFiles([
+      { name: 'one.txt', mimeType: 'text/plain', buffer: Buffer.from('one') },
+      { name: 'two.txt', mimeType: 'text/plain', buffer: Buffer.from('two') },
+    ])
+    await expect(page.locator('.message-list')).toContainText('one.txt', { timeout: 15_000 })
+    await expect(page.locator('.message-list')).toContainText('two.txt', { timeout: 15_000 })
+
+  })
+
+  test('on-demand image sync shows a thumbnail before transferring the original', async ({ browser }) => {
+    await withTwoUsers(browser, async (alice, bob) => {
+      const png = fs.readFileSync(path.join(process.cwd(), 'public/icon-192.png'))
+      await alice.getByTestId('file-input').setInputFiles({
+        name: 'thumbnail-first.png',
+        mimeType: 'image/png',
+        buffer: png,
+      })
+
+      const thumbnail = bob.locator('.message-list img.file-preview')
+      await expect(thumbnail).toBeVisible({ timeout: 30_000 })
+      await expect(thumbnail).toHaveAttribute('src', /^data:image\//)
+      const downloadOriginal = bob.getByTestId('download-original')
+      await expect(downloadOriginal).toContainText('Download original')
+
+      await downloadOriginal.click()
+      await expect(downloadOriginal).toHaveCount(0, { timeout: 30_000 })
+      const fullImageLink = bob.locator('.message-list a[href^="blob:"]')
+      await expect(fullImageLink).toBeVisible({ timeout: 30_000 })
+      await expect
+        .poll(
+          () =>
+            fullImageLink.evaluate(async link => {
+              try {
+                return (await fetch((link as HTMLAnchorElement).href)).ok
+              } catch {
+                return false
+              }
+            }),
+          { timeout: 30_000 }
+        )
+        .toBe(true)
+    })
+  })
+
   test('file sharing between peers', async ({ browser }) => {
     const aliceCtx = await browser.newContext()
     const bobCtx = await browser.newContext()
@@ -570,7 +641,20 @@ test.describe('Peerly P2P collaboration', () => {
 
     await alice.getByTestId('video-call-button').click()
     await expect(alice.locator('.video-call-overlay')).toBeVisible()
+    await expect(bob.getByTestId('incoming-call-banner')).toContainText('Alice', {
+      timeout: 30_000,
+    })
+    await bob.getByRole('button', { name: 'Join', exact: true }).click()
     await expect(bob.locator('.video-call-overlay')).toBeVisible({ timeout: 30_000 })
+
+    await alice.evaluate(() => {
+      navigator.mediaDevices.getDisplayMedia = () =>
+        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+    })
+    await alice.getByTestId('screen-share-button').click()
+    await expect(alice.getByTestId('screen-share-button')).toHaveAttribute('aria-pressed', 'true')
+    await alice.getByTestId('screen-share-button').click()
+    await expect(alice.getByTestId('screen-share-button')).toHaveAttribute('aria-pressed', 'false')
 
     await aliceCtx.close()
     await bobCtx.close()
@@ -914,11 +998,73 @@ test.describe('Peerly P2P collaboration', () => {
     })
   })
 
+  test('unread activity updates the tab title and favicon outside the conversation', async ({ browser }) => {
+    await withTwoUsers(browser, async (alice, bob) => {
+      await bob.getByTestId('member-self').click()
+      await sendMessage(alice, 'Background attention check')
+      await expect(bob).toHaveTitle(/^\(1\) Peerly$/)
+      await expect
+        .poll(() =>
+          bob.evaluate(() => document.querySelector<HTMLLinkElement>('link[rel~="icon"]')?.href)
+        )
+        .toMatch(/^data:image\/png/)
+
+      await bob.getByTestId('profile-back').click()
+      await expectMessage(bob, 'Background attention check')
+      await expect(bob).toHaveTitle('Peerly')
+    })
+  })
+
   test('created channel syncs to connected peer', async ({ browser }) => {
     await withTwoUsers(browser, async (alice, bob) => {
       await createChannel(alice, 'design')
       await expectChannel(bob, 'design')
     })
+  })
+
+  test('channel rename and deletion sync; direct messages can be closed', async ({ browser }) => {
+    await withTwoUsers(browser, async (alice, bob) => {
+      await createChannel(alice, 'planning')
+      await expectChannel(bob, 'planning')
+
+      alice.once('dialog', dialog => void dialog.accept('roadmap'))
+      await alice.getByLabel('Rename planning').click()
+      await expectChannel(alice, 'roadmap')
+      await expectChannel(bob, 'roadmap')
+
+      alice.once('dialog', dialog => void dialog.accept())
+      await alice.getByLabel('Delete roadmap').click()
+      await expect(alice.locator('.channel-item', { hasText: 'roadmap' })).toHaveCount(0)
+      await expect(bob.locator('.channel-item', { hasText: 'roadmap' })).toHaveCount(0, {
+        timeout: 15_000,
+      })
+
+      await startDirectMessage(alice, 'Bob')
+      await alice.getByLabel('Close direct message with Bob').click()
+      await expect(alice.getByTestId(/dm-/)).toHaveCount(0)
+    })
+  })
+
+  test('workspace settings expose storage, localization, and notification controls', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await page.getByTestId('workspace-settings-open').click()
+    await expect(page.getByTestId('workspace-storage')).toBeVisible()
+    await expect(page.getByTestId('notification-settings')).toBeVisible()
+    await page.getByTestId('locale-select').selectOption('pl')
+    await expect(page.getByRole('heading', { name: 'Uwaga i powiadomienia' })).toBeVisible()
+    await expect(page.getByTestId('attention-sound-toggle')).toContainText('Włącz dźwięki powiadomień')
+    await page.getByTestId('workspace-settings-back').click()
+    await expect(page.getByRole('heading', { name: 'Kanały' })).toBeVisible()
+    await expect(page.getByTestId('video-call-button')).toHaveAttribute(
+      'aria-label',
+      'Rozpocznij rozmowę wideo'
+    )
+    await page.getByTestId('member-self').click()
+    await expect(page.getByRole('heading', { name: 'Twój profil' })).toBeVisible()
+    await page.getByTestId('profile-back').click()
+    await page.getByTestId('workspace-settings-open').click()
+    await page.getByTestId('locale-select').selectOption('en')
+    await expect(page.getByRole('heading', { name: 'Attention & notifications' })).toBeVisible()
   })
 
   test('synced channel persists after peer refresh', async ({ browser }) => {

@@ -1,5 +1,6 @@
 import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity'
 import type { HistoryEntry } from '../protocol/types'
+import { sanitizeReactions } from './reactionSigning'
 
 /**
  * Author signatures for messages, so relayed history cannot be forged.
@@ -30,6 +31,8 @@ export type SignedFields = {
   senderDeviceKeyId: DeviceKeyId
   timestamp: number
   channelId: string
+  editedAt?: number
+  deletedAt?: number
 }
 
 export function signedMessageBytes(fields: SignedFields): Uint8Array {
@@ -39,14 +42,18 @@ export function signedMessageBytes(fields: SignedFields): Uint8Array {
       : ['text', fields.text]
   // \n cannot appear in ids/keys/timestamps; text goes last so embedded
   // newlines cannot shift any other field's position.
+  const revision = fields.editedAt || fields.deletedAt
+    ? [String(fields.editedAt ?? ''), String(fields.deletedAt ?? '')]
+    : []
   return new TextEncoder().encode(
     [
-      'peerly-msg-v1',
+      revision.length > 0 ? 'peerly-msg-v2' : 'peerly-msg-v1',
       fields.id,
       fields.channelId,
       String(fields.timestamp),
       fields.senderUserId ?? '',
       fields.senderDeviceKeyId,
+      ...revision,
       ...content,
     ].join('\n')
   )
@@ -67,6 +74,8 @@ export async function verifyHistoryEntry(entry: HistoryEntry): Promise<EntryVerd
       senderDeviceKeyId: entry.senderDeviceKeyId,
       timestamp: entry.timestamp,
       channelId: entry.channelId,
+      editedAt: entry.editedAt,
+      deletedAt: entry.deletedAt,
     }),
     entry.signature
   )
@@ -91,14 +100,26 @@ export async function sanitizeHistoryEntries(
         console.warn('[Peerly] Dropped history entry with a bad signature:', entry.id)
         return null
       }
+      let safeEntry = entry
       if (verdict === 'unsigned') {
-        return entry.senderUserId === undefined ? entry : { ...entry, senderUserId: undefined }
+        safeEntry = entry.senderUserId === undefined ? entry : { ...entry, senderUserId: undefined }
+      } else {
+        const bound = entry.senderDeviceKeyId
+          ? getBoundUserId(entry.senderDeviceKeyId)
+          : undefined
+        if (entry.senderUserId && bound !== entry.senderUserId) {
+          safeEntry = { ...entry, senderUserId: undefined }
+        }
       }
-      const bound = entry.senderDeviceKeyId ? getBoundUserId(entry.senderDeviceKeyId) : undefined
-      if (entry.senderUserId && bound !== entry.senderUserId) {
-        return { ...entry, senderUserId: undefined }
-      }
-      return entry
+      const reactions = await sanitizeReactions(
+        safeEntry.reactions ?? [],
+        safeEntry.id,
+        safeEntry.channelId,
+        getBoundUserId
+      )
+      return reactions.length > 0 || safeEntry.reactions
+        ? { ...safeEntry, reactions }
+        : safeEntry
     })
   )
   return results.filter((entry): entry is HistoryEntry => entry !== null)

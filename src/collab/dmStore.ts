@@ -113,3 +113,11 @@ export function mergeDmChannel(workspaceId: string, channel: Channel): boolean {
   ])
   return true
 }
+
+/** Closing a DM is local UI state; the peer keeps their copy and can message again. */
+export function removeDmChannel(workspaceId: string, channelId: string): boolean {
+  const dms = loadDmChannels(workspaceId)
+  if (!dms.some(channel => channel.id === channelId)) return false
+  saveDmChannels(workspaceId, dms.filter(channel => channel.id !== channelId))
+  return true
+}

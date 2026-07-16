@@ -7,6 +7,7 @@ import { InvitePeople } from './InvitePeople'
 import { ThemeToggle } from './ThemeToggle'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
 import { Icon } from './Icon'
+import { useI18n } from '../i18n'
 
 type Props = {
   workspace: string
@@ -34,6 +35,10 @@ type Props = {
   relayUrls: string[]
   onChannelSelect: (id: string) => void
   onAddChannel: (name: string) => void
+  onRenameChannel: (channelId: string, name: string) => void
+  onDeleteChannel: (channelId: string) => void
+  onMoveChannel: (channelId: string, direction: -1 | 1) => void
+  onCloseDirectMessage: (channelId: string) => void
   onStartDirectMessage: (peer: Peer) => void
   onProfileSelect: () => void
   onWorkspaceSettings: () => void
@@ -48,6 +53,7 @@ function ChannelButton({
   active,
   unread,
   onSelect,
+  actions,
 }: {
   channel: Channel
   label: string
@@ -55,11 +61,12 @@ function ChannelButton({
   active: boolean
   unread: number
   onSelect: () => void
+  actions?: React.ReactNode
 }) {
   return (
-    <li>
+    <li className="group flex items-center gap-0.5">
       <button
-        className={`channel-item flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+        className={`channel-item flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
           active
             ? 'bg-accent/15 font-medium text-accent'
             : 'text-base-content/60 hover:bg-base-content/5 hover:text-base-content'
@@ -78,6 +85,11 @@ function ChannelButton({
           </span>
         )}
       </button>
+      {actions && (
+        <span className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {actions}
+        </span>
+      )}
     </li>
   )
 }
@@ -105,12 +117,17 @@ export function Sidebar({
   relayUrls,
   onChannelSelect,
   onAddChannel,
+  onRenameChannel,
+  onDeleteChannel,
+  onMoveChannel,
+  onCloseDirectMessage,
   onStartDirectMessage,
   onProfileSelect,
   onWorkspaceSettings,
   onLeave,
   unreadByChannel,
 }: Props) {
+  const { tr } = useI18n()
   const [showAddChannel, setShowAddChannel] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
 
@@ -138,7 +155,7 @@ export function Sidebar({
           type="button"
           className="workspace-name flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left font-bold text-base-content transition-colors hover:bg-base-content/5"
           onClick={onWorkspaceSettings}
-          title="Workspace settings"
+          title={tr('Workspace settings')}
           data-testid="workspace-settings-open"
         >
           <Avatar name={workspace} color={WORKSPACE_COLOR} avatar={workspaceAvatar} size="md" />
@@ -149,8 +166,8 @@ export function Sidebar({
           <button
             className="btn btn-ghost btn-square btn-sm shrink-0"
             onClick={onLeave}
-            title="Switch workspace"
-            aria-label="Switch workspace"
+            title={tr('Switch workspace')}
+            aria-label={tr('Switch workspace')}
             data-testid="leave-workspace"
           >
             <Icon name="log-out" />
@@ -160,8 +177,8 @@ export function Sidebar({
 
       <nav className="mt-3">
         <div className="flex items-center justify-between px-3 pb-1">
-          <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/45">
-            Channels
+          <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/60">
+            {tr('Channels')}
             {totalUnread > 0 && (
               <span
                 className="badge badge-xs border-0 bg-primary text-primary-content"
@@ -175,15 +192,15 @@ export function Sidebar({
             type="button"
             className="btn btn-ghost btn-xs btn-square"
             onClick={() => setShowAddChannel(value => !value)}
-            title="Add a channel"
-            aria-label="Add a channel"
+            title={tr('Add a channel')}
+            aria-label={tr('Add a channel')}
             data-testid="add-channel-toggle"
           >
             <Icon name="plus" size={15} />
           </button>
         </div>
         <ul className="space-y-0.5 px-2">
-          {publicChannels.map(channel => (
+          {publicChannels.map((channel, index) => (
             <ChannelButton
               key={channel.id}
               channel={channel}
@@ -192,22 +209,75 @@ export function Sidebar({
               active={activeView === 'channel' && activeChannel === channel.id}
               unread={unreadByChannel[channel.id] ?? 0}
               onSelect={() => onChannelSelect(channel.id)}
+              actions={
+                channel.id === 'general' ? undefined : (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      title={tr('Move channel up')}
+                      aria-label={tr('Move {channel} up', { channel: channel.name })}
+                      disabled={index <= 1}
+                      onClick={() => onMoveChannel(channel.id, -1)}
+                    >
+                      <Icon name="arrow-up" size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      title={tr('Move channel down')}
+                      aria-label={tr('Move {channel} down', { channel: channel.name })}
+                      disabled={index === publicChannels.length - 1}
+                      onClick={() => onMoveChannel(channel.id, 1)}
+                    >
+                      <Icon name="arrow-down" size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      title={tr('Rename channel')}
+                      aria-label={tr('Rename {channel}', { channel: channel.name })}
+                      onClick={() => {
+                        const name = window.prompt(tr('Channel name'), channel.name)?.trim()
+                        if (name) onRenameChannel(channel.id, name)
+                      }}
+                    >
+                      <Icon name="pencil" size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square text-error"
+                      title={tr('Delete channel')}
+                      aria-label={tr('Delete {channel}', { channel: channel.name })}
+                      onClick={() => {
+                        if (window.confirm(tr('Delete #{channel} from this workspace?', { channel: channel.name }))) {
+                          onDeleteChannel(channel.id)
+                        }
+                      }}
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </>
+                )
+              }
             />
           ))}
         </ul>
         {showAddChannel && (
           <form className="flex gap-1.5 px-3 pt-2" onSubmit={handleAddChannel}>
             <input
+              id="new-channel-name"
+              name="newChannelName"
               type="text"
               className="input input-bordered input-xs w-full min-w-0 flex-1"
-              placeholder="e.g. random"
+              placeholder={tr('e.g. random')}
               value={newChannelName}
               onChange={e => setNewChannelName(e.target.value)}
               autoFocus
               data-testid="add-channel-input"
             />
             <button type="submit" className="btn btn-primary btn-xs" data-testid="add-channel-submit">
-              Add
+              {tr('Add')}
             </button>
           </form>
         )}
@@ -215,8 +285,8 @@ export function Sidebar({
 
       {dmChannels.length > 0 && (
         <nav className="mt-4">
-          <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/45">
-            Direct messages
+          <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/60">
+            {tr('Direct messages')}
           </h3>
           <ul className="space-y-0.5 px-2">
             {dmChannels.map(channel => {
@@ -236,6 +306,17 @@ export function Sidebar({
                   active={activeView === 'channel' && activeChannel === channel.id}
                   unread={unreadByChannel[channel.id] ?? 0}
                   onSelect={() => onChannelSelect(channel.id)}
+                  actions={
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      title={tr('Close direct message')}
+                      aria-label={tr('Close direct message with {name}', { name: peer?.name ?? channel.name })}
+                      onClick={() => onCloseDirectMessage(channel.id)}
+                    >
+                      <Icon name="x" size={13} />
+                    </button>
+                  }
                 />
               )
             })}
@@ -244,8 +325,8 @@ export function Sidebar({
       )}
 
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
-        <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/45">
-          Online — {peers.length + 1}
+        <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/60">
+          {tr('Online')} — {peers.length + 1}
         </h3>
         <ul data-testid="member-list">
           <li className="px-2">
@@ -257,7 +338,7 @@ export function Sidebar({
                   : 'hover:bg-base-content/5'
               }`}
               onClick={onProfileSelect}
-              aria-label="Open your profile"
+              aria-label={tr('Open your profile')}
               data-testid="member-self"
             >
               <Avatar
@@ -266,7 +347,7 @@ export function Sidebar({
                 avatar={selfProfile.avatar}
               />
               <span className="min-w-0 flex-1 truncate">{selfProfile.name}</span>
-              <span className="shrink-0 text-xs text-base-content/35">you</span>
+              <span className="shrink-0 text-xs text-base-content/55">{tr('you')}</span>
             </button>
           </li>
           {peers.map(peer => (
@@ -281,8 +362,8 @@ export function Sidebar({
               <button
                 type="button"
                 className="btn btn-ghost btn-xs btn-square shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                title={`Message ${peer.name}`}
-                aria-label={`Message ${peer.name}`}
+                title={tr('Message {name}', { name: peer.name })}
+                aria-label={tr('Message {name}', { name: peer.name })}
                 data-testid={`message-peer-${peer.name}`}
                 onClick={() => onStartDirectMessage(peer)}
               >
@@ -326,13 +407,18 @@ export function Sidebar({
             looking over a shoulder. The signaling endpoint count carries the
             diagnostic value that line actually had.
           */}
-          <span className="text-[0.65rem] text-base-content/40" data-testid="signaling-info">
+          <span className="text-[0.65rem] text-base-content/60" data-testid="signaling-info">
             {relayUrls.length > 0
-              ? `${relayUrls.length} signaling endpoint${relayUrls.length === 1 ? '' : 's'} · P2P encrypted`
-              : 'Connecting to signaling…'}
+              ? tr(
+                  relayUrls.length === 1
+                    ? '{count} signaling endpoint · P2P encrypted'
+                    : '{count} signaling endpoints · P2P encrypted',
+                  { count: relayUrls.length }
+                )
+              : `${tr('Connecting to signaling')}…`}
           </span>
           <span
-            className="font-mono text-[0.65rem] text-base-content/30"
+            className="font-mono text-[0.65rem] text-base-content/50"
             data-testid="app-version"
           >
             {appBuildLabel()}
