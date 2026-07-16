@@ -6,6 +6,7 @@ import { isProbablyNsfwUrlCached } from '../collab/nsfwGate'
 import { buildSenderDirectory, resolveSenderInfo } from '../utils/senderDirectory'
 import { Avatar } from './Avatar'
 import { Icon } from './Icon'
+import { SafeMessageText } from './SafeMessageText'
 
 type Props = {
   messages: Message[]
@@ -21,6 +22,9 @@ type Props = {
   transfers: FileTransfer[]
   onRequestFile: (file: SharedFile, channelId: string) => Promise<void>
   onNsfwVerdict: (fileId: string, nsfw: boolean) => void
+  onEditMessage: (messageId: string, text: string) => void
+  onDeleteMessage: (messageId: string) => void
+  onToggleReaction: (messageId: string, emoji: string) => void
 }
 
 function FileAttachment({
@@ -113,7 +117,7 @@ function FileAttachment({
           <Icon name="paperclip" className="text-primary" />
           <span className="flex min-w-0 flex-col">
             <strong className="truncate text-sm font-medium">{file.name}</strong>
-            <span className="text-xs text-base-content/50">{formatBytes(file.size)} · Ready on this device</span>
+            <span className="text-xs text-base-content/65">{formatBytes(file.size)} · Ready on this device</span>
           </span>
           <span className="ml-2 text-primary">Save</span>
         </a>
@@ -126,7 +130,7 @@ function FileAttachment({
           <Icon name="paperclip" className="text-primary" />
           <span className="flex min-w-0 flex-col">
             <strong className="truncate text-sm font-medium">{file.name}</strong>
-            <span className="text-xs text-base-content/50">{formatBytes(file.size)} · Download on demand</span>
+            <span className="text-xs text-base-content/65">{formatBytes(file.size)} · Download on demand</span>
           </span>
           <Icon name="download" size={17} className="ml-2 text-primary" />
         </button>
@@ -135,7 +139,7 @@ function FileAttachment({
       {transfer && (
         <div className="mt-2 max-w-xs">
           <progress className="progress progress-primary h-1.5 w-full" value={transfer.percent} max={1} />
-          <span className="text-[0.7rem] text-base-content/50">Receiving {Math.round(transfer.percent * 100)}%</span>
+          <span className="text-[0.7rem] text-base-content/65">Receiving {Math.round(transfer.percent * 100)}%</span>
         </div>
       )}
     </div>
@@ -153,6 +157,9 @@ export function MessageList({
   transfers,
   onRequestFile,
   onNsfwVerdict,
+  onEditMessage,
+  onDeleteMessage,
+  onToggleReaction,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -160,6 +167,7 @@ export function MessageList({
   const previousMessageIdsRef = useRef<Set<string>>(new Set())
   const prevChannelRef = useRef(channelId)
   const [pendingBelow, setPendingBelow] = useState(0)
+  const [announcement, setAnnouncement] = useState('')
   const senderDirectory = useMemo(
     () => buildSenderDirectory(selfId, selfProfile, peers, messages, pastSelfIds, selfUserId),
     [selfId, selfProfile, peers, messages, pastSelfIds, selfUserId]
@@ -187,10 +195,8 @@ export function MessageList({
     const channelChanged = prevChannelRef.current !== channelId
     prevChannelRef.current = channelId
     const previousIds = previousMessageIdsRef.current
-    const addedCount = messages.reduce(
-      (count, message) => count + (previousIds.has(message.id) ? 0 : 1),
-      0
-    )
+    const addedMessages = messages.filter(message => !previousIds.has(message.id))
+    const addedCount = addedMessages.length
     previousMessageIdsRef.current = new Set(messages.map(message => message.id))
 
     if (channelChanged) {
@@ -198,6 +204,17 @@ export function MessageList({
       return
     }
     if (addedCount === 0) return
+
+    const latestIncoming = [...addedMessages]
+      .reverse()
+      .find(message => message.senderId !== selfId)
+    if (latestIncoming && latestIncoming.timestamp > Date.now() - 30_000) {
+      setAnnouncement(
+        latestIncoming.type === 'file'
+          ? `${latestIncoming.senderName} shared ${latestIncoming.file?.name ?? 'a file'}`
+          : `${latestIncoming.senderName}: ${latestIncoming.text}`
+      )
+    }
 
     const lastIsOwn = messages[messages.length - 1]?.senderId === selfId
     if (nearBottomRef.current || lastIsOwn) {
@@ -219,7 +236,7 @@ export function MessageList({
             </span>
           </div>
           <h3 className="mb-1.5 text-lg font-semibold tracking-tight">Start the conversation</h3>
-          <p className="text-sm leading-relaxed text-base-content/50">
+          <p className="text-sm leading-relaxed text-base-content/65">
             Messages are sent directly peer-to-peer. No server stores your data.
           </p>
         </div>
@@ -229,6 +246,9 @@ export function MessageList({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </div>
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -236,11 +256,19 @@ export function MessageList({
       >
         {messages.map(msg => {
           const sender = resolveSenderInfo(msg, senderDirectory, peers)
+          const ownMessage = selfUserId
+            ? msg.senderUserId === selfUserId
+            : msg.senderId === selfId || pastSelfIds.includes(msg.senderId)
+          const activeReactions = (msg.reactions ?? []).filter(reaction => reaction.active)
+          const reactionCounts = activeReactions.reduce<Record<string, number>>((counts, reaction) => {
+            counts[reaction.emoji] = (counts[reaction.emoji] ?? 0) + 1
+            return counts
+          }, {})
 
           return (
             <div
               key={msg.id}
-              className="group flex gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-base-200/40"
+              className="chat-message-row group flex gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-base-200/40"
               data-testid="chat-message"
             >
               {/* size="md" is deliberate: message avatars were previously sized up
@@ -252,14 +280,48 @@ export function MessageList({
                   <span className="truncate text-sm font-semibold text-base-content">
                     {sender.name}
                   </span>
-                  <span className="shrink-0 text-[0.7rem] text-base-content/40">
+                  <span className="shrink-0 text-[0.7rem] text-base-content/60">
                     {formatTime(msg.timestamp)}
                   </span>
+                  {msg.editedAt && !msg.deletedAt && (
+                    <span className="text-[0.65rem] text-base-content/65">edited</span>
+                  )}
+                  {ownMessage && msg.type === 'text' && !msg.deletedAt && (
+                    <span className="ml-auto flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs btn-square"
+                        aria-label="Edit message"
+                        title="Edit message"
+                        onClick={() => {
+                          const text = window.prompt('Edit message', msg.text)?.trim()
+                          if (text && text !== msg.text) onEditMessage(msg.id, text)
+                        }}
+                      >
+                        <Icon name="pencil" size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs btn-square text-error"
+                        aria-label="Delete message"
+                        title="Delete message"
+                        onClick={() => {
+                          if (window.confirm('Delete this message for everyone online?')) {
+                            onDeleteMessage(msg.id)
+                          }
+                        }}
+                      >
+                        <Icon name="trash" size={13} />
+                      </button>
+                    </span>
+                  )}
                 </div>
 
                 <div className="text-sm leading-relaxed text-base-content/90">
-                  {msg.type === 'text' ? (
-                    <p className="break-words whitespace-pre-wrap">{msg.text}</p>
+                  {msg.deletedAt ? (
+                    <p className="italic text-base-content/65">Message deleted</p>
+                  ) : msg.type === 'text' ? (
+                    <SafeMessageText text={msg.text} />
                   ) : msg.file ? (
                     <div className="mt-1">
                       <FileAttachment
@@ -273,6 +335,34 @@ export function MessageList({
                     </div>
                   ) : null}
                 </div>
+                {!msg.deletedAt && (
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                    {Object.entries(reactionCounts).map(([emoji, count]) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        className="badge badge-outline h-6 gap-1 border-base-300 bg-base-100 hover:border-primary/50"
+                        onClick={() => onToggleReaction(msg.id, emoji)}
+                        aria-label={`${emoji} reaction, ${count}`}
+                      >
+                        <span>{emoji}</span><span>{count}</span>
+                      </button>
+                    ))}
+                    <span className="flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      {['👍', '❤️', '😂', '🎉'].map(emoji => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          className="btn btn-ghost btn-xs btn-square"
+                          onClick={() => onToggleReaction(msg.id, emoji)}
+                          aria-label={`React ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )

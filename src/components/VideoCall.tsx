@@ -4,6 +4,7 @@ import { getPeerColor } from '../config'
 import { safeColor } from '../utils/profileSanitize'
 import { isProbablyNsfwElement } from '../collab/nsfwGate'
 import { Icon } from './Icon'
+import { videoScreeningDelay } from '../collab/videoScreening'
 
 type Props = {
   localStream: MediaStream | null
@@ -12,8 +13,16 @@ type Props = {
   selfName: string
   videoEnabled: boolean
   audioEnabled: boolean
+  screenSharing: boolean
+  audioInputs: MediaDeviceInfo[]
+  videoInputs: MediaDeviceInfo[]
+  selectedAudioInput: string
+  selectedVideoInput: string
   onToggleVideo: () => void
   onToggleAudio: () => void
+  onStartScreenShare: () => Promise<void>
+  onStopScreenShare: () => void
+  onSwitchDevices: (audioId: string, videoId: string) => Promise<void>
   onEnd: () => void
 }
 
@@ -50,7 +59,6 @@ function VideoTile({
     // the app's largest sustained main-thread cost. Any flag stops the loop
     // (flags are sticky until the user reveals).
     let cleanRuns = 0
-    const delayFor = () => (cleanRuns < 5 ? 3_000 : cleanRuns < 10 ? 10_000 : 30_000)
     const schedule = (delay: number) => {
       if (cancelled || flaggedRef.current) return
       timer = window.setTimeout(() => void check(), delay)
@@ -65,7 +73,7 @@ function VideoTile({
         document.visibilityState !== 'visible' ||
         video.offsetParent === null
       ) {
-        schedule(delayFor())
+        schedule(videoScreeningDelay(cleanRuns))
         return
       }
       running = true
@@ -78,7 +86,7 @@ function VideoTile({
       } finally {
         running = false
       }
-      schedule(delayFor())
+      schedule(videoScreeningDelay(cleanRuns))
     }
     schedule(1_000)
     return () => {
@@ -137,8 +145,16 @@ export function VideoCall({
   selfName,
   videoEnabled,
   audioEnabled,
+  screenSharing,
+  audioInputs,
+  videoInputs,
+  selectedAudioInput,
+  selectedVideoInput,
   onToggleVideo,
   onToggleAudio,
+  onStartScreenShare,
+  onStopScreenShare,
+  onSwitchDevices,
   onEnd,
 }: Props) {
   const peerNames = Object.fromEntries(peers.map(p => [p.id, p.name]))
@@ -190,10 +206,63 @@ export function VideoCall({
         >
           <Icon name={audioEnabled ? 'mic' : 'mic-off'} />
         </button>
+        <button
+          className={`btn btn-sm btn-circle ${screenSharing ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() =>
+            screenSharing ? onStopScreenShare() : void onStartScreenShare()
+          }
+          title={screenSharing ? 'Stop sharing screen' : 'Share screen'}
+          aria-label={screenSharing ? 'Stop sharing screen' : 'Share screen'}
+          aria-pressed={screenSharing}
+          data-testid="screen-share-button"
+        >
+          <Icon name="screen-share" />
+        </button>
         <button className="btn btn-sm btn-error" onClick={onEnd}>
           End call
         </button>
       </div>
+
+      {(audioInputs.length > 1 || videoInputs.length > 1) && (
+        <div className="mx-auto mt-3 grid max-w-2xl gap-2 sm:grid-cols-2">
+          <label className="flex min-w-0 items-center gap-2 text-xs text-base-content/60">
+            <Icon name="mic" size={14} />
+            <select
+              className="select select-bordered select-xs min-w-0 flex-1"
+              value={selectedAudioInput}
+              disabled={screenSharing}
+              aria-label="Microphone"
+              onChange={event =>
+                void onSwitchDevices(event.target.value, selectedVideoInput)
+              }
+            >
+              {audioInputs.map((device, index) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Microphone ${index + 1}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex min-w-0 items-center gap-2 text-xs text-base-content/60">
+            <Icon name="video" size={14} />
+            <select
+              className="select select-bordered select-xs min-w-0 flex-1"
+              value={selectedVideoInput}
+              disabled={screenSharing}
+              aria-label="Camera"
+              onChange={event =>
+                void onSwitchDevices(selectedAudioInput, event.target.value)
+              }
+            >
+              {videoInputs.map((device, index) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Camera ${index + 1}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
     </div>
   )
 }

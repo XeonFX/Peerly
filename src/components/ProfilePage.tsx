@@ -61,8 +61,10 @@ export function ProfilePage({
           >
             ← Back to channels
           </button>
-          <h2 className="text-2xl font-bold">Your profile</h2>
-          <p className="mt-1 text-sm text-base-content/50">
+          <h2 className="text-2xl font-bold outline-none" tabIndex={-1} data-view-heading>
+            Your profile
+          </h2>
+          <p className="mt-1 text-sm text-base-content/65">
             Customize how teammates see you in this workspace.
           </p>
         </header>
@@ -79,7 +81,7 @@ export function ProfilePage({
                 />
                 <div className="min-w-0">
                   <h3 className="truncate text-lg font-semibold">{profile.name}</h3>
-                  <p className="text-xs text-base-content/50">
+                  <p className="text-xs text-base-content/65">
                     Avatar images are auto-resized and saved as WebP.
                   </p>
                 </div>
@@ -165,19 +167,19 @@ export function ProfilePage({
               <h3 className="text-base font-semibold">Workspace info</h3>
               <dl className="flex flex-col gap-3 text-sm">
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/50">Workspace</dt>
+                  <dt className="text-xs font-medium text-base-content/65">Workspace</dt>
                   <dd data-testid="profile-workspace">{workspace}</dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/50">Your peer ID</dt>
+                  <dt className="text-xs font-medium text-base-content/65">Your peer ID</dt>
                   <dd className="font-mono text-xs break-all">{selfId}</dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/50">Protection</dt>
+                  <dt className="text-xs font-medium text-base-content/65">Protection</dt>
                   <dd>Invite-only (verified accounts)</dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/50">Invite link</dt>
+                  <dt className="text-xs font-medium text-base-content/65">Invite link</dt>
                   <dd>
                     <input
                       readOnly
@@ -189,7 +191,7 @@ export function ProfilePage({
                   </dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/50">Connection</dt>
+                  <dt className="text-xs font-medium text-base-content/65">Connection</dt>
                   <dd data-testid="profile-connection">
                     <ConnectionStatusLabel
                       relayOnline={relayOnline}

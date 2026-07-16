@@ -7,6 +7,9 @@ import {
   MAX_CHANNEL_NAME_LENGTH,
   MAX_CUSTOM_CHANNELS,
   mergeWorkspaceChannel,
+  moveWorkspaceChannel,
+  removeWorkspaceChannel,
+  renameWorkspaceChannel,
   slugifyChannelName,
 } from './channelStore'
 
@@ -101,5 +104,27 @@ describe('channelStore', () => {
         kind: 'channel',
       })
     ).toBe(false)
+  })
+
+  it('renames, reorders, and tombstones deleted channels', () => {
+    const design = addWorkspaceChannel('team', 'Design')!
+    const random = addWorkspaceChannel('team', 'Random')!
+    expect(renameWorkspaceChannel('team', design.id, 'Product design')?.name).toBe(
+      'Product design'
+    )
+    expect(moveWorkspaceChannel('team', random.id, -1).map(channel => channel.id)).toEqual([
+      'random',
+      'design',
+    ])
+
+    const deletedAt = Date.now() + 10
+    expect(removeWorkspaceChannel('team', design.id, deletedAt)).toBe(true)
+    expect(getCustomChannels('team').map(channel => channel.id)).toEqual(['random'])
+    expect(
+      mergeWorkspaceChannel('team', { ...design, updatedAt: deletedAt - 1 })
+    ).toBe(false)
+    expect(
+      mergeWorkspaceChannel('team', { ...design, updatedAt: deletedAt + 1 })
+    ).toBe(true)
   })
 })

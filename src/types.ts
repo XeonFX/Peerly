@@ -6,6 +6,10 @@ export type Channel = {
   description: string
   kind: ChannelKind
   peerId?: string
+  /** Last-write timestamp for best-effort P2P rename/reorder reconciliation. */
+  updatedAt?: number
+  /** Stable sort position for custom workspace channels. */
+  order?: number
 }
 
 export type UserProfile = {
@@ -28,9 +32,22 @@ export type Message = {
   senderColor: string
   senderAvatar?: string
   timestamp: number
+  editedAt?: number
+  deletedAt?: number
+  reactions?: ReactionRecord[]
   channelId: string
   type: 'text' | 'file'
   file?: SharedFile
+}
+
+export type ReactionRecord = {
+  emoji: string
+  active: boolean
+  actorId: string
+  actorUserId?: string
+  actorDeviceKeyId?: string
+  signature?: string
+  timestamp: number
 }
 
 export type SharedFile = {

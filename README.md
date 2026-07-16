@@ -2,7 +2,7 @@
 
 Serverless peer-to-peer team collaboration — channels, chat, progressive file sharing, and video calls over WebRTC. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), and [Trystero](https://github.com/dmotz/trystero). Peerly has no application backend that stores workspace messages or files; signaling services are used only to help browsers discover each other.
 
-**v0.1.4** — session-expiry recovery, reader-friendly message scrolling, and local workspace backups.
+**v0.2.0** — messenger attention, signed message actions, richer file/call workflows, channel management, installable offline shell, localization foundations, and accessibility hardening.
 
 **Live app:** [peerly.cc](https://peerly.cc)
 
@@ -18,14 +18,19 @@ Serverless peer-to-peer team collaboration — channels, chat, progressive file 
 - **Creator-only invites** — only the device that created a workspace can add members to the allow-list; anyone can copy the invite link
 - **Device-bound auth** — ECDSA challenge-response prevents replayed identity tokens
 - **Session continuity** — warns before the current ID token expires and offers same-account reauthentication so new peer handshakes keep working
-- **Channels & DMs** — scoped messaging over one encrypted P2P room
+- **Managed channels & DMs** — scoped messaging over one encrypted P2P room, with channel rename/delete/reorder and locally closable DM threads
 - **Reader-friendly history** — incoming messages do not pull you away from older history; a new-message pill returns to the latest messages
+- **Messenger attention** — unread totals update the tab title and favicon; users can explicitly opt into background DM notifications
+- **Signed message actions** — HTTPS links are safely linkified; authors can edit/delete with signed revisions, and reactions carry their own identity-bound signatures
+- **Fast file input** — attach multiple files, paste clipboard images/files, or drag files onto the composer; selections process sequentially to cap peak memory
 - **Progressive file sync** — text and thumbnails sync first; full-size file bodies download on demand by default, with a device-wide automatic mode available
 - **Storage visibility** — approximate browser quota, available space, pressure warnings, per-workspace usage, and separate actions for freeing cached originals or clearing local history
 - **Workspace backups** — exports signed workspace-channel history and access as JSON, then safely merges it back from the workspace picker
 - **Local sensitive-media screening** — NSFWJS checks image/video attachments and samples remote video streams locally; flagged media stays hidden until revealed
-- **Video calls** — camera and microphone streams travel through WebRTC, with TURN support for networks that cannot establish a direct path
-- **Offline-first local state** — messages and indexes use localStorage; device keys, avatars, and cached file bodies use IndexedDB; history re-syncs from online peers
+- **Video calls** — incoming-call awareness, screen sharing, camera/microphone selection, and WebRTC media with TURN support for strict networks
+- **Installable offline shell** — a service worker caches the production app shell and loaded release assets so local history remains reachable without signaling
+- **Localization foundation** — an English/Polish device preference and translation catalog establish the path for moving remaining legacy strings out of JSX
+- **Accessibility hardening** — deterministic view focus, polite incoming-message announcements, clearer light-theme contrast, and motion-aware navigation
 - **Connectivity diagnostics** — distinguishes local WebRTC availability, a verified peer connection, signaling failure, and paths that need TURN
 - **Build stamp** — version and git commit shown in the UI so you can confirm what is deployed
 
@@ -210,7 +215,7 @@ Add TURN, signaling overrides, or other providers as needed (see `.env.example`)
 
 Register the production origin (`https://peerly.cc`) in each OAuth provider's allowed JavaScript origins / redirect URIs. Add the direct `workers.dev` address too if you use it for testing.
 
-Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v0.1.4 · abc1234`.
+Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v0.2.0 · abc1234`.
 
 Cloudflare Pages also works: use `npm run build`, publish `dist/`, and set the same build-time environment variables.
 
@@ -239,6 +244,7 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 ├── public/                 Static assets (favicon, etc.)
 ├── scripts/
 │   ├── guard-bundle.mjs    Fail build if E2E keys reached dist/
+│   ├── check-csp.mjs       Serve dist with CSP, test a negative control + offline shell
 │   └── check-relays.mjs    Nostr relay health diagnostic
 ├── server/                 Dev relay, test server, process helpers
 │   ├── dev.mjs             npm run dev (Nostr signaling)
@@ -273,17 +279,18 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 | `npm run dev:app` | Vite only, using the signaling strategy from the environment |
 | `npm run stop` | Stop the common local Peerly development ports |
 | `npm run build` | Typecheck + production build + bundle guard |
-| `npm test` | Vitest unit tests (194 tests) |
+| `npm test` | Vitest unit tests (205 tests) |
 | `npm run test:watch` | Vitest in watch mode |
-| `npm run test:e2e` | Playwright E2E (42 tests, local relay) |
+| `npm run test:e2e` | Playwright E2E (47 tests, local relay) |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
 | `npm run test:e2e:ui` | Playwright interactive UI |
 | `npm run preview` | Preview the production build locally |
 | `npm run check:relays` | Health-check the default Nostr relays |
+| `npm run check:csp` | Verify production CSP, its inline-script negative control, and the offline shell |
 | `npm run guard:bundle` | Fail if test key material reached `dist/` (runs in `build`) |
 | `npm run lint` | oxlint |
 
-The app shows its version and commit (`v0.1.4 · a1b2c3d`) on the join screen and
+The app shows its version and commit (`v0.2.0 · a1b2c3d`) on the join screen and
 in the sidebar footer. Hosts that expose a commit SHA
 (`CF_PAGES_COMMIT_SHA`, `GITHUB_SHA`, `VERCEL_GIT_COMMIT_SHA`, …) are picked up
 automatically; otherwise it falls back to local git.
@@ -299,8 +306,8 @@ working until two peers fail to find each other.
 - **Invite link = credential** — workspace ID lives in the URL hash (never sent to servers in HTTP requests)
 - **Identity handshake** — three-round P2P verification: OIDC JWT + allow-list signature + live device-key proof
 - **No server-side enforcement** — allow-list is creator-signed; peers verify signatures and JWTs locally
-- **Messages are author-signed** — every message and file announcement is signed with the sender's device key at send time. Relayed history is verified on import: tampered entries are dropped, and identity claims are honoured only for keys bound to that user in a live handshake — an unsigned or unbound entry keeps its text but cannot impersonate anyone.
-- **Security headers** — a strict Content-Security-Policy (self-contained app; only the identity providers and `wss:` relays are reachable) ships via `public/_headers` on Cloudflare.
+- **Messages are author-signed** — every message and file announcement is signed with the sender's device key at send time. Signed v2 revisions make edits/deletes tamper-evident, and each reaction is signed independently. Relayed history is verified on import: tampered entries are dropped, and identity claims are honoured only for keys bound to that user in a live handshake.
+- **Security headers** — a strict Content-Security-Policy ships via `public/_headers`; CI serves the production bundle with those headers, asserts zero startup violations, and proves its negative control is blocked.
 - **Inviting is creator-only** — the allow-list is only accepted if it verifies against the workspace's creator key, and that key never leaves the browser profile that created the workspace. A second device, even the creator's, cannot add members.
 - **Revocation is best-effort** — the creator can remove a member, and every device judges peers against the newest creator-signed list it holds, so updated members stop admitting the removed member at their next handshake. The honest limit: the removed member and any member who never received the update can still pair, and open connections are not torn down. Nothing short of a server closes that gap.
 - **Live messages** — attributed by transport peer id, not payload `senderId`
@@ -325,9 +332,9 @@ GitHub Actions on push/PR to `main` / `master` (see [.github/workflows/ci.yml](.
 
 1. Install Node `24.18.0` with its bundled npm `11.16.0`, then verify both exact versions.
 2. Run a clean `npm ci` from the committed lockfile.
-3. Run lint and 194 unit tests.
+3. Run lint and 205 unit tests.
 4. Run the TypeScript/Vite production build and bundle guard.
-5. Install Chromium and run all 42 Playwright tests against the local relay.
+5. Install Chromium, verify CSP plus the offline shell, and run all 47 Playwright tests against the local relay.
 
 `package.json` `devEngines`, `.npmrc`, `.nvmrc`, and CI all enforce the same toolchain. A mismatched Node or npm exits before it can rewrite `package-lock.json`.
 

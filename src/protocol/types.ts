@@ -1,4 +1,4 @@
-import type { Message, UserProfile } from '../types'
+import type { Message, ReactionRecord, UserProfile } from '../types'
 
 /** Wire format for live chat messages. */
 export type ChatPayload = {
@@ -18,6 +18,8 @@ export type ChatPayload = {
   senderColor: string
   senderAvatar?: string
   timestamp: number
+  editedAt?: number
+  deletedAt?: number
   channelId: string
   type: 'text'
 }
@@ -78,9 +80,17 @@ export type HistoryEntry = {
   senderColor: string
   senderAvatar?: string
   timestamp: number
+  editedAt?: number
+  deletedAt?: number
+  reactions?: ReactionRecord[]
   channelId: string
   type: 'text' | 'file'
   fileMeta?: HistoryFileMeta
+}
+
+export type ReactionPayload = ReactionRecord & {
+  messageId: string
+  channelId: string
 }
 
 export type HistoryRequest = {
@@ -94,6 +104,9 @@ export type ChannelPayload = {
   description?: string
   kind?: 'channel' | 'dm'
   peerId?: string
+  operation?: 'upsert' | 'delete'
+  updatedAt?: number
+  order?: number
 }
 
 export type CachedFile = {
@@ -111,6 +124,7 @@ export const ACTION_IDS = {
   fileRequest: 'file-req',
   historySync: 'history-sync',
   channelSync: 'channel-sync',
+  reaction: 'reaction',
 } as const
 
 export type SenderFields = Pick<

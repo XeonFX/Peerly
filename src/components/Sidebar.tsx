@@ -34,6 +34,10 @@ type Props = {
   relayUrls: string[]
   onChannelSelect: (id: string) => void
   onAddChannel: (name: string) => void
+  onRenameChannel: (channelId: string, name: string) => void
+  onDeleteChannel: (channelId: string) => void
+  onMoveChannel: (channelId: string, direction: -1 | 1) => void
+  onCloseDirectMessage: (channelId: string) => void
   onStartDirectMessage: (peer: Peer) => void
   onProfileSelect: () => void
   onWorkspaceSettings: () => void
@@ -48,6 +52,7 @@ function ChannelButton({
   active,
   unread,
   onSelect,
+  actions,
 }: {
   channel: Channel
   label: string
@@ -55,11 +60,12 @@ function ChannelButton({
   active: boolean
   unread: number
   onSelect: () => void
+  actions?: React.ReactNode
 }) {
   return (
-    <li>
+    <li className="group flex items-center gap-0.5">
       <button
-        className={`channel-item flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+        className={`channel-item flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
           active
             ? 'bg-accent/15 font-medium text-accent'
             : 'text-base-content/60 hover:bg-base-content/5 hover:text-base-content'
@@ -78,6 +84,11 @@ function ChannelButton({
           </span>
         )}
       </button>
+      {actions && (
+        <span className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          {actions}
+        </span>
+      )}
     </li>
   )
 }
@@ -105,6 +116,10 @@ export function Sidebar({
   relayUrls,
   onChannelSelect,
   onAddChannel,
+  onRenameChannel,
+  onDeleteChannel,
+  onMoveChannel,
+  onCloseDirectMessage,
   onStartDirectMessage,
   onProfileSelect,
   onWorkspaceSettings,
@@ -160,7 +175,7 @@ export function Sidebar({
 
       <nav className="mt-3">
         <div className="flex items-center justify-between px-3 pb-1">
-          <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/45">
+          <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-base-content/60">
             Channels
             {totalUnread > 0 && (
               <span
@@ -183,7 +198,7 @@ export function Sidebar({
           </button>
         </div>
         <ul className="space-y-0.5 px-2">
-          {publicChannels.map(channel => (
+          {publicChannels.map((channel, index) => (
             <ChannelButton
               key={channel.id}
               channel={channel}
@@ -192,6 +207,57 @@ export function Sidebar({
               active={activeView === 'channel' && activeChannel === channel.id}
               unread={unreadByChannel[channel.id] ?? 0}
               onSelect={() => onChannelSelect(channel.id)}
+              actions={
+                channel.id === 'general' ? undefined : (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      title="Move channel up"
+                      aria-label={`Move ${channel.name} up`}
+                      disabled={index <= 1}
+                      onClick={() => onMoveChannel(channel.id, -1)}
+                    >
+                      <Icon name="arrow-up" size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      title="Move channel down"
+                      aria-label={`Move ${channel.name} down`}
+                      disabled={index === publicChannels.length - 1}
+                      onClick={() => onMoveChannel(channel.id, 1)}
+                    >
+                      <Icon name="arrow-down" size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      title="Rename channel"
+                      aria-label={`Rename ${channel.name}`}
+                      onClick={() => {
+                        const name = window.prompt('Channel name', channel.name)?.trim()
+                        if (name) onRenameChannel(channel.id, name)
+                      }}
+                    >
+                      <Icon name="pencil" size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square text-error"
+                      title="Delete channel"
+                      aria-label={`Delete ${channel.name}`}
+                      onClick={() => {
+                        if (window.confirm(`Delete #${channel.name} from this workspace?`)) {
+                          onDeleteChannel(channel.id)
+                        }
+                      }}
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </>
+                )
+              }
             />
           ))}
         </ul>
@@ -215,7 +281,7 @@ export function Sidebar({
 
       {dmChannels.length > 0 && (
         <nav className="mt-4">
-          <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/45">
+          <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/60">
             Direct messages
           </h3>
           <ul className="space-y-0.5 px-2">
@@ -236,6 +302,17 @@ export function Sidebar({
                   active={activeView === 'channel' && activeChannel === channel.id}
                   unread={unreadByChannel[channel.id] ?? 0}
                   onSelect={() => onChannelSelect(channel.id)}
+                  actions={
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square"
+                      title="Close direct message"
+                      aria-label={`Close direct message with ${peer?.name ?? channel.name}`}
+                      onClick={() => onCloseDirectMessage(channel.id)}
+                    >
+                      <Icon name="x" size={13} />
+                    </button>
+                  }
                 />
               )
             })}
@@ -244,7 +321,7 @@ export function Sidebar({
       )}
 
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
-        <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/45">
+        <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/60">
           Online — {peers.length + 1}
         </h3>
         <ul data-testid="member-list">
@@ -266,7 +343,7 @@ export function Sidebar({
                 avatar={selfProfile.avatar}
               />
               <span className="min-w-0 flex-1 truncate">{selfProfile.name}</span>
-              <span className="shrink-0 text-xs text-base-content/35">you</span>
+              <span className="shrink-0 text-xs text-base-content/55">you</span>
             </button>
           </li>
           {peers.map(peer => (
@@ -326,13 +403,13 @@ export function Sidebar({
             looking over a shoulder. The signaling endpoint count carries the
             diagnostic value that line actually had.
           */}
-          <span className="text-[0.65rem] text-base-content/40" data-testid="signaling-info">
+          <span className="text-[0.65rem] text-base-content/60" data-testid="signaling-info">
             {relayUrls.length > 0
               ? `${relayUrls.length} signaling endpoint${relayUrls.length === 1 ? '' : 's'} · P2P encrypted`
               : 'Connecting to signaling…'}
           </span>
           <span
-            className="font-mono text-[0.65rem] text-base-content/30"
+            className="font-mono text-[0.65rem] text-base-content/50"
             data-testid="app-version"
           >
             {appBuildLabel()}

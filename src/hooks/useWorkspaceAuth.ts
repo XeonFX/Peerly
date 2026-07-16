@@ -4,6 +4,7 @@ import type { SignedAllowList } from '../collab/allowList'
 import { loadKeyBindings, rememberKeyBinding } from '../collab/keyBindings'
 import type { DeviceKeyId } from '../collab/deviceIdentity'
 import type { SignedFields } from '../collab/messageSigning'
+import type { SignedReactionFields } from '../collab/reactionSigning'
 import { deriveUserId } from '../collab/userId'
 import { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { loadIdToken, loadIdentityProvider, type Session } from '../session'
@@ -23,6 +24,7 @@ export function useWorkspaceAuth(
   resolvePeerUserId: (peerId: string) => string | undefined
   /** Sign message bytes with this device's key, or undefined pre-auth. */
   signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
+  signReaction?: (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => Promise<{ actorDeviceKeyId: string; signature: string }>
   /** userId a device key was bound to in a live handshake — history's trust root. */
   getBoundUserId: (deviceKeyId: DeviceKeyId) => string | undefined
 } {
@@ -108,5 +110,10 @@ export function useWorkspaceAuth(
     return (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => manager.signMessage(fields)
   }, [manager])
 
-  return { manager, peerHandshake, resolvePeerUserId, signMessage, getBoundUserId }
+  const signReaction = useMemo(() => {
+    if (!manager) return undefined
+    return (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => manager.signReaction(fields)
+  }, [manager])
+
+  return { manager, peerHandshake, resolvePeerUserId, signMessage, signReaction, getBoundUserId }
 }

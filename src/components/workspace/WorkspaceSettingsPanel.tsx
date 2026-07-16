@@ -17,6 +17,7 @@ import type { useBrowserStorage } from '../../hooks/useBrowserStorage'
 import type { P2pCapability } from '../../types'
 import { P2pCapabilityIndicator } from '../P2pCapabilityIndicator'
 import { ThemeToggle } from '../ThemeToggle'
+import { useI18n } from '../../i18n'
 
 type Props = {
   workspaceId: string
@@ -30,6 +31,11 @@ type Props = {
   onRetryP2p: () => void
   onBeforeExport: () => void
   onLocalHistoryCleared: () => void
+  notificationsSupported: boolean
+  notificationsEnabled: boolean
+  notificationPermission: NotificationPermission | 'unsupported'
+  onEnableNotifications: () => Promise<void>
+  onDisableNotifications: () => void
   onNameChange: (name: string) => void
   onAvatarChange: (avatarId: string, preview: string) => void
   onAvatarClear: () => void
@@ -48,11 +54,17 @@ export function WorkspaceSettingsPanel({
   onRetryP2p,
   onBeforeExport,
   onLocalHistoryCleared,
+  notificationsSupported,
+  notificationsEnabled,
+  notificationPermission,
+  onEnableNotifications,
+  onDisableNotifications,
   onNameChange,
   onAvatarChange,
   onAvatarClear,
   onBack,
 }: Props) {
+  const { locale, setLocale, t } = useI18n()
   const fileRef = useRef<HTMLInputElement>(null)
   const [usage, setUsage] = useState<WorkspaceUsage | null>(null)
   const [syncMode, setSyncMode] = useState<FileSyncMode>(() => loadFileSyncMode())
@@ -113,8 +125,10 @@ export function WorkspaceSettingsPanel({
           >
             ← Back to channels
           </button>
-          <h2 className="text-2xl font-bold">Workspace settings</h2>
-          <p className="mt-1 text-sm text-base-content/50">
+          <h2 className="text-2xl font-bold outline-none" tabIndex={-1} data-view-heading>
+            Workspace settings
+          </h2>
+          <p className="mt-1 text-sm text-base-content/65">
             Customize how this workspace appears on this device. The name travels with invite
             links you copy from here; the icon stays local.
           </p>
@@ -131,7 +145,7 @@ export function WorkspaceSettingsPanel({
               />
               <div className="min-w-0">
                 <h3 className="truncate text-lg font-semibold">{workspaceName || 'Workspace'}</h3>
-                <p className="text-xs text-base-content/50">
+                <p className="text-xs text-base-content/65">
                   Workspace images are auto-resized and saved as WebP.
                 </p>
               </div>
@@ -191,15 +205,73 @@ export function WorkspaceSettingsPanel({
           </div>
         </section>
 
-        <section className="card mt-5 border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
+        <section
+          className="card mt-5 border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl"
+          data-testid="appearance-settings"
+        >
           <div className="card-body gap-3">
             <div>
               <h3 className="text-base font-semibold">Appearance</h3>
-              <p className="mt-1 text-xs leading-relaxed text-base-content/50">
+              <p className="mt-1 text-xs leading-relaxed text-base-content/65">
                 Theme preference is stored only on this device.
               </p>
             </div>
-            <ThemeToggle />
+            <div className="flex flex-wrap items-center gap-3">
+              <ThemeToggle />
+              <label className="flex items-center gap-2 text-sm">
+                <span>{t('settings.language', 'Language')}</span>
+                <select
+                  className="select select-bordered select-sm"
+                  value={locale}
+                  onChange={event => setLocale(event.target.value as 'en' | 'pl')}
+                  data-testid="locale-select"
+                >
+                  <option value="en">English</option>
+                  <option value="pl">Polski</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section
+          className="card mt-5 border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl"
+          data-testid="notification-settings"
+        >
+          <div className="card-body gap-3">
+            <div>
+              <h3 className="text-base font-semibold">
+                {t('settings.attention.title', 'Attention & notifications')}
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-base-content/65">
+                {t(
+                  'settings.attention.description',
+                  'Unread counts appear in the tab and favicon automatically. Browser notifications are optional and only announce direct messages while Peerly is in the background.'
+                )}
+              </p>
+            </div>
+            {!notificationsSupported ? (
+              <p className="text-sm text-base-content/60">This browser does not support notifications.</p>
+            ) : notificationPermission === 'denied' ? (
+              <p className="text-sm text-warning">
+                Notifications are blocked in browser settings. Allow them for this site, then reload.
+              </p>
+            ) : (
+              <button
+                type="button"
+                className={`btn btn-sm w-fit ${notificationsEnabled ? 'btn-outline' : 'btn-primary'}`}
+                data-testid="notification-toggle"
+                onClick={() =>
+                  notificationsEnabled
+                    ? onDisableNotifications()
+                    : void onEnableNotifications()
+                }
+              >
+                {notificationsEnabled
+                  ? t('settings.attention.disable', 'Turn off DM notifications')
+                  : t('settings.attention.enable', 'Turn on DM notifications')}
+              </button>
+            )}
           </div>
         </section>
 
@@ -218,7 +290,7 @@ export function WorkspaceSettingsPanel({
 
             <dl className="flex flex-col gap-3 text-sm" data-testid="workspace-storage">
               <div className="flex flex-col gap-0.5">
-                <dt className="text-xs font-medium text-base-content/50">On this device</dt>
+                <dt className="text-xs font-medium text-base-content/65">On this device</dt>
                 <dd data-testid="workspace-storage-total">
                   {usage
                     ? `${formatUsage(usage.totalBytes)} — ${formatUsage(usage.messagesBytes)} messages, ${formatUsage(usage.filesBytes)} in ${usage.fileCount} cached file${usage.fileCount === 1 ? '' : 's'}`
@@ -226,7 +298,7 @@ export function WorkspaceSettingsPanel({
                 </dd>
               </div>
               <div className="flex flex-col gap-0.5">
-                <dt className="text-xs font-medium text-base-content/50">Shared total</dt>
+                <dt className="text-xs font-medium text-base-content/65">Shared total</dt>
                 <dd data-testid="workspace-storage-shared">
                   {usage
                     ? `${formatUsage(usage.sharedFilesBytes)} across ${usage.sharedFileCount} file${usage.sharedFileCount === 1 ? '' : 's'}`
@@ -284,7 +356,7 @@ export function WorkspaceSettingsPanel({
                 Export backup
               </button>
             </div>
-            <p className="text-xs text-base-content/50">
+            <p className="text-xs text-base-content/65">
               Backups carry workspace-channel messages and access, so protect them like an invite
               link. History caps at 500 messages per channel. DMs and file originals are excluded;
               originals re-fetch from members who hold them. Restore from the start screen with
@@ -305,7 +377,7 @@ export function WorkspaceSettingsPanel({
               />
               <span className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium">Auto-download full files</span>
-                <span className="text-xs leading-relaxed text-base-content/50">
+                <span className="text-xs leading-relaxed text-base-content/65">
                   Off: joining syncs messages and image thumbnails only; full-size files download
                   when you open them. On: every shared file downloads immediately. Applies to all
                   workspaces on this device.
