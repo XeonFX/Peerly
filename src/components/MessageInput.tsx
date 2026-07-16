@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Icon } from './Icon'
 import { filesFromClipboard } from '../utils/composerFiles'
+import { useI18n } from '../i18n'
 
 type Props = {
   channelName?: string
@@ -17,6 +18,7 @@ export function MessageInput({
   onFiles,
   disabled,
 }: Props) {
+  const { tr } = useI18n()
   const [text, setText] = useState('')
   const [dragging, setDragging] = useState(false)
   const dragDepthRef = useRef(0)
@@ -68,11 +70,13 @@ export function MessageInput({
     >
       {dragging && (
         <div className="pointer-events-none absolute inset-x-3 bottom-3 top-1 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/15 text-sm font-semibold text-primary backdrop-blur sm:inset-x-5 sm:bottom-4">
-          Drop files to share
+          {tr('Drop files to share')}
         </div>
       )}
       <div className="flex items-center gap-1.5 rounded-2xl border border-base-300 bg-base-200/80 p-1.5 backdrop-blur transition-colors focus-within:border-primary/60">
         <input
+          id="message-file-attachments"
+          name="messageAttachments"
           ref={fileRef}
           type="file"
           multiple
@@ -85,18 +89,24 @@ export function MessageInput({
           className="btn btn-ghost btn-sm btn-circle shrink-0"
           onClick={() => fileRef.current?.click()}
           disabled={disabled}
-          title="Attach a file to share with everyone in this channel"
-          aria-label="Attach file"
+          title={tr('Attach a file to share with everyone in this channel')}
+          aria-label={tr('Attach file')}
           data-testid="attach-file-button"
         >
           <Icon name="paperclip" />
         </button>
         <input
+          id="message-text"
+          name="messageText"
           type="text"
           // min-w-0 matters: without it the flex item refuses to shrink and the
           // send button gets pushed off a narrow screen.
           className="min-w-0 flex-1 bg-transparent px-1.5 text-sm outline-none placeholder:text-base-content/55 disabled:cursor-not-allowed disabled:opacity-50"
-          placeholder={isDirectMessage ? `Message ${channelName}` : `Message #${channelName}`}
+          placeholder={
+            isDirectMessage
+              ? tr('Message {channel}', { channel: channelName })
+              : tr('Message #{channel}', { channel: channelName })
+          }
           value={text}
           onChange={e => setText(e.target.value)}
           onPaste={event => {
@@ -115,7 +125,7 @@ export function MessageInput({
           disabled={disabled || !text.trim()}
           data-testid="send-button"
         >
-          Send
+          {tr('Send')}
         </button>
       </div>
     </form>

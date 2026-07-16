@@ -7,6 +7,7 @@ import { buildSenderDirectory, resolveSenderInfo } from '../utils/senderDirector
 import { Avatar } from './Avatar'
 import { Icon } from './Icon'
 import { SafeMessageText } from './SafeMessageText'
+import { useI18n } from '../i18n'
 
 type Props = {
   messages: Message[]
@@ -38,6 +39,7 @@ function FileAttachment({
   onRequest: (file: SharedFile) => Promise<void>
   onNsfwVerdict: (fileId: string, nsfw: boolean) => void
 }) {
+  const { tr } = useI18n()
   const [flagged, setFlagged] = useState(Boolean(file.nsfw))
   const [revealed, setRevealed] = useState(false)
   const source = file.url || file.thumbnail
@@ -92,18 +94,19 @@ function FileAttachment({
               type="button"
               className="absolute inset-x-0 bottom-0 flex w-full items-center justify-between gap-3 bg-linear-to-t from-black/85 to-transparent px-3 pb-2 pt-9 text-xs text-white"
               onClick={() => void onRequest(file)}
+              data-testid="download-original"
             >
-              <span>Preview</span>
-              <span>Download original · {formatBytes(file.size)}</span>
+              <span>{tr('Preview')}</span>
+              <span>{tr('Download original')} · {formatBytes(file.size)}</span>
             </button>
           )}
           {hidden && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/45 p-4 text-center text-white">
               <Icon name="shield" size={22} />
-              <strong className="text-sm">Sensitive media hidden</strong>
-              <span className="text-xs text-white/75">Checked privately on this device</span>
+              <strong className="text-sm">{tr('Sensitive media hidden')}</strong>
+              <span className="text-xs text-white/75">{tr('Checked privately on this device')}</span>
               <button type="button" className="btn btn-sm border-white/30 bg-white/15 text-white hover:bg-white/25" onClick={() => setRevealed(true)}>
-                Reveal
+                {tr('Reveal')}
               </button>
             </div>
           )}
@@ -117,9 +120,9 @@ function FileAttachment({
           <Icon name="paperclip" className="text-primary" />
           <span className="flex min-w-0 flex-col">
             <strong className="truncate text-sm font-medium">{file.name}</strong>
-            <span className="text-xs text-base-content/65">{formatBytes(file.size)} · Ready on this device</span>
+            <span className="text-xs text-base-content/65">{formatBytes(file.size)} · {tr('Ready on this device')}</span>
           </span>
-          <span className="ml-2 text-primary">Save</span>
+          <span className="ml-2 text-primary">{tr('Save')}</span>
         </a>
       ) : (
         <button
@@ -130,7 +133,7 @@ function FileAttachment({
           <Icon name="paperclip" className="text-primary" />
           <span className="flex min-w-0 flex-col">
             <strong className="truncate text-sm font-medium">{file.name}</strong>
-            <span className="text-xs text-base-content/65">{formatBytes(file.size)} · Download on demand</span>
+            <span className="text-xs text-base-content/65">{formatBytes(file.size)} · {tr('Download on demand')}</span>
           </span>
           <Icon name="download" size={17} className="ml-2 text-primary" />
         </button>
@@ -139,7 +142,7 @@ function FileAttachment({
       {transfer && (
         <div className="mt-2 max-w-xs">
           <progress className="progress progress-primary h-1.5 w-full" value={transfer.percent} max={1} />
-          <span className="text-[0.7rem] text-base-content/65">Receiving {Math.round(transfer.percent * 100)}%</span>
+          <span className="text-[0.7rem] text-base-content/65">{tr('Receiving')} {Math.round(transfer.percent * 100)}%</span>
         </div>
       )}
     </div>
@@ -161,6 +164,7 @@ export function MessageList({
   onDeleteMessage,
   onToggleReaction,
 }: Props) {
+  const { tr } = useI18n()
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
@@ -211,7 +215,7 @@ export function MessageList({
     if (latestIncoming && latestIncoming.timestamp > Date.now() - 30_000) {
       setAnnouncement(
         latestIncoming.type === 'file'
-          ? `${latestIncoming.senderName} shared ${latestIncoming.file?.name ?? 'a file'}`
+          ? tr('{name} shared {file}', { name: latestIncoming.senderName, file: latestIncoming.file?.name ?? tr('a file') })
           : `${latestIncoming.senderName}: ${latestIncoming.text}`
       )
     }
@@ -222,7 +226,7 @@ export function MessageList({
     } else {
       setPendingBelow(count => count + addedCount)
     }
-  }, [messages, channelId, selfId])
+  }, [messages, channelId, selfId, tr])
 
   if (messages.length === 0) {
     return (
@@ -235,9 +239,9 @@ export function MessageList({
               <Icon name="message-circle" size={29} />
             </span>
           </div>
-          <h3 className="mb-1.5 text-lg font-semibold tracking-tight">Start the conversation</h3>
+          <h3 className="mb-1.5 text-lg font-semibold tracking-tight">{tr('Start the conversation')}</h3>
           <p className="text-sm leading-relaxed text-base-content/65">
-            Messages are sent directly peer-to-peer. No server stores your data.
+            {tr('Messages are sent directly peer-to-peer. No server stores your data.')}
           </p>
         </div>
       </div>
@@ -284,17 +288,17 @@ export function MessageList({
                     {formatTime(msg.timestamp)}
                   </span>
                   {msg.editedAt && !msg.deletedAt && (
-                    <span className="text-[0.65rem] text-base-content/65">edited</span>
+                    <span className="text-[0.65rem] text-base-content/65">{tr('edited')}</span>
                   )}
                   {ownMessage && msg.type === 'text' && !msg.deletedAt && (
                     <span className="ml-auto flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                       <button
                         type="button"
                         className="btn btn-ghost btn-xs btn-square"
-                        aria-label="Edit message"
-                        title="Edit message"
+                        aria-label={tr('Edit message')}
+                        title={tr('Edit message')}
                         onClick={() => {
-                          const text = window.prompt('Edit message', msg.text)?.trim()
+                          const text = window.prompt(tr('Edit message'), msg.text)?.trim()
                           if (text && text !== msg.text) onEditMessage(msg.id, text)
                         }}
                       >
@@ -303,10 +307,10 @@ export function MessageList({
                       <button
                         type="button"
                         className="btn btn-ghost btn-xs btn-square text-error"
-                        aria-label="Delete message"
-                        title="Delete message"
+                        aria-label={tr('Delete message')}
+                        title={tr('Delete message')}
                         onClick={() => {
-                          if (window.confirm('Delete this message for everyone online?')) {
+                          if (window.confirm(tr('Delete this message for everyone online?'))) {
                             onDeleteMessage(msg.id)
                           }
                         }}
@@ -319,7 +323,7 @@ export function MessageList({
 
                 <div className="text-sm leading-relaxed text-base-content/90">
                   {msg.deletedAt ? (
-                    <p className="italic text-base-content/65">Message deleted</p>
+                    <p className="italic text-base-content/65">{tr('Message deleted')}</p>
                   ) : msg.type === 'text' ? (
                     <SafeMessageText text={msg.text} />
                   ) : msg.file ? (
@@ -343,7 +347,7 @@ export function MessageList({
                         type="button"
                         className="badge badge-outline h-6 gap-1 border-base-300 bg-base-100 hover:border-primary/50"
                         onClick={() => onToggleReaction(msg.id, emoji)}
-                        aria-label={`${emoji} reaction, ${count}`}
+                        aria-label={tr('{emoji} reaction, {count}', { emoji, count })}
                       >
                         <span>{emoji}</span><span>{count}</span>
                       </button>
@@ -355,7 +359,7 @@ export function MessageList({
                           type="button"
                           className="btn btn-ghost btn-xs btn-square"
                           onClick={() => onToggleReaction(msg.id, emoji)}
-                          aria-label={`React ${emoji}`}
+                          aria-label={tr('React {emoji}', { emoji })}
                         >
                           {emoji}
                         </button>
@@ -376,7 +380,7 @@ export function MessageList({
           onClick={() => jumpToBottom()}
           data-testid="new-messages-pill"
         >
-          ↓ {pendingBelow} new message{pendingBelow === 1 ? '' : 's'}
+          ↓ {pendingBelow} {tr(pendingBelow === 1 ? 'new message' : 'new messages')}
         </button>
       )}
     </div>

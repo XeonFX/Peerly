@@ -41,6 +41,9 @@ export type ChatSlice = {
   notificationPermission: NotificationPermission | 'unsupported'
   enableNotifications: () => Promise<void>
   disableNotifications: () => void
+  soundsEnabled: boolean
+  enableSounds: () => Promise<boolean>
+  disableSounds: () => void
 }
 
 export type MediaSlice = {

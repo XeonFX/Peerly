@@ -12,6 +12,9 @@ import { VideoCall } from '../VideoCall'
 import { SyncStatusBar } from '../SyncStatusBar'
 import { Icon } from '../Icon'
 import { RELAY_OFFLINE_ERROR } from '../../collab/constants'
+import { startIncomingCallRingtone } from '../../collab/attentionSound'
+import { useEffect } from 'react'
+import { useI18n } from '../../i18n'
 
 type Props = {
   channel: Channel
@@ -27,8 +30,9 @@ export function ChannelPanel({
   showFiles,
   onOpenSidebar,
 }: Props) {
+  const { tr } = useI18n()
   const { connectionError, connectionNotice, isReady } = useConnectionSlice()
-  const { messages, transfers, sendMessage, editMessage, deleteMessage, toggleReaction, sendFiles, requestFile, markFileNsfw, syncProgress, fileError } = useChatSlice()
+  const { messages, transfers, sendMessage, editMessage, deleteMessage, toggleReaction, sendFiles, requestFile, markFileNsfw, syncProgress, fileError, soundsEnabled } = useChatSlice()
   const {
     inCall,
     incomingCallPeerId,
@@ -61,6 +65,11 @@ export function ChannelPanel({
   // (TURN, password mismatch, local relay configuration, etc.).
   const visibleConnectionError = connectionError === RELAY_OFFLINE_ERROR ? null : connectionError
 
+  useEffect(() => {
+    if (!soundsEnabled || !incomingCallPeerId || inCall) return
+    return startIncomingCallRingtone()
+  }, [inCall, incomingCallPeerId, soundsEnabled])
+
   return (
     <>
       <header className="flex shrink-0 items-center gap-2 border-b border-base-300/70 px-3 py-2.5 sm:px-5">
@@ -69,7 +78,7 @@ export function ChannelPanel({
             type="button"
             className="btn btn-ghost btn-sm btn-square mr-1 lg:hidden"
             onClick={onOpenSidebar}
-            aria-label="Open workspace menu"
+            aria-label={tr('Open workspace menu')}
             data-testid="open-sidebar"
           >
             <Icon name="menu" />
@@ -111,22 +120,22 @@ export function ChannelPanel({
             className={`btn btn-sm ${inCall || incomingCallPeerId ? 'btn-primary' : 'btn-ghost'}`}
             onClick={inCall ? endCall : startCall}
             data-testid="video-call-button"
-            aria-label={inCall ? 'End call' : incomingCallPeerId ? 'Join incoming call' : 'Start video call'}
+            aria-label={tr(inCall ? 'End call' : incomingCallPeerId ? 'Join incoming call' : 'Start video call')}
           >
             <Icon name={inCall ? 'phone-off' : 'video'} />
             <span className="hidden sm:inline">
-              {inCall ? 'In call' : incomingCallPeerId ? 'Join call' : 'Start video call'}
+              {tr(inCall ? 'In call' : incomingCallPeerId ? 'Join call' : 'Start video call')}
             </span>
           </button>
           <button
             className={`btn btn-sm ${showFiles ? 'btn-active' : 'btn-ghost'}`}
             onClick={onToggleFiles}
-            aria-label="Toggle shared files"
+            aria-label={tr('Toggle shared files')}
             aria-pressed={showFiles}
             data-testid="toggle-files"
           >
             <Icon name="folder" />
-            <span className="hidden sm:inline">Files</span>
+            <span className="hidden sm:inline">{tr('Files')}</span>
           </button>
         </div>
       </header>
@@ -175,13 +184,13 @@ export function ChannelPanel({
         >
           <Icon name="video" className="text-primary" />
           <span className="min-w-0 flex-1">
-            <strong>{incomingPeer?.name ?? 'A teammate'}</strong> started a video call.
+            <strong>{incomingPeer?.name ?? tr('A teammate')}</strong> {tr('started a video call.')}
           </span>
           <button type="button" className="btn btn-primary btn-sm" onClick={() => void startCall()}>
-            Join
+            {tr('Join')}
           </button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={declineCall}>
-            Dismiss
+            {tr('Dismiss')}
           </button>
         </div>
       )}

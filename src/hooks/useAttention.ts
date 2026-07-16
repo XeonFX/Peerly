@@ -5,6 +5,13 @@ import {
   saveDmNotificationsEnabled,
 } from '../collab/notificationPreference'
 import type { Message } from '../types'
+import {
+  loadAttentionSoundsEnabled,
+  playDirectMessageChime,
+  primeAttentionAudio,
+  saveAttentionSoundsEnabled,
+} from '../collab/attentionSound'
+import { useI18n } from '../i18n'
 
 export type NotificationPermissionState = NotificationPermission | 'unsupported'
 
@@ -43,7 +50,9 @@ function updateFaviconBadge(totalUnread: number): () => void {
 
 /** Tab/favion attention plus an explicit, DM-only browser-notification opt-in. */
 export function useAttention(totalUnread: number, workspaceName: string) {
+  const { tr } = useI18n()
   const [enabled, setEnabled] = useState(() => loadDmNotificationsEnabled())
+  const [soundsEnabled, setSoundsEnabled] = useState(() => loadAttentionSoundsEnabled())
   const [permission, setPermission] = useState<NotificationPermissionState>(() =>
     currentPermission()
   )
@@ -74,18 +83,29 @@ export function useAttention(totalUnread: number, workspaceName: string) {
     setEnabled(false)
   }, [])
 
+  const enableSounds = useCallback(async () => {
+    const ready = await primeAttentionAudio()
+    if (!ready) return false
+    saveAttentionSoundsEnabled(true)
+    setSoundsEnabled(true)
+    playDirectMessageChime()
+    return true
+  }, [])
+
+  const disableSounds = useCallback(() => {
+    saveAttentionSoundsEnabled(false)
+    setSoundsEnabled(false)
+  }, [])
+
   const notifyDirectMessage = useCallback(
     (message: Message) => {
-      if (
-        !enabled ||
-        typeof Notification === 'undefined' ||
-        Notification.permission !== 'granted' ||
-        document.visibilityState === 'visible'
-      ) {
-        return
-      }
+      if (document.visibilityState === 'visible') return
+      if (soundsEnabled) playDirectMessageChime()
+      if (!enabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
       const notification = new Notification(`${message.senderName} · ${workspaceName}`, {
-        body: message.type === 'file' ? `Shared ${message.file?.name ?? 'a file'}` : message.text,
+        body: message.type === 'file'
+          ? tr('Shared {file}', { file: message.file?.name ?? tr('a file') })
+          : message.text,
         icon: '/icon-192.png',
         tag: `peerly-dm-${message.channelId}`,
       })
@@ -94,7 +114,7 @@ export function useAttention(totalUnread: number, workspaceName: string) {
         notification.close()
       }
     },
-    [enabled, workspaceName]
+    [enabled, soundsEnabled, tr, workspaceName]
   )
 
   return {
@@ -103,6 +123,9 @@ export function useAttention(totalUnread: number, workspaceName: string) {
     notificationPermission: permission,
     enableNotifications,
     disableNotifications,
+    soundsEnabled,
+    enableSounds,
+    disableSounds,
     notifyDirectMessage,
   }
 }

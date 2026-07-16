@@ -713,5 +713,8 @@ export function useCollab({
     notificationPermission: attention.notificationPermission,
     enableNotifications: attention.enableNotifications,
     disableNotifications: attention.disableNotifications,
+    soundsEnabled: attention.soundsEnabled,
+    enableSounds: attention.enableSounds,
+    disableSounds: attention.disableSounds,
   }
 }

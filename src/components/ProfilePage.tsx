@@ -3,6 +3,7 @@ import { PEER_COLORS } from '../config'
 import type { ConnectionStatus, UserProfile } from '../types'
 import { Avatar } from './Avatar'
 import { ConnectionStatus as ConnectionStatusLabel } from './ConnectionStatus'
+import { useI18n } from '../i18n'
 
 type Props = {
   profile: UserProfile
@@ -33,6 +34,7 @@ export function ProfilePage({
   onAvatarClear,
   onBack,
 }: Props) {
+  const { tr } = useI18n()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -43,7 +45,7 @@ export function ProfilePage({
     try {
       await onAvatarChange(file)
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to upload avatar.')
+      setUploadError(err instanceof Error ? err.message : tr('Failed to upload avatar.'))
     } finally {
       setUploading(false)
     }
@@ -59,13 +61,13 @@ export function ProfilePage({
             onClick={onBack}
             data-testid="profile-back"
           >
-            ← Back to channels
+            ← {tr('Back to channels')}
           </button>
           <h2 className="text-2xl font-bold outline-none" tabIndex={-1} data-view-heading>
-            Your profile
+            {tr('Your profile')}
           </h2>
           <p className="mt-1 text-sm text-base-content/65">
-            Customize how teammates see you in this workspace.
+            {tr('Customize how teammates see you in this workspace.')}
           </p>
         </header>
 
@@ -82,27 +84,31 @@ export function ProfilePage({
                 <div className="min-w-0">
                   <h3 className="truncate text-lg font-semibold">{profile.name}</h3>
                   <p className="text-xs text-base-content/65">
-                    Avatar images are auto-resized and saved as WebP.
+                    {tr('Avatar images are auto-resized and saved as WebP.')}
                   </p>
                 </div>
               </div>
 
               <label className="form-control w-full">
-                <span className="label-text mb-1.5 block text-sm font-medium">Display name</span>
+                <span className="label-text mb-1.5 block text-sm font-medium">{tr('Display name')}</span>
                 <input
+                  id="profile-display-name"
+                  name="profileDisplayName"
                   type="text"
                   className="input input-bordered w-full"
                   value={profile.name}
                   onChange={e => onNameChange(e.target.value)}
                   data-testid="profile-name"
-                  placeholder="Your name"
+                  placeholder={tr('Your name')}
                 />
               </label>
 
               <label className="form-control w-full">
-                <span className="label-text mb-1.5 block text-sm font-medium">Your color</span>
+                <span className="label-text mb-1.5 block text-sm font-medium">{tr('Your color')}</span>
                 <div className="flex flex-wrap items-center gap-3">
                   <input
+                    id="profile-color"
+                    name="profileColor"
                     type="color"
                     className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-base-300 bg-base-100 p-1"
                     value={profile.color}
@@ -123,7 +129,7 @@ export function ProfilePage({
                         onClick={() => onColorChange(color)}
                         data-testid={`color-preset-${color}`}
                         title={color}
-                        aria-label={`Use color ${color}`}
+                        aria-label={tr('Use color {color}', { color })}
                         aria-pressed={profile.color === color}
                       />
                     ))}
@@ -133,6 +139,8 @@ export function ProfilePage({
 
               <div className="flex flex-wrap gap-2">
                 <input
+                  id="profile-avatar-upload"
+                  name="profileAvatar"
                   ref={fileRef}
                   type="file"
                   accept="image/*"
@@ -150,11 +158,11 @@ export function ProfilePage({
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading}
                 >
-                  {uploading ? 'Processing…' : 'Upload avatar'}
+                  {uploading ? `${tr('Processing')}…` : tr('Upload avatar')}
                 </button>
                 {profile.avatar && (
                   <button type="button" className="btn btn-ghost btn-sm" onClick={onAvatarClear}>
-                    Remove avatar
+                    {tr('Remove avatar')}
                   </button>
                 )}
               </div>
@@ -164,24 +172,26 @@ export function ProfilePage({
 
           <section className="card border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
             <div className="card-body gap-4">
-              <h3 className="text-base font-semibold">Workspace info</h3>
+              <h3 className="text-base font-semibold">{tr('Workspace info')}</h3>
               <dl className="flex flex-col gap-3 text-sm">
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/65">Workspace</dt>
+                  <dt className="text-xs font-medium text-base-content/65">{tr('Workspace')}</dt>
                   <dd data-testid="profile-workspace">{workspace}</dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/65">Your peer ID</dt>
+                  <dt className="text-xs font-medium text-base-content/65">{tr('Your peer ID')}</dt>
                   <dd className="font-mono text-xs break-all">{selfId}</dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/65">Protection</dt>
-                  <dd>Invite-only (verified accounts)</dd>
+                  <dt className="text-xs font-medium text-base-content/65">{tr('Protection')}</dt>
+                  <dd>{tr('Invite-only (verified accounts)')}</dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/65">Invite link</dt>
+                  <dt className="text-xs font-medium text-base-content/65">{tr('Invite link')}</dt>
                   <dd>
                     <input
+                      id="profile-workspace-invite-link"
+                      name="workspaceInviteLink"
                       readOnly
                       className="input input-bordered input-sm w-full font-mono text-xs"
                       value={inviteLink}
@@ -191,7 +201,7 @@ export function ProfilePage({
                   </dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs font-medium text-base-content/65">Connection</dt>
+                  <dt className="text-xs font-medium text-base-content/65">{tr('Connection')}</dt>
                   <dd data-testid="profile-connection">
                     <ConnectionStatusLabel
                       relayOnline={relayOnline}

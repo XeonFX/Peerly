@@ -36,6 +36,9 @@ type Props = {
   notificationPermission: NotificationPermission | 'unsupported'
   onEnableNotifications: () => Promise<void>
   onDisableNotifications: () => void
+  soundsEnabled: boolean
+  onEnableSounds: () => Promise<boolean>
+  onDisableSounds: () => void
   onNameChange: (name: string) => void
   onAvatarChange: (avatarId: string, preview: string) => void
   onAvatarClear: () => void
@@ -59,12 +62,15 @@ export function WorkspaceSettingsPanel({
   notificationPermission,
   onEnableNotifications,
   onDisableNotifications,
+  soundsEnabled,
+  onEnableSounds,
+  onDisableSounds,
   onNameChange,
   onAvatarChange,
   onAvatarClear,
   onBack,
 }: Props) {
-  const { locale, setLocale, t } = useI18n()
+  const { locale, setLocale, t, tr } = useI18n()
   const fileRef = useRef<HTMLInputElement>(null)
   const [usage, setUsage] = useState<WorkspaceUsage | null>(null)
   const [syncMode, setSyncMode] = useState<FileSyncMode>(() => loadFileSyncMode())
@@ -97,7 +103,7 @@ export function WorkspaceSettingsPanel({
       const { avatarId, dataUrl } = await uploadAvatar(file, workspaceAvatarId)
       onAvatarChange(avatarId, dataUrl)
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to upload workspace image.')
+      setUploadError(err instanceof Error ? err.message : tr('Failed to upload workspace image.'))
     } finally {
       setUploading(false)
     }
@@ -109,7 +115,7 @@ export function WorkspaceSettingsPanel({
       await removeAvatar(workspaceAvatarId)
       onAvatarClear()
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to remove workspace image.')
+      setUploadError(err instanceof Error ? err.message : tr('Failed to remove workspace image.'))
     }
   }
 
@@ -123,14 +129,13 @@ export function WorkspaceSettingsPanel({
             onClick={onBack}
             data-testid="workspace-settings-back"
           >
-            ← Back to channels
+            ← {tr('Back to channels')}
           </button>
           <h2 className="text-2xl font-bold outline-none" tabIndex={-1} data-view-heading>
-            Workspace settings
+            {tr('Workspace settings')}
           </h2>
           <p className="mt-1 text-sm text-base-content/65">
-            Customize how this workspace appears on this device. The name travels with invite
-            links you copy from here; the icon stays local.
+            {tr('Customize how this workspace appears on this device. The name travels with invite links you copy from here; the icon stays local.')}
           </p>
         </header>
 
@@ -144,16 +149,18 @@ export function WorkspaceSettingsPanel({
                 size="lg"
               />
               <div className="min-w-0">
-                <h3 className="truncate text-lg font-semibold">{workspaceName || 'Workspace'}</h3>
+                <h3 className="truncate text-lg font-semibold">{workspaceName || tr('Workspace')}</h3>
                 <p className="text-xs text-base-content/65">
-                  Workspace images are auto-resized and saved as WebP.
+                  {tr('Workspace images are auto-resized and saved as WebP.')}
                 </p>
               </div>
             </div>
 
             <label className="form-control w-full">
-              <span className="label-text mb-1.5 block text-sm font-medium">Workspace name</span>
+              <span className="label-text mb-1.5 block text-sm font-medium">{tr('Workspace name')}</span>
               <input
+                id="workspace-settings-name"
+                name="workspaceName"
                 type="text"
                 className="input input-bordered w-full"
                 value={nameDraft}
@@ -166,12 +173,14 @@ export function WorkspaceSettingsPanel({
                   if (!nameDraft.trim()) setNameDraft(workspaceName)
                 }}
                 data-testid="workspace-name"
-                placeholder="My team"
+                placeholder={tr('My team')}
               />
             </label>
 
             <div className="flex flex-wrap gap-2">
               <input
+                id="workspace-settings-avatar"
+                name="workspaceAvatar"
                 ref={fileRef}
                 type="file"
                 accept="image/*"
@@ -189,7 +198,7 @@ export function WorkspaceSettingsPanel({
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading}
               >
-                {uploading ? 'Processing…' : 'Upload workspace image'}
+                {uploading ? `${tr('Processing')}…` : tr('Upload workspace image')}
               </button>
               {workspaceAvatar && (
                 <button
@@ -197,7 +206,7 @@ export function WorkspaceSettingsPanel({
                   className="btn btn-ghost btn-sm"
                   onClick={() => void handleClearAvatar()}
                 >
-                  Remove image
+                  {tr('Remove image')}
                 </button>
               )}
             </div>
@@ -211,9 +220,9 @@ export function WorkspaceSettingsPanel({
         >
           <div className="card-body gap-3">
             <div>
-              <h3 className="text-base font-semibold">Appearance</h3>
+              <h3 className="text-base font-semibold">{tr('Appearance')}</h3>
               <p className="mt-1 text-xs leading-relaxed text-base-content/65">
-                Theme preference is stored only on this device.
+                {tr('Theme preference is stored only on this device.')}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -221,6 +230,8 @@ export function WorkspaceSettingsPanel({
               <label className="flex items-center gap-2 text-sm">
                 <span>{t('settings.language', 'Language')}</span>
                 <select
+                  id="app-locale"
+                  name="locale"
                   className="select select-bordered select-sm"
                   value={locale}
                   onChange={event => setLocale(event.target.value as 'en' | 'pl')}
@@ -251,10 +262,10 @@ export function WorkspaceSettingsPanel({
               </p>
             </div>
             {!notificationsSupported ? (
-              <p className="text-sm text-base-content/60">This browser does not support notifications.</p>
+              <p className="text-sm text-base-content/60">{tr('This browser does not support notifications.')}</p>
             ) : notificationPermission === 'denied' ? (
               <p className="text-sm text-warning">
-                Notifications are blocked in browser settings. Allow them for this site, then reload.
+                {tr('Notifications are blocked in browser settings. Allow them for this site, then reload.')}
               </p>
             ) : (
               <button
@@ -272,6 +283,20 @@ export function WorkspaceSettingsPanel({
                   : t('settings.attention.enable', 'Turn on DM notifications')}
               </button>
             )}
+            <button
+              type="button"
+              className={`btn btn-sm w-fit ${soundsEnabled ? 'btn-outline' : 'btn-primary'}`}
+              onClick={() =>
+                soundsEnabled ? onDisableSounds() : void onEnableSounds()
+              }
+              data-testid="attention-sound-toggle"
+              aria-pressed={soundsEnabled}
+            >
+              {tr(soundsEnabled ? 'Turn off attention sounds' : 'Turn on attention sounds')}
+            </button>
+            <p className="text-xs leading-relaxed text-base-content/65">
+              {tr('Plays a short background DM chime and repeats a gentle ringtone for incoming calls.')}
+            </p>
           </div>
         </section>
 
@@ -286,23 +311,23 @@ export function WorkspaceSettingsPanel({
 
         <section className="card mt-5 border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
           <div className="card-body gap-4">
-            <h3 className="text-base font-semibold">Storage &amp; sync</h3>
+            <h3 className="text-base font-semibold">{tr('Storage & sync')}</h3>
 
             <dl className="flex flex-col gap-3 text-sm" data-testid="workspace-storage">
               <div className="flex flex-col gap-0.5">
-                <dt className="text-xs font-medium text-base-content/65">On this device</dt>
+                <dt className="text-xs font-medium text-base-content/65">{tr('On this device')}</dt>
                 <dd data-testid="workspace-storage-total">
                   {usage
-                    ? `${formatUsage(usage.totalBytes)} — ${formatUsage(usage.messagesBytes)} messages, ${formatUsage(usage.filesBytes)} in ${usage.fileCount} cached file${usage.fileCount === 1 ? '' : 's'}`
-                    : 'Measuring…'}
+                    ? `${formatUsage(usage.totalBytes)} — ${formatUsage(usage.messagesBytes)} ${tr('messages')}, ${formatUsage(usage.filesBytes)} / ${usage.fileCount} ${tr(usage.fileCount === 1 ? 'cached file' : 'cached files')}`
+                    : `${tr('Measuring')}…`}
                 </dd>
               </div>
               <div className="flex flex-col gap-0.5">
-                <dt className="text-xs font-medium text-base-content/65">Shared total</dt>
+                <dt className="text-xs font-medium text-base-content/65">{tr('Shared total')}</dt>
                 <dd data-testid="workspace-storage-shared">
                   {usage
-                    ? `${formatUsage(usage.sharedFilesBytes)} across ${usage.sharedFileCount} file${usage.sharedFileCount === 1 ? '' : 's'}`
-                    : 'Measuring…'}
+                    ? `${formatUsage(usage.sharedFilesBytes)} ${tr('across')} ${usage.sharedFileCount} ${tr(usage.sharedFileCount === 1 ? 'file' : 'files')}`
+                    : `${tr('Measuring')}…`}
                 </dd>
               </div>
             </dl>
@@ -312,25 +337,25 @@ export function WorkspaceSettingsPanel({
                 className="btn btn-outline btn-primary btn-sm"
                 disabled={!usage?.reclaimableBytes}
                 onClick={() => {
-                  if (!window.confirm('Remove unpinned full-size files from this device? Messages and previews stay available.')) return
+                  if (!window.confirm(tr('Remove unpinned full-size files from this device? Messages and previews stay available.'))) return
                   void clearWorkspaceFiles(workspaceId).then(refreshUsage)
                 }}
               >
-                Free {usage ? formatUsage(usage.reclaimableBytes) : 'local space'}
+                {tr('Free')} {usage ? formatUsage(usage.reclaimableBytes) : tr('local space')}
               </button>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm text-error"
                 data-testid="clear-local-history"
                 onClick={() => {
-                  if (!window.confirm('Clear local messages, previews, read state, and cached files for this workspace? Access remains, and history can re-sync from online peers.')) return
+                  if (!window.confirm(tr('Clear local messages, previews, read state, and cached files for this workspace? Access remains, and history can re-sync from online peers.'))) return
                   void clearWorkspaceData(workspaceId).then(async () => {
                     onLocalHistoryCleared()
                     await refreshUsage()
                   })
                 }}
               >
-                Clear local history
+                {tr('Clear local history')}
               </button>
               <button
                 type="button"
@@ -353,18 +378,17 @@ export function WorkspaceSettingsPanel({
                   window.setTimeout(() => URL.revokeObjectURL(url), 0)
                 }}
               >
-                Export backup
+                {tr('Export backup')}
               </button>
             </div>
             <p className="text-xs text-base-content/65">
-              Backups carry workspace-channel messages and access, so protect them like an invite
-              link. History caps at 500 messages per channel. DMs and file originals are excluded;
-              originals re-fetch from members who hold them. Restore from the start screen with
-              “Import backup”.
+              {tr('Backups carry workspace-channel messages and access, so protect them like an invite link. History caps at 500 messages per channel. DMs and file originals are excluded; originals re-fetch from members who hold them. Restore from the start screen with “Import backup”.')}
             </p>
 
             <label className="flex cursor-pointer items-start gap-3">
               <input
+                id="auto-download-files"
+                name="autoDownloadFiles"
                 type="checkbox"
                 className="toggle toggle-primary toggle-sm mt-0.5"
                 checked={syncMode === 'auto'}
@@ -376,11 +400,9 @@ export function WorkspaceSettingsPanel({
                 }}
               />
               <span className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium">Auto-download full files</span>
+                <span className="text-sm font-medium">{tr('Auto-download full files')}</span>
                 <span className="text-xs leading-relaxed text-base-content/65">
-                  Off: joining syncs messages and image thumbnails only; full-size files download
-                  when you open them. On: every shared file downloads immediately. Applies to all
-                  workspaces on this device.
+                  {tr('Off: joining syncs messages and image thumbnails only; full-size files download when you open them. On: every shared file downloads immediately. Applies to all workspaces on this device.')}
                 </span>
               </span>
             </label>

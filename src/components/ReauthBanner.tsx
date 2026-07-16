@@ -5,6 +5,7 @@ import { signInWithProvider } from '../collab/providerSignIn'
 import { deriveUserId } from '../collab/userId'
 import type { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { saveIdCredentials, type Session } from '../session'
+import { useI18n } from '../i18n'
 
 type Props = {
   phase: IdentityExpiryPhase
@@ -25,6 +26,7 @@ type Props = {
  * different one would break membership mid-session.
  */
 export function ReauthBanner({ phase, session, authManager, onReauthed }: Props) {
+  const { tr } = useI18n()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const googleHostRef = useRef<HTMLDivElement>(null)
@@ -33,20 +35,23 @@ export function ReauthBanner({ phase, session, authManager, onReauthed }: Props)
 
   const completeWithToken = useCallback(
     async (token: string) => {
-      if (!authManager) throw new Error('Still connecting — try again in a moment')
+      if (!authManager) throw new Error(tr('Still connecting — try again in a moment'))
       const claims = await authManager.verifyAndStoreIdToken(token, provider)
       if (claims.email.toLowerCase() !== session.identityEmail.toLowerCase()) {
         // Roll back: the manager must not keep a token for a different account.
         authManager.setIdToken(null, provider)
         throw new Error(
-          `Signed in as ${claims.email}, but this workspace admitted ${session.identityEmail}. Use the same account.`
+          tr('Signed in as {actual}, but this workspace admitted {expected}. Use the same account.', {
+            actual: claims.email,
+            expected: session.identityEmail,
+          })
         )
       }
       const userId = await deriveUserId(claims.iss, claims.sub)
       saveIdCredentials(token, provider, claims.email, userId)
       onReauthed()
     },
-    [authManager, onReauthed, provider, session.identityEmail]
+    [authManager, onReauthed, provider, session.identityEmail, tr]
   )
 
   const handleReauth = async () => {
@@ -54,17 +59,17 @@ export function ReauthBanner({ phase, session, authManager, onReauthed }: Props)
     setBusy(true)
     try {
       if (e2e) {
-        if (!authManager) throw new Error('Still connecting — try again in a moment')
+        if (!authManager) throw new Error(tr('Still connecting — try again in a moment'))
         const claims = await authManager.signInWithE2eEmail(session.identityEmail)
         const token = authManager.getIdToken()
-        if (!token) throw new Error('Sign-in failed')
+        if (!token) throw new Error(tr('Sign-in failed'))
         const userId = await deriveUserId(claims.iss, claims.sub)
         saveIdCredentials(token, provider, claims.email, userId)
         onReauthed()
         return
       }
       const keyId = await authManager?.deviceKeyId()
-      if (!keyId) throw new Error('Still connecting — try again in a moment')
+      if (!keyId) throw new Error(tr('Still connecting — try again in a moment'))
       await completeWithToken(await signInWithProvider(provider, keyId))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -109,8 +114,8 @@ export function ReauthBanner({ phase, session, authManager, onReauthed }: Props)
     >
       <span className="min-w-0 flex-1">
         {phase === 'expired'
-          ? 'Your sign-in expired. Current connections keep working, but nobody new can verify you until you sign in again.'
-          : 'Your sign-in expires in a few minutes. Renew it to keep accepting new connections.'}
+          ? tr('Your sign-in expired. Current connections keep working, but nobody new can verify you until you sign in again.')
+          : tr('Your sign-in expires in a few minutes. Renew it to keep accepting new connections.')}
       </span>
       {isGoogle ? (
         <div ref={googleHostRef} data-signin-container="google" className="shrink-0" />
@@ -122,7 +127,7 @@ export function ReauthBanner({ phase, session, authManager, onReauthed }: Props)
           disabled={busy}
           data-testid="reauth-button"
         >
-          {busy ? 'Signing in…' : 'Sign in again'}
+          {busy ? `${tr('Signing in')}…` : tr('Sign in again')}
         </button>
       )}
       {error && <span className="basis-full text-xs">{error}</span>}

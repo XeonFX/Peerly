@@ -34,6 +34,7 @@ import { Sidebar } from './Sidebar'
 import { ChannelPanel } from './workspace/ChannelPanel'
 import { ProfilePanel } from './workspace/ProfilePanel'
 import { WorkspaceSettingsPanel } from './workspace/WorkspaceSettingsPanel'
+import { useI18n } from '../i18n'
 
 type Props = {
   session: Session
@@ -92,6 +93,7 @@ function WorkspaceShell({
   onWorkspaceAvatarChange: (avatarId: string, preview: string) => void
   onWorkspaceAvatarClear: () => void
 }) {
+  const { tr } = useI18n()
   const { announceChannel, announceChannelDeletion } = useWorkspaceSlice()
   const {
     connectionStatus,
@@ -114,6 +116,9 @@ function WorkspaceShell({
     notificationPermission,
     enableNotifications,
     disableNotifications,
+    soundsEnabled,
+    enableSounds,
+    disableSounds,
   } = useChatSlice()
   const browserStorage = useBrowserStorage(transfers.length > 0)
   const mainRef = useRef<HTMLElement>(null)
@@ -182,7 +187,7 @@ function WorkspaceShell({
         <button
           type="button"
           className="fixed inset-0 z-30 cursor-pointer bg-black/55 lg:hidden"
-          aria-label="Close workspace menu"
+          aria-label={tr('Close workspace menu')}
           onClick={() => onSidebarOpenChange(false)}
         />
       )}
@@ -269,6 +274,9 @@ function WorkspaceShell({
             notificationPermission={notificationPermission}
             onEnableNotifications={enableNotifications}
             onDisableNotifications={disableNotifications}
+            soundsEnabled={soundsEnabled}
+            onEnableSounds={enableSounds}
+            onDisableSounds={disableSounds}
             onNameChange={onWorkspaceNameChange}
             onAvatarChange={onWorkspaceAvatarChange}
             onAvatarClear={onWorkspaceAvatarClear}

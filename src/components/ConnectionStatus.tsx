@@ -1,5 +1,6 @@
 import type { ConnectionStatus as Status } from '../types'
 import { getConnectionLabel } from '../utils/connectionLabel'
+import { useI18n } from '../i18n'
 
 /**
  * Status colours come from the theme rather than hex literals, so the dot always
@@ -27,7 +28,11 @@ export function ConnectionStatus({
   variant = 'badge',
   testId,
 }: Props) {
-  const label = getConnectionLabel(relayOnline, connectionStatus, rtcPeerCount)
+  const { tr } = useI18n()
+  const rawLabel = getConnectionLabel(relayOnline, connectionStatus, rtcPeerCount)
+  const label = connectionStatus === 'connected' && relayOnline
+    ? `${tr('Connected')} (${rtcPeerCount} ${tr(rtcPeerCount === 1 ? 'peer' : 'peers')})`
+    : tr(rawLabel.replace('…', '')) + (rawLabel.endsWith('…') ? '…' : '')
   const statusClass = relayOnline ? connectionStatus : 'error'
 
   if (variant === 'text') {

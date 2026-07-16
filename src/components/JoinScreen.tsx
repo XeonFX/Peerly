@@ -44,15 +44,17 @@ import { ThemeToggle } from './ThemeToggle'
 import { useP2pCapability } from '../hooks/useP2pCapability'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
 import { Icon } from './Icon'
+import { useI18n } from '../i18n'
 
 function WorkspaceUsageBadge({ usage }: { usage: WorkspaceUsage | undefined }) {
+  const { tr } = useI18n()
   if (!usage) return null
   return (
     <span
       className="shrink-0 font-mono text-[0.65rem] text-base-content/40"
       title={`${formatUsage(usage.messagesBytes)} messages + ${formatUsage(usage.filesBytes)} in ${usage.fileCount} cached file${usage.fileCount === 1 ? '' : 's'}`}
     >
-      {formatUsage(usage.totalBytes)} on device · {formatUsage(usage.sharedFilesBytes)} shared
+      {formatUsage(usage.totalBytes)} {tr('on device')} · {formatUsage(usage.sharedFilesBytes)} {tr('shared')}
     </span>
   )
 }
@@ -100,11 +102,12 @@ function restoreSignedInIdentity(): SignedInIdentity | null {
 }
 
 export function JoinScreen({ onJoined }: Props) {
+  const { tr } = useI18n()
   const browserStorage = useBrowserStorage()
   const { capability: p2pCapability } = useP2pCapability()
   const saved = loadPersistedSession()
   const [mode, setMode] = useState<Mode>('create')
-  const [workspaceName, setWorkspaceName] = useState(saved?.workspaceName ?? 'My team')
+  const [workspaceName, setWorkspaceName] = useState(saved?.workspaceName ?? tr('My team'))
   const [guestEmails, setGuestEmails] = useState('')
   const [invite, setInvite] = useState<WorkspaceInvite | null>(null)
   const hashInvite =
@@ -125,15 +128,18 @@ export function JoinScreen({ onJoined }: Props) {
     setError(null)
     try {
       if (file.size > MAX_BACKUP_BYTES) {
-        throw new Error(`Backup is larger than the ${formatUsage(MAX_BACKUP_BYTES)} import limit`)
+        throw new Error(tr('Backup is larger than the {size} import limit', { size: formatUsage(MAX_BACKUP_BYTES) }))
       }
       const parsed: unknown = JSON.parse(await file.text())
       const result = await applyWorkspaceBackup(parsed, signedIn?.email)
       if (signedIn) setMyWorkspaces(workspacesForEmail(signedIn.email))
       setUsageRefresh(token => token + 1)
-      setImportNotice(
-        `Restored "${result.workspaceName}" — ${result.importedMessages} message${result.importedMessages === 1 ? '' : 's'} imported.`
-      )
+      setImportNotice(tr(
+        result.importedMessages === 1
+          ? 'Restored "{workspace}" — {count} message imported.'
+          : 'Restored "{workspace}" — {count} messages imported.',
+        { workspace: result.workspaceName, count: result.importedMessages }
+      ))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -199,7 +205,7 @@ export function JoinScreen({ onJoined }: Props) {
 
   const requireSignedIn = (): SignedInIdentity => {
     if (!signedIn) {
-      throw new Error('Sign in with one of the providers above to continue')
+      throw new Error(tr('Sign in with one of the providers above to continue'))
     }
     return signedIn
   }
@@ -211,7 +217,7 @@ export function JoinScreen({ onJoined }: Props) {
     workspaceAvatarId?: string
   ) => {
     if (!isEmailAllowed(nextInvite.allowList, identity.email)) {
-      throw new Error(`${identity.email} is not on this workspace's invite list`)
+      throw new Error(tr('{email} is not on this workspace\'s invite list', { email: identity.email }))
     }
 
     saveIdCredentials(identity.token, identity.providerId, identity.email, identity.userId)
@@ -243,7 +249,7 @@ export function JoinScreen({ onJoined }: Props) {
     setBusy(true)
     try {
       const name = workspaceName.trim()
-      if (!name) throw new Error('Workspace name is required')
+      if (!name) throw new Error(tr('Workspace name is required'))
 
       const guests = guestEmails
         .split(/[,\s]+/)
@@ -276,7 +282,7 @@ export function JoinScreen({ onJoined }: Props) {
       // path runs. Peers verify independently regardless, but failing here
       // gives a comprehensible message instead of a silent handshake denial.
       if (!(await verifyInviteAllowList(workspace))) {
-        throw new Error('Stored workspace has an invalid signature — rejoin with the invite link')
+        throw new Error(tr('Stored workspace has an invalid signature — rejoin with the invite link'))
       }
       authManagerForInvite(workspace)
       await completeJoin(workspace, identity, identity.name, workspace.workspaceAvatarId)
@@ -290,7 +296,7 @@ export function JoinScreen({ onJoined }: Props) {
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!activeInvite) {
-      setError('Open a valid invite link to join a workspace')
+      setError(tr('Open a valid invite link to join a workspace'))
       return
     }
 
@@ -298,7 +304,7 @@ export function JoinScreen({ onJoined }: Props) {
     setBusy(true)
     try {
       if (!(await verifyInviteAllowList(activeInvite))) {
-        throw new Error('Invite link signature is invalid')
+        throw new Error(tr('Invite link signature is invalid'))
       }
 
       const identity = requireSignedIn()
@@ -331,7 +337,7 @@ export function JoinScreen({ onJoined }: Props) {
       className="rounded-box border border-primary/30 bg-primary/10 px-4 py-3 text-center"
       data-testid="invite-summary"
     >
-      <p className="text-sm text-base-content/70">You've been invited to</p>
+      <p className="text-sm text-base-content/70">{tr("You've been invited to")}</p>
       <p className="text-base font-semibold text-base-content">{activeInvite.workspaceName}</p>
     </div>
   ) : null
@@ -345,11 +351,11 @@ export function JoinScreen({ onJoined }: Props) {
         <div className="fixed right-4 top-4 z-20"><ThemeToggle compact /></div>
         <div className="join-auth-layout w-full max-w-5xl overflow-hidden rounded-[2rem] border border-base-300/70 bg-base-100/80 shadow-2xl shadow-violet-950/10 backdrop-blur-xl">
           <section className="brand-showcase hidden lg:flex">
-            <img src={peerlyBrand} alt="Peerly — serverless team collaboration" className="brand-showcase-image" />
+            <img src={peerlyBrand} alt={tr('Serverless team collaboration — chat, video, and files, peer-to-peer.')} className="brand-showcase-image" />
             <div className="brand-showcase-copy">
-              <span className="brand-kicker">Private by design</span>
-              <h2>Your team space, directly between your devices.</h2>
-              <p>No message or file server in the middle. Invite-only workspaces connect through verified identities.</p>
+              <span className="brand-kicker">{tr('Private by design')}</span>
+              <h2>{tr('Your team space, directly between your devices.')}</h2>
+              <p>{tr('No message or file server in the middle. Invite-only workspaces connect through verified identities.')}</p>
             </div>
           </section>
 
@@ -360,7 +366,7 @@ export function JoinScreen({ onJoined }: Props) {
               <h1 className="brand-wordmark text-3xl font-semibold tracking-tight">{APP_NAME}</h1>
             </div>
             <p className="text-sm text-base-content/60">
-              Serverless team collaboration — chat, video, and files, peer-to-peer.
+              {tr('Serverless team collaboration — chat, video, and files, peer-to-peer.')}
             </p>
           </header>
 
@@ -371,7 +377,7 @@ export function JoinScreen({ onJoined }: Props) {
           <div className="card border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
             <div className="card-body gap-4 p-5">
               <p className="text-center text-sm font-medium text-base-content/80">
-                Sign in to continue
+                {tr('Sign in to continue')}
               </p>
               {identitySection}
               {error && (
@@ -383,9 +389,7 @@ export function JoinScreen({ onJoined }: Props) {
           </div>
 
           <p className="text-center text-xs leading-relaxed text-base-content/50">
-            Only invited accounts can connect. Peers verify each other's identity before any data
-            flows. Sign in with the account you were invited with — a different provider or email
-            counts as a different person.
+            {tr("Only invited accounts can connect. Peers verify each other's identity before any data flows. Sign in with the account you were invited with — a different provider or email counts as a different person.")}
           </p>
           <P2pCapabilityIndicator capability={p2pCapability} rtcPeerCount={0} compact />
           <p
@@ -429,7 +433,7 @@ export function JoinScreen({ onJoined }: Props) {
         <section className="space-y-2" data-testid="workspace-picker">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-medium uppercase tracking-wider text-base-content/50">
-              Your workspaces
+              {tr('Your workspaces')}
             </h2>
             <button
               type="button"
@@ -437,10 +441,12 @@ export function JoinScreen({ onJoined }: Props) {
               data-testid="import-backup"
               onClick={() => importInputRef.current?.click()}
             >
-              Import backup
+              {tr('Import backup')}
             </button>
           </div>
           <input
+            id="workspace-backup-import"
+            name="workspaceBackup"
             ref={importInputRef}
             type="file"
             accept="application/json,.json"
@@ -459,7 +465,7 @@ export function JoinScreen({ onJoined }: Props) {
           )}
           {myWorkspaces.length === 0 && (
             <p className="rounded-box border border-dashed border-base-300 px-3 py-2.5 text-sm text-base-content/50">
-              No workspaces remembered in this browser. Import a backup or create a new one.
+              {tr('No workspaces remembered in this browser. Import a backup or create a new one.')}
             </p>
           )}
           <ul className="space-y-1.5">
@@ -479,22 +485,21 @@ export function JoinScreen({ onJoined }: Props) {
                     <span className="flex shrink-0 items-center gap-2">
                       <WorkspaceUsageBadge usage={workspaceUsages.get(workspace.workspaceId)} />
                       <span className="text-xs text-base-content/50">
-                        {workspace.allowList.emails.length} member
-                        {workspace.allowList.emails.length === 1 ? '' : 's'}
+                        {workspace.allowList.emails.length} {tr(workspace.allowList.emails.length === 1 ? 'member' : 'members')}
                       </span>
                     </span>
                   </button>
                   <button
                     type="button"
                     className="btn btn-ghost btn-square btn-sm text-base-content/40 hover:text-warning"
-                    title="Free local space by removing cached full-size files. Messages and previews stay available."
-                    aria-label={`Free local space for ${workspace.workspaceName}`}
+                    title={tr('Free local space by removing cached full-size files. Messages and previews stay available.')}
+                    aria-label={tr('Free local space for {workspace}', { workspace: workspace.workspaceName })}
                     data-testid={`clear-workspace-${workspace.workspaceName}`}
                     disabled={busy}
                     onClick={() => {
                       if (
                         !window.confirm(
-                          `Remove cached full-size files for "${workspace.workspaceName}"? Messages and previews stay, and originals can be fetched again while a peer has them.`
+                          tr('Remove cached full-size files for “{workspace}”? Messages and previews stay, and originals can be fetched again while a peer has them.', { workspace: workspace.workspaceName })
                         )
                       ) {
                         return
@@ -509,8 +514,8 @@ export function JoinScreen({ onJoined }: Props) {
                   <button
                     type="button"
                     className="btn btn-ghost btn-square btn-sm text-base-content/40 hover:text-error"
-                    title="Remove from this list (does not affect the workspace)"
-                    aria-label={`Forget ${workspace.workspaceName}`}
+                    title={tr('Remove from this list (does not affect the workspace)')}
+                    aria-label={tr('Forget {workspace}', { workspace: workspace.workspaceName })}
                     data-testid={`forget-workspace-${workspace.workspaceName}`}
                     onClick={() => {
                       forgetWorkspace(workspace.workspaceId)
@@ -534,7 +539,7 @@ export function JoinScreen({ onJoined }: Props) {
                 onClick={() => setMode('create')}
                 data-testid="create-workspace-tab"
               >
-                Create workspace
+                {tr('Create workspace')}
               </button>
               <button
                 type="button"
@@ -543,7 +548,7 @@ export function JoinScreen({ onJoined }: Props) {
                 onClick={() => setMode('join')}
                 data-testid="join-workspace-tab"
               >
-                Join with invite
+                {tr('Join with invite')}
               </button>
             </div>
 
@@ -551,12 +556,14 @@ export function JoinScreen({ onJoined }: Props) {
               <form onSubmit={handleCreate} className="join-form space-y-3">
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-base-content/70">
-                    Workspace name
+                    {tr('Workspace name')}
                   </span>
                   <input
+                    id="create-workspace-name"
+                    name="workspaceName"
                     type="text"
                     className="input input-bordered w-full"
-                    placeholder="My team"
+                    placeholder={tr('My team')}
                     value={workspaceName}
                     onChange={e => setWorkspaceName(e.target.value)}
                     data-testid="workspace-name"
@@ -566,9 +573,11 @@ export function JoinScreen({ onJoined }: Props) {
 
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-base-content/70">
-                    Invite teammates <span className="text-base-content/40">(optional)</span>
+                    {tr('Invite teammates')} <span className="text-base-content/40">({tr('optional')})</span>
                   </span>
                   <input
+                    id="create-workspace-invitees"
+                    name="guestEmails"
                     type="text"
                     className="input input-bordered w-full"
                     placeholder="alice@company.com, bob@company.com"
@@ -579,7 +588,7 @@ export function JoinScreen({ onJoined }: Props) {
                 </label>
 
                 <p className="text-xs leading-relaxed text-base-content/50">
-                  You'll get a secret invite link to share. You can add more people later.
+                  {tr("You'll get a secret invite link to share. You can add more people later.")}
                 </p>
 
                 <button
@@ -588,14 +597,16 @@ export function JoinScreen({ onJoined }: Props) {
                   data-testid="join-submit"
                   disabled={busy}
                 >
-                  {busy ? 'Working…' : 'Create workspace'}
+                  {busy ? `${tr('Working')}…` : tr('Create workspace')}
                 </button>
 
                 {createdInviteLink && (
                   <div className="invite-link-box space-y-1.5" data-testid="invite-link-box">
-                    <span className="text-xs font-medium text-base-content/70">Invite link</span>
+                    <span className="text-xs font-medium text-base-content/70">{tr('Invite link')}</span>
                     <div className="join w-full">
                       <input
+                        id="created-workspace-invite-link"
+                        name="createdWorkspaceInviteLink"
                         className="input input-bordered join-item w-full font-mono text-xs"
                         readOnly
                         value={createdInviteLink}
@@ -608,7 +619,7 @@ export function JoinScreen({ onJoined }: Props) {
                         data-testid="copy-created-invite"
                         onClick={() => void navigator.clipboard.writeText(createdInviteLink)}
                       >
-                        Copy
+                        {tr('Copy')}
                       </button>
                     </div>
                   </div>
@@ -618,7 +629,7 @@ export function JoinScreen({ onJoined }: Props) {
               <form onSubmit={handleJoin} className="join-form space-y-3">
                 {!activeInvite && (
                   <p className="text-xs leading-relaxed text-base-content/50">
-                    Open an invite link from your workspace creator — it looks like{' '}
+                    {tr('Open an invite link from your workspace creator — it looks like')}{' '}
                     <code className="rounded bg-base-300 px-1 py-0.5 font-mono">
                       https://…/#invite=…
                     </code>
@@ -631,7 +642,7 @@ export function JoinScreen({ onJoined }: Props) {
                   data-testid="join-submit"
                   disabled={busy || !activeInvite}
                 >
-                  {busy ? 'Joining…' : 'Join workspace'}
+                  {busy ? `${tr('Joining')}…` : tr('Join workspace')}
                 </button>
               </form>
             )}

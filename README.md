@@ -2,7 +2,7 @@
 
 Serverless peer-to-peer team collaboration — channels, chat, progressive file sharing, and video calls over WebRTC. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), and [Trystero](https://github.com/dmotz/trystero). Peerly has no application backend that stores workspace messages or files; signaling services are used only to help browsers discover each other.
 
-**v0.2.0** — messenger attention, signed message actions, richer file/call workflows, channel management, installable offline shell, localization foundations, and accessibility hardening.
+**v0.2.0** — messenger attention, signed message actions, richer file/call workflows, channel management, installable offline shell, complete English/Polish UI, and accessibility hardening.
 
 **Live app:** [peerly.cc](https://peerly.cc)
 
@@ -20,7 +20,7 @@ Serverless peer-to-peer team collaboration — channels, chat, progressive file 
 - **Session continuity** — warns before the current ID token expires and offers same-account reauthentication so new peer handshakes keep working
 - **Managed channels & DMs** — scoped messaging over one encrypted P2P room, with channel rename/delete/reorder and locally closable DM threads
 - **Reader-friendly history** — incoming messages do not pull you away from older history; a new-message pill returns to the latest messages
-- **Messenger attention** — unread totals update the tab title and favicon; users can explicitly opt into background DM notifications
+- **Messenger attention** — unread totals update the tab title and favicon; users can explicitly opt into background DM notifications and local attention sounds, including an incoming-call ringtone
 - **Signed message actions** — HTTPS links are safely linkified; authors can edit/delete with signed revisions, and reactions carry their own identity-bound signatures
 - **Fast file input** — attach multiple files, paste clipboard images/files, or drag files onto the composer; selections process sequentially to cap peak memory
 - **Progressive file sync** — text and thumbnails sync first; full-size file bodies download on demand by default, with a device-wide automatic mode available
@@ -29,7 +29,7 @@ Serverless peer-to-peer team collaboration — channels, chat, progressive file 
 - **Local sensitive-media screening** — NSFWJS checks image/video attachments and samples remote video streams locally; flagged media stays hidden until revealed
 - **Video calls** — incoming-call awareness, screen sharing, camera/microphone selection, and WebRTC media with TURN support for strict networks
 - **Installable offline shell** — a service worker caches the production app shell and loaded release assets so local history remains reachable without signaling
-- **Localization foundation** — an English/Polish device preference and translation catalog establish the path for moving remaining legacy strings out of JSX
+- **English and Polish UI** — the device language preference covers navigation, settings, chat, files, calls, storage, invites, confirmations, placeholders, and accessibility labels
 - **Accessibility hardening** — deterministic view focus, polite incoming-message announcements, clearer light-theme contrast, and motion-aware navigation
 - **Connectivity diagnostics** — distinguishes local WebRTC availability, a verified peer connection, signaling failure, and paths that need TURN
 - **Build stamp** — version and git commit shown in the UI so you can confirm what is deployed
@@ -279,9 +279,9 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 | `npm run dev:app` | Vite only, using the signaling strategy from the environment |
 | `npm run stop` | Stop the common local Peerly development ports |
 | `npm run build` | Typecheck + production build + bundle guard |
-| `npm test` | Vitest unit tests (205 tests) |
+| `npm test` | Vitest unit/component tests (210 tests) |
 | `npm run test:watch` | Vitest in watch mode |
-| `npm run test:e2e` | Playwright E2E (47 tests, local relay) |
+| `npm run test:e2e` | Playwright E2E (48 tests, local relay) |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
 | `npm run test:e2e:ui` | Playwright interactive UI |
 | `npm run preview` | Preview the production build locally |

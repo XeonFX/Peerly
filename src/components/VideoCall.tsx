@@ -5,6 +5,7 @@ import { safeColor } from '../utils/profileSanitize'
 import { isProbablyNsfwElement } from '../collab/nsfwGate'
 import { Icon } from './Icon'
 import { videoScreeningDelay } from '../collab/videoScreening'
+import { useI18n } from '../i18n'
 
 type Props = {
   localStream: MediaStream | null
@@ -37,6 +38,7 @@ function VideoTile({
   muted?: boolean
   color?: string
 }) {
+  const { tr } = useI18n()
   const videoRef = useRef<HTMLVideoElement>(null)
   const [flagged, setFlagged] = useState(false)
   const [revealed, setRevealed] = useState(false)
@@ -119,18 +121,18 @@ function VideoTile({
       )}
       <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[0.65rem] text-white">
         {label}
-        {muted ? ' (you)' : ''}
+        {muted ? ` (${tr('you')})` : ''}
       </span>
       {hidden && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/55 p-3 text-center text-white">
           <Icon name="shield" size={20} />
-          <strong className="text-xs">Sensitive video hidden</strong>
+          <strong className="text-xs">{tr('Sensitive video hidden')}</strong>
           <button
             type="button"
             className="btn btn-xs border-white/30 bg-white/15 text-white hover:bg-white/25"
             onClick={() => setRevealed(true)}
           >
-            Reveal stream
+            {tr('Reveal stream')}
           </button>
         </div>
       )}
@@ -157,14 +159,15 @@ export function VideoCall({
   onSwitchDevices,
   onEnd,
 }: Props) {
+  const { tr } = useI18n()
   const peerNames = Object.fromEntries(peers.map(p => [p.id, p.name]))
 
   return (
     <div className="video-call-overlay shrink-0 border-b border-base-300/70 bg-base-200/60 p-3 backdrop-blur">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Video call</h3>
+        <h3 className="text-sm font-semibold">{tr('Video call')}</h3>
         <span className="text-xs text-base-content/50">
-          {Object.keys(peerStreams).length + (localStream ? 1 : 0)} participants
+          {Object.keys(peerStreams).length + (localStream ? 1 : 0)} {tr('participants')}
         </span>
       </div>
 
@@ -191,8 +194,8 @@ export function VideoCall({
         <button
           className={`btn btn-sm btn-circle ${videoEnabled ? 'btn-ghost' : 'btn-error'}`}
           onClick={onToggleVideo}
-          title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
-          aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+          title={tr(videoEnabled ? 'Turn off camera' : 'Turn on camera')}
+          aria-label={tr(videoEnabled ? 'Turn off camera' : 'Turn on camera')}
           aria-pressed={!videoEnabled}
         >
           <Icon name={videoEnabled ? 'video' : 'video-off'} />
@@ -200,8 +203,8 @@ export function VideoCall({
         <button
           className={`btn btn-sm btn-circle ${audioEnabled ? 'btn-ghost' : 'btn-error'}`}
           onClick={onToggleAudio}
-          title={audioEnabled ? 'Mute' : 'Unmute'}
-          aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
+          title={tr(audioEnabled ? 'Mute' : 'Unmute')}
+          aria-label={tr(audioEnabled ? 'Mute microphone' : 'Unmute microphone')}
           aria-pressed={!audioEnabled}
         >
           <Icon name={audioEnabled ? 'mic' : 'mic-off'} />
@@ -211,15 +214,15 @@ export function VideoCall({
           onClick={() =>
             screenSharing ? onStopScreenShare() : void onStartScreenShare()
           }
-          title={screenSharing ? 'Stop sharing screen' : 'Share screen'}
-          aria-label={screenSharing ? 'Stop sharing screen' : 'Share screen'}
+          title={tr(screenSharing ? 'Stop sharing screen' : 'Share screen')}
+          aria-label={tr(screenSharing ? 'Stop sharing screen' : 'Share screen')}
           aria-pressed={screenSharing}
           data-testid="screen-share-button"
         >
           <Icon name="screen-share" />
         </button>
         <button className="btn btn-sm btn-error" onClick={onEnd}>
-          End call
+          {tr('End call')}
         </button>
       </div>
 
@@ -228,10 +231,12 @@ export function VideoCall({
           <label className="flex min-w-0 items-center gap-2 text-xs text-base-content/60">
             <Icon name="mic" size={14} />
             <select
+              id="call-audio-input"
+              name="audioInputDevice"
               className="select select-bordered select-xs min-w-0 flex-1"
               value={selectedAudioInput}
               disabled={screenSharing}
-              aria-label="Microphone"
+              aria-label={tr('Microphone')}
               onChange={event =>
                 void onSwitchDevices(event.target.value, selectedVideoInput)
               }
@@ -246,10 +251,12 @@ export function VideoCall({
           <label className="flex min-w-0 items-center gap-2 text-xs text-base-content/60">
             <Icon name="video" size={14} />
             <select
+              id="call-video-input"
+              name="videoInputDevice"
               className="select select-bordered select-xs min-w-0 flex-1"
               value={selectedVideoInput}
               disabled={screenSharing}
-              aria-label="Camera"
+              aria-label={tr('Camera')}
               onChange={event =>
                 void onSwitchDevices(selectedAudioInput, event.target.value)
               }

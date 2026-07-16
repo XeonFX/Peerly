@@ -129,6 +129,9 @@ export function CollabProvider({
       notificationPermission: collab.notificationPermission,
       enableNotifications: collab.enableNotifications,
       disableNotifications: collab.disableNotifications,
+      soundsEnabled: collab.soundsEnabled,
+      enableSounds: collab.enableSounds,
+      disableSounds: collab.disableSounds,
     }),
     [
       collab.messages,
@@ -153,6 +156,9 @@ export function CollabProvider({
       collab.notificationPermission,
       collab.enableNotifications,
       collab.disableNotifications,
+      collab.soundsEnabled,
+      collab.enableSounds,
+      collab.disableSounds,
     ]
   )
 

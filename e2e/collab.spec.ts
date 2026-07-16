@@ -489,6 +489,41 @@ test.describe('Peerly P2P collaboration', () => {
 
   })
 
+  test('on-demand image sync shows a thumbnail before transferring the original', async ({ browser }) => {
+    await withTwoUsers(browser, async (alice, bob) => {
+      const png = fs.readFileSync(path.join(process.cwd(), 'public/icon-192.png'))
+      await alice.getByTestId('file-input').setInputFiles({
+        name: 'thumbnail-first.png',
+        mimeType: 'image/png',
+        buffer: png,
+      })
+
+      const thumbnail = bob.locator('.message-list img.file-preview')
+      await expect(thumbnail).toBeVisible({ timeout: 30_000 })
+      await expect(thumbnail).toHaveAttribute('src', /^data:image\//)
+      const downloadOriginal = bob.getByTestId('download-original')
+      await expect(downloadOriginal).toContainText('Download original')
+
+      await downloadOriginal.click()
+      await expect(downloadOriginal).toHaveCount(0, { timeout: 30_000 })
+      const fullImageLink = bob.locator('.message-list a[href^="blob:"]')
+      await expect(fullImageLink).toBeVisible({ timeout: 30_000 })
+      await expect
+        .poll(
+          () =>
+            fullImageLink.evaluate(async link => {
+              try {
+                return (await fetch((link as HTMLAnchorElement).href)).ok
+              } catch {
+                return false
+              }
+            }),
+          { timeout: 30_000 }
+        )
+        .toBe(true)
+    })
+  })
+
   test('file sharing between peers', async ({ browser }) => {
     const aliceCtx = await browser.newContext()
     const bobCtx = await browser.newContext()
@@ -1017,6 +1052,17 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(page.getByTestId('notification-settings')).toBeVisible()
     await page.getByTestId('locale-select').selectOption('pl')
     await expect(page.getByRole('heading', { name: 'Uwaga i powiadomienia' })).toBeVisible()
+    await expect(page.getByTestId('attention-sound-toggle')).toContainText('Włącz dźwięki powiadomień')
+    await page.getByTestId('workspace-settings-back').click()
+    await expect(page.getByRole('heading', { name: 'Kanały' })).toBeVisible()
+    await expect(page.getByTestId('video-call-button')).toHaveAttribute(
+      'aria-label',
+      'Rozpocznij rozmowę wideo'
+    )
+    await page.getByTestId('member-self').click()
+    await expect(page.getByRole('heading', { name: 'Twój profil' })).toBeVisible()
+    await page.getByTestId('profile-back').click()
+    await page.getByTestId('workspace-settings-open').click()
     await page.getByTestId('locale-select').selectOption('en')
     await expect(page.getByRole('heading', { name: 'Attention & notifications' })).toBeVisible()
   })
