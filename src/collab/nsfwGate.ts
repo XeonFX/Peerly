@@ -129,6 +129,26 @@ export async function isProbablyNsfwMedia(buffer: ArrayBuffer, mimeType: string)
   }
 }
 
+/**
+ * One verdict per file id, ever, per page. File ids are content hashes, so a
+ * verdict can never go stale; without this every channel switch re-ran
+ * inference over every visible image (50 images = 50 inferences per visit).
+ * Callers should also persist the verdict onto the message so future sessions
+ * skip the model entirely.
+ */
+const verdictByFileId = new Map<string, Promise<boolean>>()
+
+export function isProbablyNsfwUrlCached(fileId: string, url: string): Promise<boolean> {
+  let pending = verdictByFileId.get(fileId)
+  if (!pending) {
+    pending = isProbablyNsfwUrl(url)
+    verdictByFileId.set(fileId, pending)
+    // A transient failure (decode error mid-load) must not pin false forever.
+    pending.catch(() => verdictByFileId.delete(fileId))
+  }
+  return pending
+}
+
 export async function isProbablyNsfwUrl(url: string): Promise<boolean> {
   try {
     const image = new Image()

@@ -15,6 +15,7 @@ import {
   useWorkspaceSlice,
 } from '../context/useCollabSlices'
 import type { PeerHandshake } from '@trystero-p2p/core'
+import type { SignedFields } from '../collab/messageSigning'
 import { encodeInviteLink } from '../collab/inviteLink'
 import { useBrowserStorage } from '../hooks/useBrowserStorage'
 import type { WorkspaceAuthManager } from '../collab/workspaceAuth'
@@ -33,6 +34,8 @@ type Props = {
   peerHandshake?: PeerHandshake
   /** Handshake-verified peerId -> durable user id. See useWorkspaceAuth. */
   resolvePeerUserId?: (peerId: string) => string | undefined
+  signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
+  getBoundUserId?: (deviceKeyId: string) => string | undefined
   /** Needed to re-sign the allow-list when inviting; only the creator's device can. */
   authManager: WorkspaceAuthManager | null
   onSessionChange: (patch: Partial<Session>) => void
@@ -47,6 +50,7 @@ function WorkspaceShell({
   showFiles,
   canInvite,
   onInvite,
+  onRemoveMember,
   sidebarOpen,
   onSidebarOpenChange,
   onChannelSelect,
@@ -66,6 +70,7 @@ function WorkspaceShell({
   showFiles: boolean
   canInvite: boolean
   onInvite: (emails: string[]) => Promise<void>
+  onRemoveMember: (email: string) => Promise<void>
   sidebarOpen: boolean
   onSidebarOpenChange: (open: boolean) => void
   onChannelSelect: (id: string) => void
@@ -139,6 +144,8 @@ function WorkspaceShell({
         canInvite={canInvite}
         invitedEmails={session.allowList.emails}
         onInvite={onInvite}
+        onRemoveMember={onRemoveMember}
+        selfEmail={session.identityEmail}
         channels={channels}
         activeChannel={activeChannel}
         activeView={activeView}
@@ -210,13 +217,17 @@ function WorkspaceShell({
       </main>
 
       {activeView === 'channel' && showFiles && (
-        <FilesPanel files={sharedFiles} transfers={transfers} onRequestFile={requestFile} />
+        <FilesPanel
+          files={sharedFiles}
+          transfers={transfers}
+          onRequestFile={file => requestFile(file, activeChannel)}
+        />
       )}
     </div>
   )
 }
 
-export function Workspace({ session, peerHandshake, resolvePeerUserId, authManager, onSessionChange, onLeave }: Props) {
+export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessage, getBoundUserId, authManager, onSessionChange, onLeave }: Props) {
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
   const [activeChannel, setActiveChannel] = useState(GENERAL_CHANNEL.id)
   const [activeView, setActiveView] = useState<'channel' | 'profile' | 'workspace'>('channel')
@@ -250,6 +261,17 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, authManag
     async (emails: string[]) => {
       if (!authManager) throw new Error('Workspace is still connecting — try again in a moment')
       const allowList = await authManager.addMembers(emails)
+      const next = { ...session, allowList }
+      onSessionChange({ allowList })
+      rememberWorkspace(snapshotWorkspace(next))
+    },
+    [authManager, onSessionChange, session]
+  )
+
+  const handleRemoveMember = useCallback(
+    async (email: string) => {
+      if (!authManager) throw new Error('Workspace is still connecting — try again in a moment')
+      const allowList = await authManager.removeMembers([email])
       const next = { ...session, allowList }
       onSessionChange({ allowList })
       rememberWorkspace(snapshotWorkspace(next))
@@ -298,6 +320,8 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, authManag
       peerHandshake={peerHandshake}
       selfUserId={session.identityUserId}
       resolvePeerUserId={resolvePeerUserId}
+      signMessage={signMessage}
+      getBoundUserId={getBoundUserId}
       onProfileChange={handleProfileChange}
       onChannelsChange={refreshChannels}
     >
@@ -309,6 +333,7 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, authManag
         showFiles={showFiles}
         canInvite={canInvite}
         onInvite={handleInvite}
+        onRemoveMember={handleRemoveMember}
         sidebarOpen={sidebarOpen}
         onSidebarOpenChange={setSidebarOpen}
         onChannelSelect={openChannel}

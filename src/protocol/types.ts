@@ -10,6 +10,10 @@ export type ChatPayload = {
    * receiver overwrites it with the id verified during that peer's handshake.
    */
   senderUserId?: string
+  /** Author's device key (embeds the public key) — see collab/messageSigning. */
+  senderDeviceKeyId?: string
+  /** ECDSA signature over the signed fields; absent on legacy messages. */
+  signature?: string
   senderName: string
   senderColor: string
   senderAvatar?: string
@@ -32,6 +36,15 @@ export type FileMetaPayload = {
   mimeType: string
   size: number
   senderId: string
+  /**
+   * Durable identity. Never trusted from the wire: receivers overwrite it with
+   * the id verified in the sending peer's handshake (see useCollab handlers).
+   */
+  senderUserId?: string
+  /** Author's device key (embeds the public key) — see collab/messageSigning. */
+  senderDeviceKeyId?: string
+  /** ECDSA signature over the signed fields; absent on legacy messages. */
+  signature?: string
   senderName: string
   senderColor: string
   senderAvatar?: string
@@ -57,6 +70,10 @@ export type HistoryEntry = {
   senderId: string
   /** Durable sender identity; best-effort in relayed history (unsigned). */
   senderUserId?: string
+  /** Author's device key (embeds the public key) — see collab/messageSigning. */
+  senderDeviceKeyId?: string
+  /** ECDSA signature over the signed fields; absent on legacy messages. */
+  signature?: string
   senderName: string
   senderColor: string
   senderAvatar?: string

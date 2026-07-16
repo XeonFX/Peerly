@@ -64,6 +64,24 @@ export async function estimateBrowserStorage(): Promise<BrowserStorageEstimate> 
   }
 }
 
+const ESTIMATE_TTL_MS = 5_000
+let cachedEstimate: { value: BrowserStorageEstimate; at: number } | null = null
+
+/**
+ * estimate() costs real milliseconds; a burst of file-meta announcements was
+ * paying it once per file. Anything that changes storage meaningfully calls
+ * notifyStorageChanged(), which drops the cache.
+ */
+export async function estimateBrowserStorageCached(
+  maxAgeMs = ESTIMATE_TTL_MS
+): Promise<BrowserStorageEstimate> {
+  if (cachedEstimate && Date.now() - cachedEstimate.at < maxAgeMs) return cachedEstimate.value
+  const value = await estimateBrowserStorage()
+  cachedEstimate = { value, at: Date.now() }
+  return value
+}
+
 export function notifyStorageChanged(): void {
+  cachedEstimate = null
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(STORAGE_CHANGED_EVENT))
 }

@@ -3,6 +3,14 @@ export const HISTORY_REQUEST_TIMEOUT_MS = 20_000
 export const CONNECTION_POLL_MS = 2_000
 
 /** Largest file accepted for send or receive. Whole files are held in memory. */
+/**
+ * Longest chat message accepted, in UTF-16 code units. Enforced at send AND on
+ * every receive/import path: without the receive-side clamp a peer could push
+ * megabyte strings straight into everyone's React state and localStorage
+ * (quota-exhaustion griefing, and history persistence dies unhandled).
+ */
+export const MAX_MESSAGE_CHARS = 8_000
+
 export const MAX_FILE_BYTES = 50 * 1024 * 1024
 
 /** Total resident file-buffer budget; past this, buffers fall back to IndexedDB. */

@@ -44,32 +44,46 @@ function VideoTile({
     if (muted) return
     let cancelled = false
     let running = false
+    let timer: number | undefined
+    // Back off after repeatedly-clean frames: a feed that has been fine for a
+    // while rarely flips, and per-tile inference every 3s for a whole call was
+    // the app's largest sustained main-thread cost. Any flag stops the loop
+    // (flags are sticky until the user reveals).
+    let cleanRuns = 0
+    const delayFor = () => (cleanRuns < 5 ? 3_000 : cleanRuns < 10 ? 10_000 : 30_000)
+    const schedule = (delay: number) => {
+      if (cancelled || flaggedRef.current) return
+      timer = window.setTimeout(() => void check(), delay)
+    }
     const check = async () => {
       const video = videoRef.current
+      if (cancelled || flaggedRef.current) return
       if (
-        cancelled ||
-        flaggedRef.current ||
         running ||
         !video ||
         video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
         document.visibilityState !== 'visible' ||
         video.offsetParent === null
       ) {
+        schedule(delayFor())
         return
       }
       running = true
       try {
-        if (await isProbablyNsfwElement(video)) setFlagged(true)
+        if (await isProbablyNsfwElement(video)) {
+          setFlagged(true)
+          return
+        }
+        cleanRuns++
       } finally {
         running = false
       }
+      schedule(delayFor())
     }
-    const first = window.setTimeout(() => void check(), 1_000)
-    const interval = window.setInterval(() => void check(), 3_000)
+    schedule(1_000)
     return () => {
       cancelled = true
-      window.clearTimeout(first)
-      window.clearInterval(interval)
+      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [muted, stream])
 

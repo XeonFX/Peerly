@@ -292,8 +292,10 @@ working until two peers fail to find each other.
 - **Invite link = credential** — workspace ID lives in the URL hash (never sent to servers in HTTP requests)
 - **Identity handshake** — three-round P2P verification: OIDC JWT + allow-list signature + live device-key proof
 - **No server-side enforcement** — allow-list is creator-signed; peers verify signatures and JWTs locally
+- **Messages are author-signed** — every message and file announcement is signed with the sender's device key at send time. Relayed history is verified on import: tampered entries are dropped, and identity claims are honoured only for keys bound to that user in a live handshake — an unsigned or unbound entry keeps its text but cannot impersonate anyone.
+- **Security headers** — a strict Content-Security-Policy (self-contained app; only the identity providers and `wss:` relays are reachable) ships via `public/_headers` on Cloudflare.
 - **Inviting is creator-only** — the allow-list is only accepted if it verifies against the workspace's creator key, and that key never leaves the browser profile that created the workspace. A second device, even the creator's, cannot add members.
-- **No revocation** — adding works because a signed allow-list is a capability: presenting a newer one that names you gets you in. That same property means anyone once invited keeps a validly signed list naming them, so removal is not offered rather than implied and unenforced.
+- **Revocation is best-effort** — the creator can remove a member, and every device judges peers against the newest creator-signed list it holds, so updated members stop admitting the removed member at their next handshake. The honest limit: the removed member and any member who never received the update can still pair, and open connections are not torn down. Nothing short of a server closes that gap.
 - **Live messages** — attributed by transport peer id, not payload `senderId`
 - **History sync** — rejoin history is not per-message signed today; treat synced history as trusted only among members you trust
 - **Local media classification** — sensitive-media screening never uploads frames, but it is advisory and fails open rather than acting as a moderation authority
@@ -305,7 +307,7 @@ working until two peers fail to find each other.
 - **No global delete/reset** — storage cleanup affects one browser only. A safe workspace-wide reset needs a signed monotonic reset epoch so an offline peer cannot resurrect old state.
 - **No guaranteed archive** — history and file availability depend on at least one peer retaining a copy.
 - **No resumable range transfer** — file bodies are content-addressed and integrity-checked, but transfers are whole-file and join progress is channel-based rather than byte-accurate.
-- **No member removal** — signed allow-list capabilities cannot be revoked with the current protocol.
+- **Member removal reaches only updated devices** — see the revocation note above; a stale device still honours the old list until it hears the new one.
 - **No user-facing relay editor** — deployment-time overrides exist, but per-user relay changes could partition a workspace.
 - **No stranger matchmaking** — it remains an intentionally undecided future feature; see [`docs/MATCHMAKING.md`](docs/MATCHMAKING.md).
 - **No centralized moderation** — local NSFW screening is advisory, and the current product has no workspace-wide block or ban authority.

@@ -221,6 +221,107 @@ describe('identity handshake', () => {
     expect(seen.sort()).toEqual(['alice@example.com', 'bob@example.com'])
   })
 
+  it('denies a removed member who presents the older list that still names them', async () => {
+    const google = await makeFakeGoogle()
+    const creator = new DeviceIdentity(memoryStore())
+    const creatorKeyId = await creator.publicKeyId()
+
+    // Both lists are validly creator-signed; only their age differs.
+    const oldList = await signAllowList(creator, ['alice@example.com', 'bob@example.com'])
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const newListWithoutBob = await signAllowList(creator, ['alice@example.com'])
+
+    const alice = new DeviceIdentity(memoryStore())
+    const bob = new DeviceIdentity(memoryStore())
+    const aliceKeyId = await alice.publicKeyId()
+    const bobKeyId = await bob.publicKeyId()
+
+    const { a, b } = await runHandshake(
+      {
+        identity: alice,
+        getAttestation: async (): Promise<Attestation> => ({
+          idToken: await google.issueToken('alice@example.com', aliceKeyId),
+          providerId: 'google',
+          deviceKeyId: aliceKeyId,
+          allowList: newListWithoutBob,
+        }),
+        resolveProvider: resolveFakeGoogle(google),
+        fetchJwks: google.fetchJwks,
+        creatorKeyId,
+        getKnownAllowList: () => newListWithoutBob,
+      },
+      {
+        identity: bob,
+        getAttestation: async (): Promise<Attestation> => ({
+          idToken: await google.issueToken('bob@example.com', bobKeyId),
+          providerId: 'google',
+          deviceKeyId: bobKeyId,
+          allowList: oldList,
+        }),
+        resolveProvider: resolveFakeGoogle(google),
+        fetchJwks: google.fetchJwks,
+        creatorKeyId,
+        getKnownAllowList: () => oldList,
+      }
+    )
+
+    // Alice (holding the newer list) must refuse bob even though bob's list is
+    // validly signed and names him — the newest known list wins.
+    expect(a.ok).toBe(false)
+    expectHandshakeError({ a, b }, "bob@example.com is not on this workspace's invite list")
+  })
+
+  it('still admits a member presenting an older list when the newest list names them', async () => {
+    const google = await makeFakeGoogle()
+    const creator = new DeviceIdentity(memoryStore())
+    const creatorKeyId = await creator.publicKeyId()
+
+    const oldList = await signAllowList(creator, ['alice@example.com', 'bob@example.com'])
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const newList = await signAllowList(creator, [
+      'alice@example.com',
+      'bob@example.com',
+      'carol@example.com',
+    ])
+
+    const alice = new DeviceIdentity(memoryStore())
+    const bob = new DeviceIdentity(memoryStore())
+    const aliceKeyId = await alice.publicKeyId()
+    const bobKeyId = await bob.publicKeyId()
+
+    const { a, b } = await runHandshake(
+      {
+        identity: alice,
+        getAttestation: async (): Promise<Attestation> => ({
+          idToken: await google.issueToken('alice@example.com', aliceKeyId),
+          providerId: 'google',
+          deviceKeyId: aliceKeyId,
+          allowList: newList,
+        }),
+        resolveProvider: resolveFakeGoogle(google),
+        fetchJwks: google.fetchJwks,
+        creatorKeyId,
+        getKnownAllowList: () => newList,
+      },
+      {
+        identity: bob,
+        getAttestation: async (): Promise<Attestation> => ({
+          idToken: await google.issueToken('bob@example.com', bobKeyId),
+          providerId: 'google',
+          deviceKeyId: bobKeyId,
+          allowList: oldList,
+        }),
+        resolveProvider: resolveFakeGoogle(google),
+        fetchJwks: google.fetchJwks,
+        creatorKeyId,
+        getKnownAllowList: () => oldList,
+      }
+    )
+
+    expect(a.ok).toBe(true)
+    expect(b.ok).toBe(true)
+  })
+
   it('denies an otherwise-valid Google identity whose email is not on the allow-list', async () => {
     const google = await makeFakeGoogle()
     const creator = new DeviceIdentity(memoryStore())

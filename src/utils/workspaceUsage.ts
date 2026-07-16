@@ -128,6 +128,57 @@ export async function estimateWorkspaceUsage(workspaceId: string): Promise<Works
 }
 
 /**
+ * Usage for many workspaces in one pass: parse each history once and hit
+ * IndexedDB for the blob-id list once, instead of per badge — the per-badge
+ * version re-parsed every other workspace's history for the shared-blob
+ * calculation, which is O(workspaces squared) on the picker.
+ */
+export async function estimateWorkspacesUsage(
+  workspaceIds: string[]
+): Promise<Map<string, WorkspaceUsage>> {
+  const usages = new Map<string, WorkspaceUsage>()
+  if (workspaceIds.length === 0) return usages
+
+  const cached = new Set(await listFileBlobIds())
+  const references = new Map<string, Map<string, number>>()
+  const allIds = new Set([...workspaceIds, ...otherWorkspaceIds('')])
+  for (const id of allIds) references.set(id, referencedFiles(id))
+
+  for (const workspaceId of workspaceIds) {
+    let messagesBytes = 0
+    for (const key of localStorageKeysFor(workspaceId)) {
+      messagesBytes += (key.length + (localStorage.getItem(key)?.length ?? 0)) * 2
+    }
+
+    const referenced = references.get(workspaceId) ?? new Map<string, number>()
+    const sharedFilesBytes = [...referenced.values()].reduce((sum, size) => sum + size, 0)
+    let filesBytes = 0
+    let fileCount = 0
+    let reclaimableBytes = 0
+    for (const [id, size] of referenced) {
+      if (!cached.has(id)) continue
+      filesBytes += size
+      fileCount++
+      const referencedElsewhere = [...references.entries()].some(
+        ([otherId, ids]) => otherId !== workspaceId && ids.has(id)
+      )
+      if (!referencedElsewhere) reclaimableBytes += size
+    }
+
+    usages.set(workspaceId, {
+      messagesBytes,
+      filesBytes,
+      fileCount,
+      sharedFilesBytes,
+      sharedFileCount: referenced.size,
+      reclaimableBytes,
+      totalBytes: messagesBytes + filesBytes,
+    })
+  }
+  return usages
+}
+
+/**
  * Reclaim original file bodies while retaining messages, thumbnails, read state,
  * workspace access, and the metadata needed to fetch those originals again.
  */

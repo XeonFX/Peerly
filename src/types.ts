@@ -20,6 +20,10 @@ export type Message = {
   senderId: string
   /** Durable identity of the sender — stable across sessions and devices. */
   senderUserId?: string
+  /** Author's device key (embeds the public key) — see collab/messageSigning. */
+  senderDeviceKeyId?: string
+  /** ECDSA signature over the signed fields; absent on legacy messages. */
+  signature?: string
   senderName: string
   senderColor: string
   senderAvatar?: string

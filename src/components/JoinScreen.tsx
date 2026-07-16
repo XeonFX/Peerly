@@ -30,7 +30,7 @@ import {
 } from '../session'
 import {
   clearWorkspaceFiles,
-  estimateWorkspaceUsage,
+  estimateWorkspacesUsage,
   formatUsage,
   type WorkspaceUsage,
 } from '../utils/workspaceUsage'
@@ -44,29 +44,11 @@ import { useP2pCapability } from '../hooks/useP2pCapability'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
 import { Icon } from './Icon'
 
-function WorkspaceUsageBadge({
-  workspaceId,
-  refreshToken,
-}: {
-  workspaceId: string
-  refreshToken: number
-}) {
-  const [usage, setUsage] = useState<WorkspaceUsage | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void estimateWorkspaceUsage(workspaceId).then(next => {
-      if (!cancelled) setUsage(next)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [workspaceId, refreshToken])
-
+function WorkspaceUsageBadge({ usage }: { usage: WorkspaceUsage | undefined }) {
   if (!usage) return null
   return (
     <span
       className="shrink-0 font-mono text-[0.65rem] text-base-content/40"
-      data-testid={`workspace-usage-${workspaceId}`}
       title={`${formatUsage(usage.messagesBytes)} messages + ${formatUsage(usage.filesBytes)} in ${usage.fileCount} cached file${usage.fileCount === 1 ? '' : 's'}`}
     >
       {formatUsage(usage.totalBytes)} on device · {formatUsage(usage.sharedFilesBytes)} shared
@@ -134,6 +116,22 @@ export function JoinScreen({ onJoined }: Props) {
   const [signedIn, setSignedIn] = useState<SignedInIdentity | null>(() => restoreSignedInIdentity())
   const [myWorkspaces, setMyWorkspaces] = useState<StoredWorkspace[]>([])
   const [usageRefresh, setUsageRefresh] = useState(0)
+  const [workspaceUsages, setWorkspaceUsages] = useState<Map<string, WorkspaceUsage>>(new Map())
+
+  // One pass for every badge: per-badge estimation re-parsed all histories
+  // once per workspace (O(n^2) on the picker).
+  useEffect(() => {
+    if (myWorkspaces.length === 0) return
+    let cancelled = false
+    void estimateWorkspacesUsage(myWorkspaces.map(workspace => workspace.workspaceId)).then(
+      usages => {
+        if (!cancelled) setWorkspaceUsages(usages)
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [myWorkspaces, usageRefresh])
   const authManagerRef = useRef(
     new WorkspaceAuthManager({
       workspaceId: 'pending',
@@ -426,10 +424,7 @@ export function JoinScreen({ onJoined }: Props) {
                       <span className="truncate text-sm font-medium">{workspace.workspaceName}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
-                      <WorkspaceUsageBadge
-                        workspaceId={workspace.workspaceId}
-                        refreshToken={usageRefresh}
-                      />
+                      <WorkspaceUsageBadge usage={workspaceUsages.get(workspace.workspaceId)} />
                       <span className="text-xs text-base-content/50">
                         {workspace.allowList.emails.length} member
                         {workspace.allowList.emails.length === 1 ? '' : 's'}

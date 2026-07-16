@@ -222,6 +222,32 @@ export function useMultiChannelStore(
     []
   )
 
+  /**
+   * Record a screening verdict on a file message, wherever it lives, and
+   * persist it — `undefined` means "never checked", so writing `false` is what
+   * stops every later mount from re-running the classifier.
+   */
+  const setFileNsfw = useCallback(
+    (fileId: string, nsfw: boolean) => {
+      for (const [channelId, channelMessages] of Object.entries(messagesByChannelRef.current)) {
+        const target = channelMessages.find(
+          message => message.type === 'file' && message.file?.id === fileId
+        )
+        if (!target || target.file?.nsfw === nsfw) continue
+        updateChannelMessages(channelId, current => {
+          const next = current.map(message =>
+            message.type === 'file' && message.file?.id === fileId
+              ? { ...message, file: { ...message.file!, nsfw } }
+              : message
+          )
+          persistChannelMessages(channelId, next)
+          return next
+        })
+      }
+    },
+    [persistChannelMessages, updateChannelMessages]
+  )
+
   const resetWorkspace = useCallback(() => {
     // Bump synchronously so any in-flight restore is invalidated before it can
     // write. Revoking and clearing the messages that referenced those URLs must
@@ -284,6 +310,7 @@ export function useMultiChannelStore(
     getHistoryEntries,
     applyHistory,
     resetWorkspace,
+    setFileNsfw,
     blobUrls: blobUrlsRef,
   }
 }

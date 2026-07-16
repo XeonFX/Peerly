@@ -8,7 +8,7 @@ import type {
   HistoryRequest,
 } from '../../protocol/types'
 import { senderFromProfile } from '../../protocol/types'
-import { chatPayloadToMessage } from '../../protocol/mappers'
+import { chatPayloadToMessage, clampMessageText } from '../../protocol/mappers'
 import type { UserProfile } from '../../types'
 
 type Room = ReturnType<typeof joinRoom>
@@ -177,4 +177,4 @@ export function createChatPayload(
   }
 }
 
-export { chatPayloadToMessage }
+export { chatPayloadToMessage, clampMessageText }

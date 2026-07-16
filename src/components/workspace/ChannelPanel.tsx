@@ -28,7 +28,7 @@ export function ChannelPanel({
   onOpenSidebar,
 }: Props) {
   const { connectionError, connectionNotice, isReady } = useConnectionSlice()
-  const { messages, transfers, sendMessage, sendFile, requestFile, syncProgress, fileError } = useChatSlice()
+  const { messages, transfers, sendMessage, sendFile, requestFile, markFileNsfw, syncProgress, fileError } = useChatSlice()
   const {
     inCall,
     localStream,
@@ -172,6 +172,7 @@ export function ChannelPanel({
         peers={peers}
         transfers={transfers}
         onRequestFile={requestFile}
+        onNsfwVerdict={markFileNsfw}
       />
       <MessageInput
         channelName={title}

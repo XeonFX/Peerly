@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from 'react'
 import { HISTORY_REQUEST_TIMEOUT_MS } from '../../collab/constants'
 import type { HistoryEntry, HistoryRequest } from '../../protocol/types'
 import { loadFileSyncMode } from '../../collab/syncPreferences'
-import { estimateBrowserStorage, storagePressure } from '../../utils/browserStorage'
+import { estimateBrowserStorageCached, storagePressure } from '../../utils/browserStorage'
 import type { WorkspaceSyncProgress } from '../../types'
 
 type HistoryAction = {
@@ -27,8 +27,12 @@ export function useHistorySync(
   /** Resolves to ids of file bodies referenced by history but not held locally. */
   applyHistory: (entries: HistoryEntry[]) => Promise<string[]>,
   channelIds: string[],
-  requestFilesFromPeers: (peerIds: string[], fileIds: string[]) => Promise<void>
+  requestFilesFromPeers: (peerIds: string[], fileIds: string[]) => Promise<void>,
+  sanitizeEntries?: (entries: HistoryEntry[]) => Promise<HistoryEntry[]>
 ) {
+  const sanitizeEntriesRef = useRef(sanitizeEntries)
+  sanitizeEntriesRef.current = sanitizeEntries
+
   const [progress, setProgress] = useState<WorkspaceSyncProgress>({
     phase: 'idle',
     completedChannels: 0,
@@ -95,11 +99,18 @@ export function useHistorySync(
         }
       }
 
+      // Relayed entries are only as honest as whichever member served them:
+      // verify author signatures, drop tampered entries, and strip identity
+      // claims that no live handshake ever vouched for (see messageSigning).
+      const vetted = sanitizeEntriesRef.current
+        ? await sanitizeEntriesRef.current(entries)
+        : entries
+
       // History carries file metadata but not bodies; pull only the ones we lack.
-      const missingFileIds = await applyHistory(entries)
+      const missingFileIds = await applyHistory(vetted)
       let requested = false
       const mode = loadFileSyncMode()
-      const storage = await estimateBrowserStorage()
+      const storage = await estimateBrowserStorageCached()
       const pressure = storagePressure(storage.usageBytes, storage.quotaBytes)
       if (
         mode === 'auto' &&

@@ -15,9 +15,11 @@ import { FileCache } from '../../collab/fileCache'
 import type { BlobUrlRegistry } from '../../utils/blobUrls'
 import { safeFileMimeType } from '../../utils/fileType'
 import { fileContentMatchesId, hashFileBytes } from '../../utils/fileHash'
+import type { SignedFields } from '../../collab/messageSigning'
+import { safeThumbnailUrl } from '../../utils/avatarUrl'
 import { makeMediaThumbnail } from '../../utils/imageThumbnail'
 import { isProbablyNsfwMedia } from '../../collab/nsfwGate'
-import { estimateBrowserStorage, hasRoomForWrite, storagePressure } from '../../utils/browserStorage'
+import { estimateBrowserStorageCached, hasRoomForWrite, storagePressure } from '../../utils/browserStorage'
 import { isInlineImageType, isInlineVideoType } from '../../utils/fileType'
 import { loadFileSyncMode } from '../../collab/syncPreferences'
 
@@ -43,9 +45,19 @@ type FileMetaAction = {
 export function useFileTransfer(
   channelId: string,
   profileRef: RefObject<UserProfile>,
+  identityRef: RefObject<
+    | {
+        selfUserId?: string
+        signMessage?: (
+          fields: Omit<SignedFields, 'senderDeviceKeyId'>
+        ) => Promise<{ senderDeviceKeyId: string; signature: string }>
+      }
+    | undefined
+  >,
   fileCache: FileCache,
   blobUrls: RefObject<BlobUrlRegistry>,
-  onFileMessage: (message: Message) => void
+  onFileMessage: (message: Message) => void,
+  onFileNsfw?: (fileId: string, nsfw: boolean) => void
 ) {
   const [transfers, setTransfers] = useState<FileTransfer[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
@@ -145,12 +157,18 @@ export function useFileTransfer(
 
       // The sender chose this MIME type. Pin it to something inert before it can
       // reach a Blob, so it propagates sanitized into the cache, IndexedDB, and
-      // history rather than being re-trusted on every later restore.
-      const safeMeta = { ...meta, mimeType: safeFileMimeType(meta.mimeType) }
+      // history rather than being re-trusted on every later restore. The
+      // thumbnail is peer-chosen too: same gate as avatars, plus a size cap,
+      // BEFORE it is persisted or re-served to other peers.
+      const safeMeta = {
+        ...meta,
+        mimeType: safeFileMimeType(meta.mimeType),
+        thumbnail: safeThumbnailUrl(meta.thumbnail),
+      }
 
       const visual = isInlineImageType(safeMeta.mimeType) || isInlineVideoType(safeMeta.mimeType)
       const nsfw = visual ? await isProbablyNsfwMedia(data, safeMeta.mimeType) : false
-      const storage = await estimateBrowserStorage()
+      const storage = await estimateBrowserStorageCached()
       const persist = hasRoomForWrite(storage, data.byteLength)
       await fileCache.set(safeMeta, data, { persist })
       if (!persist) {
@@ -200,11 +218,15 @@ export function useFileTransfer(
   const handleFileMeta = useCallback(
     async (meta: FileMetaPayload, peerId: string) => {
       if (meta.size > MAX_FILE_BYTES) return
-      const safeMeta = { ...meta, mimeType: safeFileMimeType(meta.mimeType) }
+      const safeMeta = {
+        ...meta,
+        mimeType: safeFileMimeType(meta.mimeType),
+        thumbnail: safeThumbnailUrl(meta.thumbnail),
+      }
       onFileMessage(messageFromFileMeta(safeMeta, ''))
 
       if (loadFileSyncMode() !== 'auto') return
-      const storage = await estimateBrowserStorage()
+      const storage = await estimateBrowserStorageCached()
       const pressure = storagePressure(storage.usageBytes, storage.quotaBytes)
       if (pressure === 'warning' || pressure === 'critical') return
       await requestFilesFromPeers([peerId], [safeMeta.id])
@@ -260,10 +282,9 @@ export function useFileTransfer(
       // Content-addressed: the id IS the hash, so nothing needs to reconcile
       // "this id" with "these bytes" later — they're the same fact.
       const safeMimeType = safeFileMimeType(file.type)
-      const [id, thumbnail, nsfw] = await Promise.all([
+      const [id, thumbnail] = await Promise.all([
         hashFileBytes(buffer),
         makeMediaThumbnail(buffer, safeMimeType),
-        isProbablyNsfwMedia(buffer, safeMimeType),
       ])
       const meta: FileMetaPayload = {
         id,
@@ -274,8 +295,26 @@ export function useFileTransfer(
         size: file.size,
         thumbnail,
         ...senderFromProfile(profile, selfId),
+        senderUserId: identityRef.current?.selfUserId,
         timestamp: Date.now(),
         channelId: channelIdRef.current,
+      }
+
+      // Sign the announcement so the file's attribution and displayed name
+      // survive relay through history untampered (see messageSigning).
+      const signer = identityRef.current?.signMessage
+      if (signer) {
+        const signed = await signer({
+          id: meta.id,
+          type: 'file',
+          text: '',
+          fileMeta: { id: meta.id, name: meta.name, mimeType: meta.mimeType, size: meta.size },
+          senderUserId: meta.senderUserId,
+          timestamp: meta.timestamp,
+          channelId: meta.channelId,
+        })
+        meta.senderDeviceKeyId = signed.senderDeviceKeyId
+        meta.signature = signed.signature
       }
 
       await fileCache.set(meta, buffer)
@@ -284,14 +323,24 @@ export function useFileTransfer(
       // preview is still a live SVG document pointed at our own origin.
       const url = blobUrls.current.create(id, new Blob([buffer], { type: meta.mimeType }))
       const message = messageFromFileMeta(meta, url)
-      if (message.file) message.file.nsfw = nsfw
       onLocalMessage(message)
+
+      // Screen our own upload without holding the message hostage: the first
+      // image send would otherwise wait for the full model download before the
+      // sender saw their own file. Peer-received files stay blocking (safe by
+      // default for content someone else chose).
+      const visual = isInlineImageType(safeMimeType) || isInlineVideoType(safeMimeType)
+      if (visual) {
+        void isProbablyNsfwMedia(buffer, safeMimeType).then(nsfw =>
+          onFileNsfw?.(id, nsfw)
+        )
+      }
 
       // Announce metadata only. Peers request the content-addressed body when
       // opened, or immediately when their device is in automatic sync mode.
       await fileMetaAction.send(meta, target ? { target } : undefined)
     },
-    [blobUrls, fileCache, profileRef]
+    [blobUrls, fileCache, profileRef, identityRef, onFileNsfw]
   )
 
   return {

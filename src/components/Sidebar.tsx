@@ -19,6 +19,8 @@ type Props = {
   /** Only the creator's device can add members; see WorkspaceAuthManager.canInvite. */
   canInvite: boolean
   onInvite: (emails: string[]) => Promise<void>
+  onRemoveMember?: (email: string) => Promise<void>
+  selfEmail?: string
   channels: Channel[]
   activeChannel: string
   activeView: 'channel' | 'profile' | 'workspace'
@@ -88,6 +90,8 @@ export function Sidebar({
   invitedEmails = [],
   canInvite,
   onInvite,
+  onRemoveMember,
+  selfEmail,
   channels,
   activeChannel,
   activeView,
@@ -294,6 +298,8 @@ export function Sidebar({
           <InvitePeople
             inviteLink={inviteLink}
             invitedEmails={invitedEmails}
+            onRemove={onRemoveMember}
+            selfEmail={selfEmail}
             canInvite={canInvite}
             onInvite={onInvite}
           />

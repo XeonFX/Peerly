@@ -1,0 +1,24 @@
+# Served by Cloudflare Workers static assets (wrangler.jsonc -> ./dist).
+# Vite copies public/ into dist/, so this file rides every deploy.
+#
+# The app is deliberately self-contained: all JS/CSS/model weights ship in the
+# bundle, images render from data:/blob: only (see utils/avatarUrl.ts), and the
+# only external origins are the identity providers and the signaling relays.
+#
+# connect-src notes:
+# - wss:            Nostr signaling relays are a rotating public set
+#                   (config.ts DEFAULT_NOSTR_RELAYS); pinning hostnames here
+#                   would break relay failover silently.
+# - googleapis/login.microsoftonline/appleid: JWKS fetches for ID-token
+#                   verification (collab/identityProviders.ts).
+# - accounts.google.com: Google Identity Services.
+# frame-src accounts.google.com: the GIS button/One Tap iframe.
+# 'wasm-unsafe-eval': TensorFlow.js backends may compile WASM; without it the
+#                   NSFW screen fails open (worse than allowing wasm).
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss: data: blob: https://accounts.google.com https://www.googleapis.com https://login.microsoftonline.com https://appleid.apple.com; frame-src https://accounts.google.com https://appleid.apple.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self' https://appleid.apple.com; frame-ancestors 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin-allow-popups

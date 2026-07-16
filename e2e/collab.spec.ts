@@ -114,6 +114,30 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(page.getByTestId('open-workspace-test-ws')).not.toBeVisible()
   })
 
+  test('the creator can remove a member, and their name leaves the invite list', async ({ page }) => {
+    await createWorkspace(page, {
+      email: 'alice@e2e.test',
+      workspaceName: 'remove-test',
+      guests: 'bob@e2e.test',
+    })
+
+    await expect(page.getByTestId('invite-people-toggle')).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('invite-people-toggle').click()
+    await expect(page.getByTestId('invited-bob@e2e.test')).toBeVisible({ timeout: 15_000 })
+
+    // The creator's own row must not offer removal — removing yourself is a
+    // lockout, not a feature.
+    await expect(page.getByTestId('remove-member-alice@e2e.test')).toHaveCount(0)
+
+    page.once('dialog', dialog => void dialog.accept())
+    await page.getByTestId('invited-bob@e2e.test').hover()
+    await page.getByTestId('remove-member-bob@e2e.test').click()
+
+    await expect(page.getByTestId('invited-bob@e2e.test')).toHaveCount(0, { timeout: 15_000 })
+    await leaveToPicker(page)
+    await expect(page.getByTestId('open-workspace-remove-test')).toContainText('1 member')
+  })
+
   test('the creator can invite someone to an existing workspace', async ({ page }) => {
     await createWorkspace(page, {
       email: 'alice@e2e.test',

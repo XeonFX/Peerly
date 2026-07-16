@@ -24,7 +24,9 @@ export type ChatSlice = {
   totalUnread: number
   sendMessage: (text: string) => void
   sendFile: (file: File) => Promise<void>
-  requestFile: (file: SharedFile) => Promise<void>
+  requestFile: (file: SharedFile, channelId: string) => Promise<void>
+  /** Persist a screening verdict so a file is classified once per device. */
+  markFileNsfw: (fileId: string, nsfw: boolean) => void
   syncProgress: WorkspaceSyncProgress
 }
 

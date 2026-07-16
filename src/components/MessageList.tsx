@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FileTransfer, Message, Peer, SharedFile, UserProfile } from '../types'
 import { formatBytes, formatTime } from '../utils/format'
 import { isInlineImageType, isInlineVideoType } from '../utils/fileType'
-import { isProbablyNsfwUrl } from '../collab/nsfwGate'
+import { isProbablyNsfwUrlCached } from '../collab/nsfwGate'
 import { buildSenderDirectory, resolveSenderInfo } from '../utils/senderDirectory'
 import { Avatar } from './Avatar'
 import { Icon } from './Icon'
@@ -17,17 +17,20 @@ type Props = {
   selfProfile: UserProfile
   peers: Peer[]
   transfers: FileTransfer[]
-  onRequestFile: (file: SharedFile) => Promise<void>
+  onRequestFile: (file: SharedFile, channelId: string) => Promise<void>
+  onNsfwVerdict: (fileId: string, nsfw: boolean) => void
 }
 
 function FileAttachment({
   file,
   transfer,
   onRequest,
+  onNsfwVerdict,
 }: {
   file: SharedFile
   transfer?: FileTransfer
   onRequest: (file: SharedFile) => Promise<void>
+  onNsfwVerdict: (fileId: string, nsfw: boolean) => void
 }) {
   const [flagged, setFlagged] = useState(Boolean(file.nsfw))
   const [revealed, setRevealed] = useState(false)
@@ -36,15 +39,20 @@ function FileAttachment({
   const video = isInlineVideoType(file.mimeType)
 
   useEffect(() => {
-    if (!source || !image || file.nsfw) return
+    // `undefined` means never screened; a stored true OR false is final —
+    // re-running the classifier on every mount was the app's biggest
+    // avoidable inference cost.
+    if (!source || !image || file.nsfw !== undefined) return
     let cancelled = false
-    void isProbablyNsfwUrl(source).then(result => {
-      if (!cancelled && result) setFlagged(true)
+    void isProbablyNsfwUrlCached(file.id, source).then(result => {
+      if (cancelled) return
+      if (result) setFlagged(true)
+      onNsfwVerdict(file.id, result)
     })
     return () => {
       cancelled = true
     }
-  }, [file.nsfw, image, source])
+  }, [file.id, file.nsfw, image, source, onNsfwVerdict])
 
   const hidden = flagged && !revealed
   const media = image ? (
@@ -141,6 +149,7 @@ export function MessageList({
   peers,
   transfers,
   onRequestFile,
+  onNsfwVerdict,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const senderDirectory = useMemo(
@@ -205,7 +214,8 @@ export function MessageList({
                     <FileAttachment
                       file={msg.file}
                       transfer={transfers.find(t => t.id === msg.file?.id && t.direction === 'receive')}
-                      onRequest={onRequestFile}
+                      onRequest={file => onRequestFile(file, msg.channelId)}
+                      onNsfwVerdict={onNsfwVerdict}
                     />
                   </div>
                 ) : null}
