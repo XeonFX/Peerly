@@ -9,6 +9,8 @@ import { Icon } from './Icon'
 
 type Props = {
   messages: Message[]
+  /** Resets scroll anchoring when the user switches channels. */
+  channelId: string
   selfId: string
   /** Durable id of the signed-in user — links messages across devices. */
   selfUserId?: string
@@ -142,6 +144,7 @@ function FileAttachment({
 
 export function MessageList({
   messages,
+  channelId,
   selfId,
   selfUserId,
   pastSelfIds = [],
@@ -152,14 +155,57 @@ export function MessageList({
   onNsfwVerdict,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const nearBottomRef = useRef(true)
+  const previousMessageIdsRef = useRef<Set<string>>(new Set())
+  const prevChannelRef = useRef(channelId)
+  const [pendingBelow, setPendingBelow] = useState(0)
   const senderDirectory = useMemo(
     () => buildSenderDirectory(selfId, selfProfile, peers, messages, pastSelfIds, selfUserId),
     [selfId, selfProfile, peers, messages, pastSelfIds, selfUserId]
   )
 
+  const handleScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+    if (nearBottomRef.current) setPendingBelow(0)
+  }
+
+  const jumpToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    nearBottomRef.current = true
+    setPendingBelow(0)
+    bottomRef.current?.scrollIntoView({ behavior })
+  }
+
+  // Anchor, don't hijack: the old behaviour scrolled to the bottom on EVERY
+  // messages change — reading history got yanked down whenever anyone posted,
+  // history synced, or even a background screening verdict persisted. Now the
+  // view follows only when the reader is already at the bottom (or just sent
+  // the message themselves); otherwise a pill counts what arrived below.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const channelChanged = prevChannelRef.current !== channelId
+    prevChannelRef.current = channelId
+    const previousIds = previousMessageIdsRef.current
+    const addedCount = messages.reduce(
+      (count, message) => count + (previousIds.has(message.id) ? 0 : 1),
+      0
+    )
+    previousMessageIdsRef.current = new Set(messages.map(message => message.id))
+
+    if (channelChanged) {
+      jumpToBottom('auto')
+      return
+    }
+    if (addedCount === 0) return
+
+    const lastIsOwn = messages[messages.length - 1]?.senderId === selfId
+    if (nearBottomRef.current || lastIsOwn) {
+      jumpToBottom()
+    } else {
+      setPendingBelow(count => count + addedCount)
+    }
+  }, [messages, channelId, selfId])
 
   if (messages.length === 0) {
     return (
@@ -182,49 +228,67 @@ export function MessageList({
   }
 
   return (
-    <div className="message-list flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-      {messages.map(msg => {
-        const sender = resolveSenderInfo(msg, senderDirectory, peers)
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="message-list flex-1 overflow-y-auto px-3 py-4 sm:px-5"
+      >
+        {messages.map(msg => {
+          const sender = resolveSenderInfo(msg, senderDirectory, peers)
 
-        return (
-          <div
-            key={msg.id}
-            className="group flex gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-base-200/40"
-            data-testid="chat-message"
-          >
-            {/* size="md" is deliberate: message avatars were previously sized up
+          return (
+            <div
+              key={msg.id}
+              className="group flex gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-base-200/40"
+              data-testid="chat-message"
+            >
+              {/* size="md" is deliberate: message avatars were previously sized up
                 from `sm` by a CSS override, so plain `sm` would shrink them. */}
-            <Avatar name={sender.name} color={sender.color} avatar={sender.avatar} size="md" />
+              <Avatar name={sender.name} color={sender.color} avatar={sender.avatar} size="md" />
 
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <span className="truncate text-sm font-semibold text-base-content">
-                  {sender.name}
-                </span>
-                <span className="shrink-0 text-[0.7rem] text-base-content/40">
-                  {formatTime(msg.timestamp)}
-                </span>
-              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="truncate text-sm font-semibold text-base-content">
+                    {sender.name}
+                  </span>
+                  <span className="shrink-0 text-[0.7rem] text-base-content/40">
+                    {formatTime(msg.timestamp)}
+                  </span>
+                </div>
 
-              <div className="text-sm leading-relaxed text-base-content/90">
-                {msg.type === 'text' ? (
-                  <p className="break-words whitespace-pre-wrap">{msg.text}</p>
-                ) : msg.file ? (
-                  <div className="mt-1">
-                    <FileAttachment
-                      file={msg.file}
-                      transfer={transfers.find(t => t.id === msg.file?.id && t.direction === 'receive')}
-                      onRequest={file => onRequestFile(file, msg.channelId)}
-                      onNsfwVerdict={onNsfwVerdict}
-                    />
-                  </div>
-                ) : null}
+                <div className="text-sm leading-relaxed text-base-content/90">
+                  {msg.type === 'text' ? (
+                    <p className="break-words whitespace-pre-wrap">{msg.text}</p>
+                  ) : msg.file ? (
+                    <div className="mt-1">
+                      <FileAttachment
+                        file={msg.file}
+                        transfer={transfers.find(
+                          t => t.id === msg.file?.id && t.direction === 'receive'
+                        )}
+                        onRequest={file => onRequestFile(file, msg.channelId)}
+                        onNsfwVerdict={onNsfwVerdict}
+                      />
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div>
-        )
-      })}
-      <div ref={bottomRef} />
+          )
+        })}
+        <div ref={bottomRef} />
+      </div>
+      {pendingBelow > 0 && (
+        <button
+          type="button"
+          className="btn btn-primary btn-sm absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full shadow-lg"
+          onClick={() => jumpToBottom()}
+          data-testid="new-messages-pill"
+        >
+          ↓ {pendingBelow} new message{pendingBelow === 1 ? '' : 's'}
+        </button>
+      )}
     </div>
   )
 }

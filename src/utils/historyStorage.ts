@@ -24,11 +24,13 @@ export function saveLocalHistory(
   workspaceId: string,
   channelId: string,
   messages: Message[]
-): void {
+): boolean {
   const entries = messages.map(toHistoryEntry)
   try {
     localStorage.setItem(historyStorageKey(workspaceId, channelId), JSON.stringify(entries))
+    return true
   } catch {
     // quota exceeded — keep in-memory state only
+    return false
   }
 }

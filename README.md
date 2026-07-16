@@ -2,7 +2,7 @@
 
 Serverless peer-to-peer team collaboration — channels, chat, progressive file sharing, and video calls over WebRTC. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), and [Trystero](https://github.com/dmotz/trystero). Peerly has no application backend that stores workspace messages or files; signaling services are used only to help browsers discover each other.
 
-**v0.1.3** — storage-aware progressive sync, local sensitive-media screening, light/dark themes, P2P readiness diagnostics, and the redesigned Peerly interface.
+**v0.1.4** — session-expiry recovery, reader-friendly message scrolling, and local workspace backups.
 
 **Live app:** [peerly.cc](https://peerly.cc)
 
@@ -17,9 +17,12 @@ Serverless peer-to-peer team collaboration — channels, chat, progressive file 
 - **Creator-signed allow-list** — only invited email addresses can join; enforced cryptographically in the P2P handshake
 - **Creator-only invites** — only the device that created a workspace can add members to the allow-list; anyone can copy the invite link
 - **Device-bound auth** — ECDSA challenge-response prevents replayed identity tokens
+- **Session continuity** — warns before the current ID token expires and offers same-account reauthentication so new peer handshakes keep working
 - **Channels & DMs** — scoped messaging over one encrypted P2P room
+- **Reader-friendly history** — incoming messages do not pull you away from older history; a new-message pill returns to the latest messages
 - **Progressive file sync** — text and thumbnails sync first; full-size file bodies download on demand by default, with a device-wide automatic mode available
 - **Storage visibility** — approximate browser quota, available space, pressure warnings, per-workspace usage, and separate actions for freeing cached originals or clearing local history
+- **Workspace backups** — exports signed workspace-channel history and access as JSON, then safely merges it back from the workspace picker
 - **Local sensitive-media screening** — NSFWJS checks image/video attachments and samples remote video streams locally; flagged media stays hidden until revealed
 - **Video calls** — camera and microphone streams travel through WebRTC, with TURN support for networks that cannot establish a direct path
 - **Offline-first local state** — messages and indexes use localStorage; device keys, avatars, and cached file bodies use IndexedDB; history re-syncs from online peers
@@ -73,6 +76,8 @@ Storage actions are local:
 
 Neither action deletes content from other members. Re-sync requires at least one peer with the relevant history or file body to be online; Peerly has no global cloud archive.
 
+**Export backup** in workspace settings saves the newest 500 messages from each workspace channel together with channel structure and signed workspace access. Protect the JSON like an invite link. Imports verify the creator-signed allow-list and message signatures, bound untrusted data, and merge without overwriting local messages. DMs and full-size file bodies are excluded.
+
 ### Sensitive-media screen
 
 NSFWJS and its MobileNetV2 model are loaded lazily only when visual media needs checking. Classification runs locally through a single inference queue; sampled video frames are neither uploaded nor persisted. Shared images, video-file samples, and visible remote video streams can be blurred behind a reveal action.
@@ -100,6 +105,8 @@ in `.env`, then restart the dev server.
 2. **Authorized JavaScript origins**: every origin the app is served from — `http://localhost:5173` for dev, plus your production origin. No redirect URI is needed (Google Identity Services returns the token via callback).
 3. Configure the OAuth consent screen (External is fine; while in *Testing* only listed test users can sign in).
 4. Copy the client ID → `VITE_GOOGLE_CLIENT_ID`.
+
+When a Google token approaches expiry, Peerly prepares a fresh same-account sign-in button in the workspace banner. [Google Identity Services does not provide a truly silent sign-in flow](https://developers.google.com/identity/gsi/web/guides/offerings); credentials are returned through privacy-preserving automatic or manual UI.
 
 ### Microsoft
 
@@ -203,7 +210,7 @@ Add TURN, signaling overrides, or other providers as needed (see `.env.example`)
 
 Register the production origin (`https://peerly.cc`) in each OAuth provider's allowed JavaScript origins / redirect URIs. Add the direct `workers.dev` address too if you use it for testing.
 
-Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v0.1.3 · abc1234`.
+Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v0.1.4 · abc1234`.
 
 Cloudflare Pages also works: use `npm run build`, publish `dist/`, and set the same build-time environment variables.
 
@@ -266,9 +273,9 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 | `npm run dev:app` | Vite only, using the signaling strategy from the environment |
 | `npm run stop` | Stop the common local Peerly development ports |
 | `npm run build` | Typecheck + production build + bundle guard |
-| `npm test` | Vitest unit tests (172 tests) |
+| `npm test` | Vitest unit tests (194 tests) |
 | `npm run test:watch` | Vitest in watch mode |
-| `npm run test:e2e` | Playwright E2E (38 tests, local relay) |
+| `npm run test:e2e` | Playwright E2E (42 tests, local relay) |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
 | `npm run test:e2e:ui` | Playwright interactive UI |
 | `npm run preview` | Preview the production build locally |
@@ -276,7 +283,7 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 | `npm run guard:bundle` | Fail if test key material reached `dist/` (runs in `build`) |
 | `npm run lint` | oxlint |
 
-The app shows its version and commit (`v0.1.3 · a1b2c3d`) on the join screen and
+The app shows its version and commit (`v0.1.4 · a1b2c3d`) on the join screen and
 in the sidebar footer. Hosts that expose a commit SHA
 (`CF_PAGES_COMMIT_SHA`, `GITHUB_SHA`, `VERCEL_GIT_COMMIT_SHA`, …) are picked up
 automatically; otherwise it falls back to local git.
@@ -297,7 +304,7 @@ working until two peers fail to find each other.
 - **Inviting is creator-only** — the allow-list is only accepted if it verifies against the workspace's creator key, and that key never leaves the browser profile that created the workspace. A second device, even the creator's, cannot add members.
 - **Revocation is best-effort** — the creator can remove a member, and every device judges peers against the newest creator-signed list it holds, so updated members stop admitting the removed member at their next handshake. The honest limit: the removed member and any member who never received the update can still pair, and open connections are not torn down. Nothing short of a server closes that gap.
 - **Live messages** — attributed by transport peer id, not payload `senderId`
-- **History sync** — rejoin history is not per-message signed today; treat synced history as trusted only among members you trust
+- **Legacy history** — unsigned entries from older versions retain readable text but lose durable identity claims; newly authored entries are signed and verified
 - **Local media classification** — sensitive-media screening never uploads frames, but it is advisory and fails open rather than acting as a moderation authority
 - **Relay metadata** — signaling relays do not receive message/file bodies, but relay and TURN operators can still observe connection metadata such as IP addresses, timing, and traffic volume
 - **Production bundle guard** — E2E fake-issuer keys are isolated and scanned out of `dist/` on every build
@@ -305,7 +312,7 @@ working until two peers fail to find each other.
 ## Current boundaries
 
 - **No global delete/reset** — storage cleanup affects one browser only. A safe workspace-wide reset needs a signed monotonic reset epoch so an offline peer cannot resurrect old state.
-- **No guaranteed archive** — history and file availability depend on at least one peer retaining a copy.
+- **No automatic archive** — manual JSON backup covers workspace-channel messages and access, but DMs and file bodies still depend on local copies or online peers.
 - **No resumable range transfer** — file bodies are content-addressed and integrity-checked, but transfers are whole-file and join progress is channel-based rather than byte-accurate.
 - **Member removal reaches only updated devices** — see the revocation note above; a stale device still honours the old list until it hears the new one.
 - **No user-facing relay editor** — deployment-time overrides exist, but per-user relay changes could partition a workspace.
@@ -318,9 +325,9 @@ GitHub Actions on push/PR to `main` / `master` (see [.github/workflows/ci.yml](.
 
 1. Install Node `24.18.0` with its bundled npm `11.16.0`, then verify both exact versions.
 2. Run a clean `npm ci` from the committed lockfile.
-3. Run lint and 172 unit tests.
+3. Run lint and 194 unit tests.
 4. Run the TypeScript/Vite production build and bundle guard.
-5. Install Chromium and run all 38 Playwright tests against the local relay.
+5. Install Chromium and run all 42 Playwright tests against the local relay.
 
 `package.json` `devEngines`, `.npmrc`, `.nvmrc`, and CI all enforce the same toolchain. A mismatched Node or npm exits before it can rewrite `package-lock.json`.
 

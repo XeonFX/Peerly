@@ -9,6 +9,7 @@ import {
 } from '../collab/inviteLink'
 import { verifyInviteAllowList, WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { resolveAvatarPreview } from '../collab/avatarService'
+import { applyWorkspaceBackup, MAX_BACKUP_BYTES } from '../utils/workspaceBackup'
 import {
   forgetWorkspace,
   rememberWorkspace,
@@ -116,6 +117,27 @@ export function JoinScreen({ onJoined }: Props) {
   const [signedIn, setSignedIn] = useState<SignedInIdentity | null>(() => restoreSignedInIdentity())
   const [myWorkspaces, setMyWorkspaces] = useState<StoredWorkspace[]>([])
   const [usageRefresh, setUsageRefresh] = useState(0)
+  const [importNotice, setImportNotice] = useState<string | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  const handleImportBackup = async (file: File) => {
+    setImportNotice(null)
+    setError(null)
+    try {
+      if (file.size > MAX_BACKUP_BYTES) {
+        throw new Error(`Backup is larger than the ${formatUsage(MAX_BACKUP_BYTES)} import limit`)
+      }
+      const parsed: unknown = JSON.parse(await file.text())
+      const result = await applyWorkspaceBackup(parsed, signedIn?.email)
+      if (signedIn) setMyWorkspaces(workspacesForEmail(signedIn.email))
+      setUsageRefresh(token => token + 1)
+      setImportNotice(
+        `Restored "${result.workspaceName}" — ${result.importedMessages} message${result.importedMessages === 1 ? '' : 's'} imported.`
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
   const [workspaceUsages, setWorkspaceUsages] = useState<Map<string, WorkspaceUsage>>(new Map())
 
   // One pass for every badge: per-badge estimation re-parsed all histories
@@ -404,12 +426,43 @@ export function JoinScreen({ onJoined }: Props) {
 
         {inviteBanner}
 
-        {myWorkspaces.length > 0 && (
-          <section className="space-y-2" data-testid="workspace-picker">
+        <section className="space-y-2" data-testid="workspace-picker">
+          <div className="flex items-center justify-between">
             <h2 className="text-xs font-medium uppercase tracking-wider text-base-content/50">
               Your workspaces
             </h2>
-            <ul className="space-y-1.5">
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              data-testid="import-backup"
+              onClick={() => importInputRef.current?.click()}
+            >
+              Import backup
+            </button>
+          </div>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            data-testid="import-backup-input"
+            onChange={e => {
+              const file = e.target.files?.[0]
+              if (file) void handleImportBackup(file)
+              e.target.value = ''
+            }}
+          />
+          {importNotice && (
+            <p className="text-xs text-success" data-testid="import-notice">
+              {importNotice}
+            </p>
+          )}
+          {myWorkspaces.length === 0 && (
+            <p className="rounded-box border border-dashed border-base-300 px-3 py-2.5 text-sm text-base-content/50">
+              No workspaces remembered in this browser. Import a backup or create a new one.
+            </p>
+          )}
+          <ul className="space-y-1.5">
               {myWorkspaces.map(workspace => (
                 <li key={workspace.workspaceId} className="flex items-stretch gap-1.5">
                   <button
@@ -468,9 +521,8 @@ export function JoinScreen({ onJoined }: Props) {
                   </button>
                 </li>
               ))}
-            </ul>
-          </section>
-        )}
+          </ul>
+        </section>
 
         <div className="card border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
           <div className="card-body gap-4 p-5">

@@ -114,6 +114,139 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(page.getByTestId('open-workspace-test-ws')).not.toBeVisible()
   })
 
+  test('reading history is not hijacked by new messages; the pill catches up', async ({ browser }) => {
+    await withTwoUsers(browser, async (alice, bob) => {
+      // Enough messages that bob's list actually scrolls — the anchoring logic
+      // is meaningless (and untestable) unless the content overflows.
+      for (let i = 1; i <= 25; i++) {
+        await sendMessage(alice, `backlog message ${i}`)
+      }
+      await expectMessage(bob, 'backlog message 25')
+      // The last message arriving does not mean all arrived — deliveries can
+      // interleave. Scrolling up before the backlog settles would count the
+      // stragglers as "new below", which is correct behaviour but not this test.
+      await expect(bob.getByTestId('chat-message')).toHaveCount(25, { timeout: 30_000 })
+      const overflows = await bob
+        .locator('.message-list')
+        .evaluate(el => el.scrollHeight > el.clientHeight + 200)
+      expect(overflows).toBe(true)
+
+      // Bob scrolls up to read history.
+      await bob.locator('.message-list').evaluate(el => {
+        el.scrollTop = 0
+      })
+
+      await sendMessage(alice, 'the message below the fold')
+      await expectMessage(bob, 'the message below the fold')
+      await bob.waitForTimeout(300)
+
+      // Bob must still be where he was, with a pill offering the way down.
+      const scrollTop = await bob.locator('.message-list').evaluate(el => el.scrollTop)
+      expect(scrollTop).toBeLessThan(150)
+      // The exact count is honest but jitter-dependent (late backlog also
+      // arrives "below the fold"); the contract is presence + preserved scroll.
+      await expect(bob.getByTestId('new-messages-pill')).toBeVisible()
+      await expect(bob.getByTestId('new-messages-pill')).toContainText('new message')
+
+      await bob.getByTestId('new-messages-pill').click()
+      await expect(bob.getByTestId('new-messages-pill')).toHaveCount(0)
+      // The jump animates; poll until the smooth scroll lands.
+      await expect
+        .poll(
+          () =>
+            bob
+              .locator('.message-list')
+              .evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 150),
+          { timeout: 5_000 }
+        )
+        .toBe(true)
+    })
+  })
+
+  test('backup round-trip: export, clear local data, import restores messages', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await sendMessage(page, 'message worth keeping')
+    // Message signing is asynchronous; export only after the signed local copy
+    // is visible, matching the state the user expects the backup to capture.
+    await expectMessage(page, 'message worth keeping')
+
+    await page.getByTestId('workspace-settings-open').click()
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByTestId('export-backup').click()
+    const download = await downloadPromise
+    const backupPath = await download.path()
+    expect(download.suggestedFilename()).toMatch(/^peerly-.*\.json$/)
+
+    // Clear message history through the destructive settings action. The
+    // picker broom intentionally removes cached file bodies only.
+    page.once('dialog', dialog => void dialog.accept())
+    await page.getByTestId('clear-local-history').click()
+    await expect
+      .poll(() =>
+        page.evaluate(
+          workspaceId =>
+            Object.keys(localStorage).some(key =>
+              key.startsWith(`peerly-history-${workspaceId}__`)
+            ),
+          E2E_WORKSPACE_ID
+        )
+      )
+      .toBe(false)
+
+    await page.getByTestId('workspace-settings-back').click()
+    await leaveToPicker(page)
+
+    // A backup is most valuable on a fresh profile. Forget the only remembered
+    // workspace and prove restore remains available from the empty picker.
+    await page.getByTestId('forget-workspace-test-ws').click()
+    await expect(page.getByTestId('open-workspace-test-ws')).toHaveCount(0)
+    await expect(page.getByTestId('import-backup')).toBeVisible()
+
+    await page.getByTestId('import-backup').click()
+    await page.getByTestId('import-backup-input').setInputFiles(backupPath)
+    await expect(page.getByTestId('import-notice')).toContainText('Restored "test-ws"', {
+      timeout: 15_000,
+    })
+    await expect(page.getByTestId('import-notice')).toContainText('1 message imported')
+
+    await page.getByTestId('open-workspace-test-ws').click()
+    await waitForWorkspace(page)
+    await expectMessage(page, 'message worth keeping')
+  })
+
+  test('a token nearing expiry shows the re-auth banner, and re-auth clears it', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await expect(page.getByTestId('reauth-banner')).toHaveCount(0)
+
+    // Rewrite the stored token's exp to 60s out — inside the warning window.
+    // The signature becomes invalid, which is fine: banner display reads only
+    // exp; the fresh token minted by re-auth is what handshakes would use.
+    await page.evaluate(() => {
+      const token = sessionStorage.getItem('peerly-id-token')
+      if (!token) throw new Error('no stored token')
+      const [header, payload, sig] = token.split('.')
+      const decode = (part: string) =>
+        JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+      const encode = (value: unknown) =>
+        btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+      const claims = decode(payload)
+      claims.exp = Math.floor(Date.now() / 1000) + 60
+      sessionStorage.setItem('peerly-id-token', `${header}.${encode(claims)}.${sig}`)
+    })
+    await page.reload()
+    await waitForWorkspace(page)
+
+    await expect(page.getByTestId('reauth-banner')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('reauth-banner')).toContainText('expires in a few minutes')
+
+    await page.getByTestId('reauth-button').click()
+    await expect(page.getByTestId('reauth-banner')).toHaveCount(0, { timeout: 15_000 })
+
+    // The renewed session still works end to end.
+    await sendMessage(page, 'still here after renewing')
+    await expectMessage(page, 'still here after renewing')
+  })
+
   test('the creator can remove a member, and their name leaves the invite list', async ({ page }) => {
     await createWorkspace(page, {
       email: 'alice@e2e.test',

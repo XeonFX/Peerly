@@ -165,6 +165,7 @@ export function ChannelPanel({
 
       <MessageList
         messages={messages}
+        channelId={channel.id}
         selfId={selfId}
         selfUserId={selfUserId}
         pastSelfIds={pastSelfIds}
