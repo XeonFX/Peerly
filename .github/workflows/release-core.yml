@@ -1,9 +1,9 @@
-name: Release @peerly/code
+name: Release @peerly/core
 
-# Manual publish of packages/code to npm with provenance. Requires:
-#  - the `peerly` npm org (package is @peerly/code, published --access public)
+# Manual publish of packages/core to npm with provenance. Requires:
+#  - the `peerly` npm org (package is @peerly/core, published --access public)
 #  - an npm automation token stored as the NPM_TOKEN repository secret
-# Version bumps stay a human decision: edit packages/code/package.json, merge,
+# Version bumps stay a human decision: edit packages/core/package.json, merge,
 # then trigger this workflow.
 
 on:
@@ -44,7 +44,7 @@ jobs:
           npm test
 
       - name: Publish
-        working-directory: packages/code
+        working-directory: packages/core
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
