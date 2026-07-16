@@ -24,6 +24,7 @@ import { encodeInviteLink } from '../collab/inviteLink'
 import { useBrowserStorage } from '../hooks/useBrowserStorage'
 import type { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { rememberWorkspace, snapshotWorkspace } from '../collab/workspaceStore'
+import { saveStoredProfile } from '../collab/profileStore'
 import { sessionProfile, type Session } from '../session'
 import type { Channel, Peer, UserProfile } from '../types'
 import { useIdentityExpiry } from '../hooks/useIdentityExpiry'
@@ -368,6 +369,9 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessa
   const ids = useMemo(() => channelIds(channels), [channels])
 
   const handleProfileChange = (next: UserProfile & { avatarId?: string }) => {
+    // Twice on purpose: the session copy drives this workspace; the profile
+    // store survives leaving it (see collab/profileStore).
+    saveStoredProfile({ userName: next.name, color: next.color, avatarId: next.avatarId })
     onSessionChange({
       userName: next.name,
       color: next.color,

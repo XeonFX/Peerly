@@ -1,4 +1,5 @@
 import { DEFAULT_USER_COLOR } from './config'
+import { loadStoredProfile } from './collab/profileStore'
 import { base64UrlToUtf8 } from './utils/base64url'
 import { migrateLegacyAvatarDataUrl, resolveAvatarPreview } from './collab/avatarService'
 import type { SignedAllowList } from './collab/allowList'
@@ -217,6 +218,7 @@ export function createSessionFromInvite(
   identityUserId?: string
 ): Session {
   const saved = loadPersistedSession()
+  const storedProfile = loadStoredProfile()
   return {
     workspaceId: invite.workspaceId,
     workspaceName: invite.workspaceName,
@@ -226,9 +228,11 @@ export function createSessionFromInvite(
     identityEmail,
     identityUserId,
     identityProvider,
-    userName: saved?.userName ?? displayName ?? identityEmail.split('@')[0],
-    color: saved?.color ?? DEFAULT_USER_COLOR,
-    avatarId: saved?.avatarId,
+    // Precedence: live session (mid-session rejoin) > the profile store
+    // (survives leaving a workspace) > provider display name > email stem.
+    userName: saved?.userName ?? storedProfile.userName ?? displayName ?? identityEmail.split('@')[0],
+    color: saved?.color ?? storedProfile.color ?? DEFAULT_USER_COLOR,
+    avatarId: saved?.avatarId ?? storedProfile.avatarId,
   }
 }
 
