@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   defaultWorkspaceRoute,
+  hasInviteHash,
   pathForRoute,
   pathWithHash,
   resolveInitialRoute,
@@ -34,7 +35,7 @@ export function useAppRouting(inWorkspace: boolean, ready: boolean) {
   useEffect(() => {
     if (urlSeededRef.current) return
     urlSeededRef.current = true
-    syncUrl(route, true)
+    syncUrl(route, true, hasInviteHash())
   }, [route, syncUrl])
 
   useEffect(() => {

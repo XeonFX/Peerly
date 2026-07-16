@@ -92,13 +92,22 @@ export function pathWithHash(path: string, hash = typeof window !== 'undefined' 
   return hash ? `${path}${hash}` : path
 }
 
+/** True when the location hash carries an invite payload (#invite=…). */
+export function hasInviteHash(hash = typeof window !== 'undefined' ? window.location.hash : ''): boolean {
+  return /^#?invite=/.test(hash)
+}
+
 export function resolveInitialRoute(hasWorkspaceSession: boolean): AppRoute {
   const fromUrl = typeof window !== 'undefined' ? routeFromLocation(window.location) : null
+  const inviteInHash = typeof window !== 'undefined' && hasInviteHash(window.location.hash)
   if (fromUrl?.screen === 'workspace') {
     return fromUrl
   }
   if (hasWorkspaceSession) {
     return defaultWorkspaceRoute()
+  }
+  if (inviteInHash) {
+    return { screen: 'picker', tab: 'join' }
   }
   if (fromUrl?.screen === 'picker') return fromUrl
   return { screen: 'picker', tab: 'create' }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultWorkspaceRoute, pathForRoute, routeFromPath } from './routing'
+import { defaultWorkspaceRoute, hasInviteHash, pathForRoute, pathWithHash, routeFromPath } from './routing'
 
 describe('routing', () => {
   it('round-trips picker routes', () => {
@@ -30,5 +30,17 @@ describe('routing', () => {
 
   it('maps root to create tab', () => {
     expect(routeFromPath('/')).toEqual({ screen: 'picker', tab: 'create' })
+  })
+
+  it('detects invite hashes', () => {
+    expect(hasInviteHash('#invite=abc')).toBe(true)
+    expect(hasInviteHash('invite=abc')).toBe(true)
+    expect(hasInviteHash('#other=1')).toBe(false)
+    expect(hasInviteHash('')).toBe(false)
+  })
+
+  it('appends the current hash when preserving invite links', () => {
+    expect(pathWithHash('/join', '#invite=abc')).toBe('/join#invite=abc')
+    expect(pathWithHash('/create', '')).toBe('/create')
   })
 })
