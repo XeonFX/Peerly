@@ -255,6 +255,7 @@ export function useMultiChannelStore(
     epochRef.current += 1
     blobUrlsRef.current.revokeAll()
     loadedChannelsRef.current = new Set()
+    messagesByChannelRef.current = {}
     setMessagesByChannel({})
     // Channels were just marked unloaded; re-run the load effects to rebuild them.
     setReloadTick(tick => tick + 1)
@@ -272,20 +273,29 @@ export function useMultiChannelStore(
     }
   }, [activeChannelId, channelIds, loadChannel, reloadTick])
 
-  useEffect(() => {
-    const flushHistory = () => {
-      for (const [channelId, channelMessages] of Object.entries(messagesByChannelRef.current)) {
-        persistChannelMessages(channelId, channelMessages)
-      }
+  const flushHistory = useCallback(() => {
+    for (const [channelId, channelMessages] of Object.entries(messagesByChannelRef.current)) {
+      persistChannelMessages(channelId, channelMessages)
     }
+  }, [persistChannelMessages])
 
+  useEffect(() => {
     const id = window.setTimeout(flushHistory, 400)
-    window.addEventListener('beforeunload', flushHistory)
     return () => {
       window.clearTimeout(id)
+    }
+  }, [flushHistory, messagesByChannel])
+
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushHistory)
+    return () => {
+      // View switches can unmount the channel store before its 400 ms debounce
+      // lands. Flush synchronously so opening settings and immediately exporting
+      // cannot omit the message the user just sent.
+      flushHistory()
       window.removeEventListener('beforeunload', flushHistory)
     }
-  }, [messagesByChannel, persistChannelMessages])
+  }, [flushHistory])
 
   // Deliberately no revokeAll() on unmount.
   //
@@ -309,6 +319,7 @@ export function useMultiChannelStore(
     upsertFileMessage,
     getHistoryEntries,
     applyHistory,
+    flushHistory,
     resetWorkspace,
     setFileNsfw,
     blobUrls: blobUrlsRef,

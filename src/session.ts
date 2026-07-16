@@ -93,7 +93,7 @@ export function loadPersistedSession(): PersistedSession | null {
  * rejected, exactly as if we hadn't checked. Never use this to make an
  * authorization decision; use verifyOidcIdToken.
  */
-function idTokenExpiryMs(token: string): number | null {
+export function idTokenExpiryMs(token: string): number | null {
   try {
     const payload = JSON.parse(base64UrlToUtf8(token.split('.')[1])) as { exp?: unknown }
     return typeof payload.exp === 'number' ? payload.exp * 1000 : null

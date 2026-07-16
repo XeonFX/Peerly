@@ -114,7 +114,8 @@ export function useCollab(
   const channelSync = useChannelSync(workspaceId, onChannelsChange)
   const { bindChannelAction, unbindChannelAction } = channelSync
   const channelStore = useMultiChannelStore(workspaceId, activeChannelId, fileCache, channelIds)
-  const { resetWorkspace, appendMessage, syncSenderProfiles, setFileNsfw } = channelStore
+  const { resetWorkspace, appendMessage, syncSenderProfiles, setFileNsfw, flushHistory } =
+    channelStore
   const files = useFileTransfer(
     activeChannelId,
     profileRef,
@@ -496,6 +497,8 @@ export function useCollab(
     sendMessage,
     sendFile,
     requestFile,
+    flushHistory,
+    resetLocalHistory: resetWorkspace,
     markFileNsfw: setFileNsfw,
     syncProgress,
     startCall: video.startCall,

@@ -22,7 +22,9 @@ import type { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { rememberWorkspace, snapshotWorkspace } from '../collab/workspaceStore'
 import { sessionProfile, type Session } from '../session'
 import type { Channel, Peer, UserProfile } from '../types'
+import { useIdentityExpiry } from '../hooks/useIdentityExpiry'
 import { FilesPanel } from './FilesPanel'
+import { ReauthBanner } from './ReauthBanner'
 import { StoragePressureBanner } from './BrowserStorageCard'
 import { Sidebar } from './Sidebar'
 import { ChannelPanel } from './workspace/ChannelPanel'
@@ -59,6 +61,7 @@ function WorkspaceShell({
   onWorkspaceSettings,
   onLeave,
   onToggleFiles,
+  banner,
   onWorkspaceNameChange,
   onWorkspaceAvatarChange,
   onWorkspaceAvatarClear,
@@ -79,6 +82,7 @@ function WorkspaceShell({
   onWorkspaceSettings: () => void
   onLeave: () => void
   onToggleFiles: () => void
+  banner?: React.ReactNode
   onWorkspaceNameChange: (name: string) => void
   onWorkspaceAvatarChange: (avatarId: string, preview: string) => void
   onWorkspaceAvatarClear: () => void
@@ -93,7 +97,14 @@ function WorkspaceShell({
     p2pCapability,
     retryP2pCapability,
   } = useConnectionSlice()
-  const { sharedFiles, transfers, unreadByChannel, requestFile } = useChatSlice()
+  const {
+    sharedFiles,
+    transfers,
+    unreadByChannel,
+    requestFile,
+    flushHistory,
+    resetLocalHistory,
+  } = useChatSlice()
   const browserStorage = useBrowserStorage(transfers.length > 0)
   const { selfId, profile, peers } = useProfileSlice()
   const channel = getChannelById(channels, activeChannel)
@@ -173,6 +184,7 @@ function WorkspaceShell({
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
+        {banner}
         <StoragePressureBanner
           pressure={browserStorage.pressure}
           availableBytes={browserStorage.estimate.availableBytes}
@@ -201,6 +213,8 @@ function WorkspaceShell({
             rtcPeerCount={rtcPeerCount}
             connectionError={connectionError}
             onRetryP2p={retryP2pCapability}
+            onBeforeExport={flushHistory}
+            onLocalHistoryCleared={resetLocalHistory}
             onNameChange={onWorkspaceNameChange}
             onAvatarChange={onWorkspaceAvatarChange}
             onAvatarClear={onWorkspaceAvatarClear}
@@ -235,6 +249,7 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessa
   // away and no longer opens as a large empty column in a new channel.
   const [showFiles, setShowFiles] = useState(false)
   const [canInvite, setCanInvite] = useState(false)
+  const identityExpiry = useIdentityExpiry()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Whether this device holds the creator key. Async because the device key is
@@ -326,6 +341,14 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessa
       onChannelsChange={refreshChannels}
     >
       <WorkspaceShell
+        banner={
+          <ReauthBanner
+            phase={identityExpiry.phase}
+            session={session}
+            authManager={authManager}
+            onReauthed={identityExpiry.refresh}
+          />
+        }
         session={session}
         channels={channels}
         activeChannel={activeChannel}

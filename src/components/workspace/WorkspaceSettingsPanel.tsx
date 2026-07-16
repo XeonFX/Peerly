@@ -9,6 +9,8 @@ import {
   formatUsage,
   type WorkspaceUsage,
 } from '../../utils/workspaceUsage'
+import { loadWorkspaces } from '../../collab/workspaceStore'
+import { backupFileName, buildWorkspaceBackup } from '../../utils/workspaceBackup'
 import { Avatar } from '../Avatar'
 import { BrowserStorageCard } from '../BrowserStorageCard'
 import type { useBrowserStorage } from '../../hooks/useBrowserStorage'
@@ -26,6 +28,8 @@ type Props = {
   rtcPeerCount: number
   connectionError: string | null
   onRetryP2p: () => void
+  onBeforeExport: () => void
+  onLocalHistoryCleared: () => void
   onNameChange: (name: string) => void
   onAvatarChange: (avatarId: string, preview: string) => void
   onAvatarClear: () => void
@@ -42,6 +46,8 @@ export function WorkspaceSettingsPanel({
   rtcPeerCount,
   connectionError,
   onRetryP2p,
+  onBeforeExport,
+  onLocalHistoryCleared,
   onNameChange,
   onAvatarChange,
   onAvatarClear,
@@ -243,14 +249,47 @@ export function WorkspaceSettingsPanel({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm text-error"
+                data-testid="clear-local-history"
                 onClick={() => {
                   if (!window.confirm('Clear local messages, previews, read state, and cached files for this workspace? Access remains, and history can re-sync from online peers.')) return
-                  void clearWorkspaceData(workspaceId).then(refreshUsage)
+                  void clearWorkspaceData(workspaceId).then(async () => {
+                    onLocalHistoryCleared()
+                    await refreshUsage()
+                  })
                 }}
               >
                 Clear local history
               </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                data-testid="export-backup"
+                onClick={() => {
+                  onBeforeExport()
+                  const stored = loadWorkspaces().find(w => w.workspaceId === workspaceId)
+                  if (!stored) return
+                  const blob = new Blob([JSON.stringify(buildWorkspaceBackup(stored), null, 2)], {
+                    type: 'application/json',
+                  })
+                  const url = URL.createObjectURL(blob)
+                  const link = document.createElement('a')
+                  link.href = url
+                  link.download = backupFileName(stored.workspaceName)
+                  document.body.appendChild(link)
+                  link.click()
+                  link.remove()
+                  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+                }}
+              >
+                Export backup
+              </button>
             </div>
+            <p className="text-xs text-base-content/50">
+              Backups carry workspace-channel messages and access, so protect them like an invite
+              link. History caps at 500 messages per channel. DMs and file originals are excluded;
+              originals re-fetch from members who hold them. Restore from the start screen with
+              “Import backup”.
+            </p>
 
             <label className="flex cursor-pointer items-start gap-3">
               <input
