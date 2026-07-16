@@ -1,3 +1,4 @@
+import { generateRoomCode } from '@peerly/core'
 import { base64UrlToUtf8, utf8ToBase64Url } from '../utils/base64url'
 import type { DeviceKeyId } from './deviceIdentity'
 import type { SignedAllowList } from './allowList'
@@ -28,14 +29,12 @@ export type WorkspaceInvite = WorkspaceAccess & {
  * Generate the workspace's addressable, secret identity. Not slugified from
  * the display name — two workspaces named "my-team" must never collide, and
  * this being unguessable is what makes the workspace-id-as-password model
- * (see useRoom.ts) meaningful. 128 bits, lowercase hex: safe as a room id, a
- * Trystero password, and a localStorage key segment with no escaping.
+ * (see useRoom.ts) meaningful. The generator lives in @peerly/core
+ * (generateRoomCode): 128 bits, lowercase hex — safe as a room id, a Trystero
+ * password, and a localStorage key segment with no escaping.
  */
 export function generateWorkspaceId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  return Array.from(bytes)
-    .map(byte => byte.toString(16).padStart(2, '0'))
-    .join('')
+  return generateRoomCode()
 }
 
 /**

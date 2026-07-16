@@ -2,11 +2,15 @@ const MAX_DIMENSION = 256
 const WEBP_QUALITY = 0.82
 
 export async function processAvatarImage(file: File): Promise<{ blob: Blob; dataUrl: string }> {
-  if (!file.type.startsWith('image/')) {
+  return processAvatarBlob(file)
+}
+
+export async function processAvatarBlob(source: Blob): Promise<{ blob: Blob; dataUrl: string }> {
+  if (!source.type.startsWith('image/')) {
     throw new Error('Please choose an image file.')
   }
 
-  const bitmap = await createImageBitmap(file)
+  const bitmap = await createImageBitmap(source)
   const largest = Math.max(bitmap.width, bitmap.height)
   const scale = largest > MAX_DIMENSION ? MAX_DIMENSION / largest : 1
   const width = Math.max(1, Math.round(bitmap.width * scale))

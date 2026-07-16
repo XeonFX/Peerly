@@ -1,0 +1,65 @@
+{
+  "name": "@peerly/core",
+  "version": "0.2.1",
+  "description": "Peerly's P2P room core — join encrypted Trystero rooms by high-entropy room codes, with device identity, signing, and signaling strategy selection",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/XeonFX/Peerly.git",
+    "directory": "packages/core"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@trystero-p2p/core": "^0.25.3",
+    "@trystero-p2p/nostr": "^0.25.3"
+  },
+  "peerDependencies": {
+    "@trystero-p2p/supabase": "^0.25.3",
+    "@trystero-p2p/ws-relay": "^0.25.3",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@trystero-p2p/supabase": {
+      "optional": true
+    },
+    "@trystero-p2p/ws-relay": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "webrtc",
+    "p2p",
+    "trystero",
+    "peerly",
+    "room",
+    "nostr"
+  ]
+}

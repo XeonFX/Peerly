@@ -74,10 +74,8 @@ export type Peer = {
 
 export type ConnectionStatus = 'connecting' | 'ready' | 'connected' | 'error'
 
-export type P2pCapability = {
-  status: 'checking' | 'available' | 'unavailable'
-  detail: string
-}
+// Moved to @peerly/core alongside probeP2pCapability.
+export type { P2pCapability } from '@peerly/core'
 
 export type FileTransfer = {
   id: string

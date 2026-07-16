@@ -1,0 +1,81 @@
+name: Release @peerly/core
+
+# Publish @peerly/core via npm Trusted Publishing (OIDC).
+# npmjs.com → @peerly/core → Trusted publishing → XeonFX/Peerly / release-core.yml
+#
+# Real release: dry_run=false, bump=patch|minor|major → tests → bump versions →
+# publish → commit + tag on main. Dry run: no bump, no publish, no git changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'npm publish --dry-run (inspect, publish nothing)'
+        type: boolean
+        default: true
+      bump:
+        description: 'Semver bump before publish (ignored when dry_run=true)'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - none
+        default: patch
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Verify toolchain majors
+        run: |
+          node --version | grep -Eq '^v24\.' || (echo "need Node 24.x, got $(node --version)" && exit 1)
+          npm --version | grep -Eq '^11\.' || (echo "need npm 11.x, got $(npm --version)" && exit 1)
+
+      - run: npm ci
+
+      - name: Build and test against the package
+        run: |
+          npm run lint
+          npm test
+
+      - name: Bump versions
+        if: inputs.dry_run != true && inputs.bump != 'none'
+        id: bump
+        run: |
+          node scripts/bump-version.mjs "${{ inputs.bump }}" packages/core/package.json package.json
+          npm install --package-lock-only
+
+      - name: Publish
+        id: publish
+        working-directory: packages/core
+        run: |
+          npm run build
+          npm pack --dry-run
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm publish --access public --dry-run
+          else
+            npm publish --access public
+          fi
+
+      - name: Commit version bump and tag
+        if: inputs.dry_run != true && inputs.bump != 'none'
+        run: |
+          VERSION="${{ steps.bump.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/core/package.json package.json package-lock.json
+          git commit -m "chore: release @peerly/core v${VERSION}"
+          git tag "core-v${VERSION}"
+          git push origin HEAD:main --follow-tags

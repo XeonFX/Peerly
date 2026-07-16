@@ -18,14 +18,14 @@ import { readFileSync } from 'fs'
 import { createEvent } from '@trystero-p2p/nostr'
 
 /**
- * Read the list out of config.ts rather than importing it: importing would pull
+ * Read the list out of the @peerly/core source rather than importing it: importing would pull
  * in the app's whole module graph (which needs Vite's resolver), and this script
  * should stay runnable with plain node.
  */
 function defaultRelays() {
-  const source = readFileSync(new URL('../src/config.ts', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../packages/core/src/relays.ts', import.meta.url), 'utf8')
   const block = /export const DEFAULT_NOSTR_RELAYS = \[([\s\S]*?)\]/.exec(source)
-  if (!block) throw new Error('Could not find DEFAULT_NOSTR_RELAYS in src/config.ts')
+  if (!block) throw new Error('Could not find DEFAULT_NOSTR_RELAYS in packages/core/src/relays.ts')
   return [...block[1].matchAll(/'([^']+)'/g)].map(m => m[1])
 }
 
@@ -125,7 +125,7 @@ if (healthy === 0) {
 if (healthy < results.length) {
   console.error(
     '\nSome relays are unusable. They only add console noise, so drop them from\n' +
-      'DEFAULT_NOSTR_RELAYS in src/config.ts (or replace them) and re-run.'
+      'DEFAULT_NOSTR_RELAYS in packages/core/src/relays.ts (or replace them) and re-run.'
   )
   process.exit(1)
 }

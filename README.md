@@ -235,6 +235,18 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 | Media safety | Lazy NSFWJS MobileNetV2 inference in the browser |
 | Tests | Vitest (unit), Playwright (E2E), oxlint |
 
+## @peerly/core
+
+The generic P2P room core — room-code generation, signaling strategy selection,
+`joinRoomByCode`, the `useRoom` React hook, device identity, and signing
+primitives — lives in [`packages/core`](packages/core) and is published to npm
+as [`@peerly/core`](packages/core/README.md). The app consumes it from source
+via a Vite/tsconfig alias; other apps (e.g. HeyHubs) consume the published
+package. Workspace semantics — creator-signed allow-lists, OIDC verification,
+history sanitization — deliberately stay in the app, not the package. Publishing
+is manual via the `release-core.yml` workflow (needs the `peerly` npm org and an
+`NPM_TOKEN` secret).
+
 ## Project structure
 
 ```

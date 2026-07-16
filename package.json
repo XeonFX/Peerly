@@ -1,7 +1,7 @@
 {
   "name": "peerly",
   "private": false,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Serverless P2P team collaboration \u2014 verified identity, invite-only workspaces, chat, files, and video via Trystero",
   "license": "MIT",
   "repository": {
@@ -41,7 +41,8 @@
     "preview": "vite preview",
     "guard:bundle": "node scripts/guard-bundle.mjs",
     "check:csp": "node scripts/check-csp.mjs",
-    "check:relays": "node scripts/check-relays.mjs"
+    "check:relays": "node scripts/check-relays.mjs",
+    "test:bump": "node --test scripts/bump-version.test.mjs"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
@@ -53,6 +54,8 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.2",
+    "@emnapi/runtime": "^1.11.2",
     "@playwright/test": "^1.52.0",
     "@tailwindcss/vite": "^4.3.2",
     "@testing-library/react": "^16.3.2",
