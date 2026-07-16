@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ensureOidcAvatar, resolveAvatarPreview } from '../collab/avatarService'
+import { loadStoredProfile } from '../collab/profileStore'
 import { isE2eAuthBypass } from '../collab/e2eAuth'
 import { renderGoogleSignInButton } from '../collab/googleAuth'
 import {
@@ -44,12 +46,24 @@ function SignedInChip({
 }) {
   const { tr } = useI18n()
   const label = getIdentityProvider(signedIn.providerId)?.label
+  const [avatar, setAvatar] = useState<string | undefined>()
+
+  useEffect(() => {
+    let cancelled = false
+    void resolveAvatarPreview(loadStoredProfile().avatarId).then(url => {
+      if (!cancelled) setAvatar(url)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [signedIn.email])
+
   return (
     <div
       className="signed-in-banner flex items-center gap-3 rounded-box border border-base-300 bg-base-200 px-3 py-2"
       data-testid="signed-in-user"
     >
-      <Avatar name={signedIn.name ?? signedIn.email} color="#2eb67d" size="md" />
+      <Avatar name={signedIn.name ?? signedIn.email} color="#2eb67d" avatar={avatar} size="md" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-base-content">
           {signedIn.name ?? signedIn.email}
@@ -91,6 +105,7 @@ export function IdentityLoginButtons({
     async (providerId: IdentityProviderId, token: string) => {
       const claims = await authManager.verifyAndStoreIdToken(token, providerId)
       const userId = await deriveUserId(claims.iss, claims.sub)
+      await ensureOidcAvatar(claims.picture)
       onSignedIn({ email: claims.email, name: claims.name, token, providerId, userId })
     },
     [authManager, onSignedIn]
