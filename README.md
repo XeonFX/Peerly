@@ -316,6 +316,44 @@ working until two peers fail to find each other.
 - **Relay metadata** — signaling relays do not receive message/file bodies, but relay and TURN operators can still observe connection metadata such as IP addresses, timing, and traffic volume
 - **Production bundle guard** — E2E fake-issuer keys are isolated and scanned out of `dist/` on every build
 
+## Future matchmaking
+
+Matchmaking is discovery, not transport. Once compatible people receive a
+private room identifier, Peerly already handles their chat, files, and calls
+directly over P2P. The unresolved decision is who maintains the waiting pool,
+chooses a group, and has authority to rate-limit or reject abusive accounts.
+
+| Approach | Peerly-operated service | Moderation | Reliability | Main trade-off |
+|----------|-------------------------|------------|-------------|----------------|
+| Community or invite discovery | None | Community-based | Medium | Safe and simple, but not automatic |
+| Pure P2P lobby | None | Local blocks only | Low | Cheapest, but exposes metadata and has no global bans |
+| User/community coordinators | Optional | Per coordinator | Medium | Decentralized, but fragments users and trust |
+| Federated matchmakers | Multiple independent services | Distributed | High | Portable and resilient, but protocol-heavy |
+| Privacy-preserving ticket schemes | Usually | Good | High | Strong privacy with substantial cryptographic complexity |
+| Minimal Peerly matchmaker | One tiny queue/ticket authority | Strongest | High | Central matching authority, while content remains P2P |
+
+A public stranger-matching flow should use short-lived signed admission tickets:
+
+1. The user proves a verified Peerly identity and submits coarse preferences.
+2. A temporary queue rate-limits the identity and finds compatible users.
+3. The matchmaker creates a random room ID and issues single-use, expiring tickets.
+4. Clients verify the tickets, enter the room, and communicate directly P2P.
+5. Queue state expires; the service never carries messages, files, or calls.
+
+For a controlled friends-of-friends experiment, preference-derived P2P lobbies
+are viable. For public strangers they are not sufficient: no peer can enforce a
+global ban, stop fresh-account abuse, protect preference metadata from lobby
+enumeration, or make a sparse waiting pool feel reliable. Local NSFW screening
+can hide content on one device but cannot act as a moderation authority.
+
+The recommended sequence is community discovery first, an explicitly
+unmoderated P2P experiment only if useful, and a minimal ticket-signing authority
+before opening automated stranger matching publicly. Room admission should
+accept a generic signed ticket so a future signer can be Peerly, a community
+coordinator, or a federated provider without changing the P2P collaboration
+layer. Implementation remains deferred pending a separate approved design; see
+[`docs/MATCHMAKING.md`](docs/MATCHMAKING.md).
+
 ## Current boundaries
 
 - **No global delete/reset** — storage cleanup affects one browser only. A safe workspace-wide reset needs a signed monotonic reset epoch so an offline peer cannot resurrect old state.
@@ -332,9 +370,9 @@ GitHub Actions on push/PR to `main` / `master` (see [.github/workflows/ci.yml](.
 
 1. Install Node `24.18.0` with its bundled npm `11.16.0`, then verify both exact versions.
 2. Run a clean `npm ci` from the committed lockfile.
-3. Run lint and 205 unit tests.
+3. Run lint and 210 unit/component tests.
 4. Run the TypeScript/Vite production build and bundle guard.
-5. Install Chromium, verify CSP plus the offline shell, and run all 47 Playwright tests against the local relay.
+5. Install Chromium, verify CSP plus the offline shell, and run all 48 Playwright tests against the local relay.
 
 `package.json` `devEngines`, `.npmrc`, `.nvmrc`, and CI all enforce the same toolchain. A mismatched Node or npm exits before it can rewrite `package-lock.json`.
 
