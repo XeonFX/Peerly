@@ -1,0 +1,57 @@
+name: Release @peerly/code
+
+# Manual publish of packages/code to npm with provenance. Requires:
+#  - the `peerly` npm org (package is @peerly/code, published --access public)
+#  - an npm automation token stored as the NPM_TOKEN repository secret
+# Version bumps stay a human decision: edit packages/code/package.json, merge,
+# then trigger this workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'npm publish --dry-run (inspect, publish nothing)'
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Verify toolchain majors
+        run: |
+          node --version | grep -Eq '^v24\.' || (echo "need Node 24.x, got $(node --version)" && exit 1)
+          npm --version | grep -Eq '^11\.' || (echo "need npm 11.x, got $(npm --version)" && exit 1)
+
+      # Root install: the package builds with the repo's pinned TypeScript and
+      # trystero types from the root lockfile, same as CI.
+      - run: npm ci
+
+      - name: Build and test against the package
+        run: |
+          npm run lint
+          npm test
+
+      - name: Publish
+        working-directory: packages/code
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm run build
+          npm pack --dry-run
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm publish --access public --provenance --dry-run
+          else
+            npm publish --access public --provenance
+          fi

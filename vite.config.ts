@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from 'fs'
+import { fileURLToPath } from 'url'
 import type { Connect } from 'vite'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -26,5 +27,11 @@ export default defineConfig({
   define: buildDefines(),
   resolve: {
     dedupe: ['@trystero-p2p/core'],
+    // The app consumes the workspace package from source; published consumers
+    // get dist/. Order matters: the subpath alias must precede the bare one.
+    alias: [
+      { find: '@peerly/core/react', replacement: fileURLToPath(new URL('./packages/core/src/react.ts', import.meta.url)) },
+      { find: '@peerly/core', replacement: fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)) },
+    ],
   },
 })
