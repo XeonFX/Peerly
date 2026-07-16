@@ -1,4 +1,5 @@
 import type { WorkspaceSyncProgress } from '../types'
+import { Icon } from './Icon'
 
 export function SyncStatusBar({ progress }: { progress: WorkspaceSyncProgress }) {
   if (progress.phase === 'idle' || progress.phase === 'ready') return null
@@ -14,7 +15,7 @@ export function SyncStatusBar({ progress }: { progress: WorkspaceSyncProgress })
     <div className="sync-status" role="status" aria-live="polite" data-testid="sync-status">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <span className="sync-status-icon" aria-hidden="true">
-          {progress.phase === 'paused' ? 'Ⅱ' : '↻'}
+          <Icon name={progress.phase === 'paused' ? 'pause' : 'refresh'} size={15} />
         </span>
         <span className="min-w-0 flex-1">
           <strong className="block truncate text-xs">

@@ -202,7 +202,6 @@ function WorkspaceShell({
         ) : (
           <ChannelPanel
             channel={channel}
-            workspaceProtected
             onToggleFiles={onToggleFiles}
             showFiles={showFiles}
             onOpenSidebar={() => onSidebarOpenChange(true)}
@@ -221,11 +220,9 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, authManag
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
   const [activeChannel, setActiveChannel] = useState(GENERAL_CHANNEL.id)
   const [activeView, setActiveView] = useState<'channel' | 'profile' | 'workspace'>('channel')
-  // The files panel is a third column on desktop but an overlay on phones, so
-  // defaulting it open there would bury the conversation behind it on load.
-  const [showFiles, setShowFiles] = useState(
-    () => typeof window === 'undefined' || window.innerWidth >= 1280
-  )
+  // Start with the conversation at full width. The files rail remains one click
+  // away and no longer opens as a large empty column in a new channel.
+  const [showFiles, setShowFiles] = useState(false)
   const [canInvite, setCanInvite] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 

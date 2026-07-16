@@ -5,6 +5,7 @@ import { isInlineImageType, isInlineVideoType } from '../utils/fileType'
 import { isProbablyNsfwUrl } from '../collab/nsfwGate'
 import { buildSenderDirectory, resolveSenderInfo } from '../utils/senderDirectory'
 import { Avatar } from './Avatar'
+import { Icon } from './Icon'
 
 type Props = {
   messages: Message[]
@@ -84,7 +85,7 @@ function FileAttachment({
           )}
           {hidden && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/45 p-4 text-center text-white">
-              <span className="text-xl" aria-hidden="true">🛡️</span>
+              <Icon name="shield" size={22} />
               <strong className="text-sm">Sensitive media hidden</strong>
               <span className="text-xs text-white/75">Checked privately on this device</span>
               <button type="button" className="btn btn-sm border-white/30 bg-white/15 text-white hover:bg-white/25" onClick={() => setRevealed(true)}>
@@ -99,7 +100,7 @@ function FileAttachment({
           download={file.name}
           className="file-download inline-flex items-center gap-2.5 rounded-xl border border-base-300 bg-base-100 px-3 py-2.5 transition hover:border-primary/35 hover:shadow-sm"
         >
-          <span aria-hidden="true">📎</span>
+          <Icon name="paperclip" className="text-primary" />
           <span className="flex min-w-0 flex-col">
             <strong className="truncate text-sm font-medium">{file.name}</strong>
             <span className="text-xs text-base-content/50">{formatBytes(file.size)} · Ready on this device</span>
@@ -112,12 +113,12 @@ function FileAttachment({
           onClick={() => void onRequest(file)}
           className="file-download inline-flex items-center gap-2.5 rounded-xl border border-base-300 bg-base-100 px-3 py-2.5 text-left transition hover:border-primary/35 hover:shadow-sm"
         >
-          <span aria-hidden="true">📎</span>
+          <Icon name="paperclip" className="text-primary" />
           <span className="flex min-w-0 flex-col">
             <strong className="truncate text-sm font-medium">{file.name}</strong>
             <span className="text-xs text-base-content/50">{formatBytes(file.size)} · Download on demand</span>
           </span>
-          <span className="ml-2 text-primary" aria-hidden="true">↓</span>
+          <Icon name="download" size={17} className="ml-2 text-primary" />
         </button>
       )}
 
@@ -155,14 +156,15 @@ export function MessageList({
     return (
       <div className="message-list flex flex-1 items-center justify-center p-6">
         <div className="max-w-sm text-center">
-          <span
-            className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-base-300/70 bg-base-200/70 text-3xl shadow-lg shadow-black/10"
-            aria-hidden="true"
-          >
-            💬
-          </span>
-          <h3 className="mb-1 text-lg font-semibold">Start the conversation</h3>
-          <p className="text-sm text-base-content/50">
+          <div className="empty-state-art mx-auto mb-5" aria-hidden="true">
+            <span className="empty-state-orbit empty-state-orbit-one" />
+            <span className="empty-state-orbit empty-state-orbit-two" />
+            <span className="empty-state-icon">
+              <Icon name="message-circle" size={29} />
+            </span>
+          </div>
+          <h3 className="mb-1.5 text-lg font-semibold tracking-tight">Start the conversation</h3>
+          <p className="text-sm leading-relaxed text-base-content/50">
             Messages are sent directly peer-to-peer. No server stores your data.
           </p>
         </div>

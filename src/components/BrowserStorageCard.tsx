@@ -1,5 +1,6 @@
 import type { BrowserStorageEstimate, StoragePressure } from '../utils/browserStorage'
 import { formatBytes } from '../utils/format'
+import { Icon } from './Icon'
 
 type Props = {
   estimate: BrowserStorageEstimate
@@ -96,7 +97,9 @@ export function BrowserStorageCard({
             </button>
           )}
           {estimate.persisted && (
-            <span className="badge badge-success badge-soft gap-1 self-center">✓ Local data protected</span>
+            <span className="badge badge-success badge-soft gap-1 self-center">
+              <Icon name="check" size={14} /> Local data protected
+            </span>
           )}
         </div>
       </div>
@@ -122,7 +125,7 @@ export function StoragePressureBanner({
       aria-live={pressure === 'critical' ? 'assertive' : 'polite'}
       data-testid="storage-pressure-banner"
     >
-      <span aria-hidden="true">{pressure === 'critical' ? '⚠️' : '◔'}</span>
+      <Icon name={pressure === 'critical' ? 'alert-triangle' : 'gauge'} size={17} />
       <span className="min-w-0 flex-1">
         <strong>{pressure === 'critical' ? 'Browser storage almost full' : 'Browser storage is getting low'}</strong>
         {availableBytes !== undefined && ` · approximately ${formatBytes(availableBytes)} available`}

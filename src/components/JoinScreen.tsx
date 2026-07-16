@@ -42,6 +42,7 @@ import { BrowserStorageCard } from './BrowserStorageCard'
 import { ThemeToggle } from './ThemeToggle'
 import { useP2pCapability } from '../hooks/useP2pCapability'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
+import { Icon } from './Icon'
 
 function WorkspaceUsageBadge({
   workspaceId,
@@ -455,7 +456,7 @@ export function JoinScreen({ onJoined }: Props) {
                       )
                     }}
                   >
-                    🧹
+                    <Icon name="broom" />
                   </button>
                   <button
                     type="button"
@@ -468,7 +469,7 @@ export function JoinScreen({ onJoined }: Props) {
                       setMyWorkspaces(workspacesForEmail(signedIn.email))
                     }}
                   >
-                    ✕
+                    <Icon name="x" />
                   </button>
                 </li>
               ))}

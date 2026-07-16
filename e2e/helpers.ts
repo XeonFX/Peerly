@@ -51,7 +51,7 @@ export async function clearSession(page: Page) {
 }
 
 export async function openProfile(page: Page) {
-  await page.getByTestId('nav-profile').click()
+  await page.getByTestId('member-self').click()
   await expect(page.getByTestId('profile-page')).toBeVisible()
 }
 

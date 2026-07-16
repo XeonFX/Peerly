@@ -6,6 +6,7 @@ import { ConnectionStatus as ConnectionStatusLabel } from './ConnectionStatus'
 import { InvitePeople } from './InvitePeople'
 import { ThemeToggle } from './ThemeToggle'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
+import { Icon } from './Icon'
 
 type Props = {
   workspace: string
@@ -148,7 +149,7 @@ export function Sidebar({
             aria-label="Switch workspace"
             data-testid="leave-workspace"
           >
-            ⏻
+            <Icon name="log-out" />
           </button>
         </div>
       </div>
@@ -174,7 +175,7 @@ export function Sidebar({
             aria-label="Add a channel"
             data-testid="add-channel-toggle"
           >
-            +
+            <Icon name="plus" size={15} />
           </button>
         </div>
         <ul className="space-y-0.5 px-2">
@@ -183,7 +184,7 @@ export function Sidebar({
               key={channel.id}
               channel={channel}
               label={channel.name}
-              prefix={<span className="channel-hash">#</span>}
+              prefix={<Icon name="hash" size={14} className="channel-hash" />}
               active={activeView === 'channel' && activeChannel === channel.id}
               unread={unreadByChannel[channel.id] ?? 0}
               onSelect={() => onChannelSelect(channel.id)}
@@ -238,37 +239,31 @@ export function Sidebar({
         </nav>
       )}
 
-      <nav className="mt-4">
-        <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/45">
-          You
-        </h3>
-        <ul className="px-2">
-          <li>
-            <button
-              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
-                activeView === 'profile'
-                  ? 'bg-accent/15 font-medium text-accent'
-                  : 'text-base-content/60 hover:bg-base-content/5 hover:text-base-content'
-              }`}
-              onClick={onProfileSelect}
-              data-testid="nav-profile"
-            >
-              <Avatar name={selfProfile.name} color={selfProfile.color} avatar={selfProfile.avatar} />
-              <span>Profile</span>
-            </button>
-          </li>
-        </ul>
-      </nav>
-
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
         <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/45">
           Online — {peers.length + 1}
         </h3>
         <ul data-testid="member-list">
-          <li className="flex items-center gap-2 px-3 py-1 text-sm" data-testid="member-self">
-            <Avatar name={selfProfile.name} color={selfProfile.color} avatar={selfProfile.avatar} />
-            <span className="min-w-0 flex-1 truncate">{selfProfile.name}</span>
-            <span className="shrink-0 text-xs text-base-content/35">you</span>
+          <li className="px-2">
+            <button
+              type="button"
+              className={`flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-sm transition-colors ${
+                activeView === 'profile'
+                  ? 'bg-accent/15 font-medium text-accent'
+                  : 'hover:bg-base-content/5'
+              }`}
+              onClick={onProfileSelect}
+              aria-label="Open your profile"
+              data-testid="member-self"
+            >
+              <Avatar
+                name={selfProfile.name}
+                color={selfProfile.color}
+                avatar={selfProfile.avatar}
+              />
+              <span className="min-w-0 flex-1 truncate">{selfProfile.name}</span>
+              <span className="shrink-0 text-xs text-base-content/35">you</span>
+            </button>
           </li>
           {peers.map(peer => (
             <li
@@ -287,7 +282,7 @@ export function Sidebar({
                 data-testid={`message-peer-${peer.name}`}
                 onClick={() => onStartDirectMessage(peer)}
               >
-                💬
+                <Icon name="message-circle" size={15} />
               </button>
             </li>
           ))}

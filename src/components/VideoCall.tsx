@@ -3,6 +3,7 @@ import type { Peer } from '../types'
 import { getPeerColor } from '../config'
 import { safeColor } from '../utils/profileSanitize'
 import { isProbablyNsfwElement } from '../collab/nsfwGate'
+import { Icon } from './Icon'
 
 type Props = {
   localStream: MediaStream | null
@@ -100,7 +101,7 @@ function VideoTile({
       </span>
       {hidden && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/55 p-3 text-center text-white">
-          <span aria-hidden="true">🛡️</span>
+          <Icon name="shield" size={20} />
           <strong className="text-xs">Sensitive video hidden</strong>
           <button
             type="button"
@@ -164,7 +165,7 @@ export function VideoCall({
           aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
           aria-pressed={!videoEnabled}
         >
-          <span aria-hidden="true">{videoEnabled ? '📹' : '🚫'}</span>
+          <Icon name={videoEnabled ? 'video' : 'video-off'} />
         </button>
         <button
           className={`btn btn-sm btn-circle ${audioEnabled ? 'btn-ghost' : 'btn-error'}`}
@@ -173,7 +174,7 @@ export function VideoCall({
           aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
           aria-pressed={!audioEnabled}
         >
-          <span aria-hidden="true">{audioEnabled ? '🎤' : '🔇'}</span>
+          <Icon name={audioEnabled ? 'mic' : 'mic-off'} />
         </button>
         <button className="btn btn-sm btn-error" onClick={onEnd}>
           End call

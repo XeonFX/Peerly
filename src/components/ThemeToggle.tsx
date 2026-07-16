@@ -5,6 +5,7 @@ import {
   THEME_EVENT,
   type ThemePreference,
 } from '../collab/themePreference'
+import { Icon } from './Icon'
 
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const [theme, setTheme] = useState<ThemePreference>(() => loadThemePreference())
@@ -30,7 +31,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
         setTheme(next)
       }}
     >
-      <span aria-hidden="true">{theme === 'dark' ? '☀️' : '🌙'}</span>
+      <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
       {!compact && <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
     </button>
   )

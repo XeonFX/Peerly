@@ -45,6 +45,17 @@ test.describe('Peerly P2P collaboration', () => {
   test('theme preference persists and P2P readiness stays visible', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
 
+    await expect(page.getByText('Invite-only workspace — verified identities')).not.toBeVisible()
+    await expect(page.getByRole('heading', { name: 'You', exact: true })).not.toBeVisible()
+    await expect(page.getByTestId('member-list').locator('li').first()).toContainText('Alice')
+    await expect(page.getByTestId('member-list').locator('li').first()).toContainText('you')
+    await expect(page.locator('.files-panel')).not.toBeVisible()
+    await expect(page.getByTestId('toggle-files').locator('svg')).toBeVisible()
+    await expect(page.getByTestId('attach-file-button').locator('svg')).toBeVisible()
+    await page.getByTestId('toggle-files').click()
+    await expect(page.locator('.files-panel')).toContainText('No shared files yet')
+    await page.getByTestId('toggle-files').click()
+
     await expect(page.getByTestId('p2p-capability')).toContainText('P2P ready', {
       timeout: 10_000,
     })
@@ -305,6 +316,7 @@ test.describe('Peerly P2P collaboration', () => {
     await fileInput.setInputFiles(tmpFile)
 
     await expect(bob.locator('.message-list')).toContainText('test-', { timeout: 45_000 })
+    await bob.getByTestId('toggle-files').click()
     await expect(bob.locator('.files-panel')).toContainText('txt', { timeout: 45_000 })
 
     const onDemandFile = bob.locator('button.file-download')
@@ -535,6 +547,7 @@ test.describe('Peerly P2P collaboration', () => {
     await rejoinWorkspace(bob, { name: 'Bob', email: 'bob@e2e.test' })
     await waitForPeerConnection(bob)
     await expect(bob.locator('.message-list')).toContainText('peerly-rejoin-', { timeout: 60_000 })
+    await bob.getByTestId('toggle-files').click()
     await expect(bob.locator('.files-panel')).toContainText('txt', { timeout: 60_000 })
 
     fs.unlinkSync(tmpFile)

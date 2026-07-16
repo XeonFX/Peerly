@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Icon } from './Icon'
 
 type Props = {
   /** Link granting access to the current allow-list. Anyone may share it. */
@@ -89,7 +90,7 @@ export function InvitePeople({ inviteLink, invitedEmails, canInvite, onInvite }:
         onClick={() => void copyLink()}
         title="Copy the invite link for people already invited"
       >
-        {copied ? '✓ Invite link copied' : 'Copy invite link'}
+        {copied ? <><Icon name="check" size={16} /> Invite link copied</> : 'Copy invite link'}
       </button>
 
       {/* Sharing the link is open to everyone — it only admits people already on

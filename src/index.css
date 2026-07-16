@@ -233,6 +233,33 @@
     @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold text-primary;
   }
 
+  .empty-state-art {
+    @apply relative flex h-20 w-20 items-center justify-center;
+  }
+
+  .empty-state-art::before {
+    content: '';
+    @apply absolute inset-2 rounded-3xl;
+    background: linear-gradient(145deg, oklch(69% 0.19 295 / 0.2), oklch(72% 0.13 190 / 0.18));
+    transform: rotate(8deg);
+  }
+
+  .empty-state-icon {
+    @apply relative z-10 flex h-13 w-13 items-center justify-center rounded-2xl border border-white/50 bg-base-100/85 text-primary shadow-xl shadow-primary/10 backdrop-blur;
+  }
+
+  .empty-state-orbit {
+    @apply absolute rounded-full bg-accent shadow-sm shadow-accent/30;
+  }
+
+  .empty-state-orbit-one {
+    @apply right-0 top-2 h-2.5 w-2.5;
+  }
+
+  .empty-state-orbit-two {
+    @apply bottom-1 left-1 h-1.5 w-1.5 bg-secondary;
+  }
+
   .card {
     box-shadow: 0 12px 35px rgb(70 58 125 / 0.06);
   }

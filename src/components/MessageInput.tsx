@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Icon } from './Icon'
 
 type Props = {
   channelName?: string
@@ -45,7 +46,7 @@ export function MessageInput({
           aria-label="Attach file"
           data-testid="attach-file-button"
         >
-          <span aria-hidden="true">📎</span>
+          <Icon name="paperclip" />
         </button>
         <input
           type="text"

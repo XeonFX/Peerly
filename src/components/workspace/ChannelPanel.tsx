@@ -10,10 +10,11 @@ import { MessageInput } from '../MessageInput'
 import { MessageList } from '../MessageList'
 import { VideoCall } from '../VideoCall'
 import { SyncStatusBar } from '../SyncStatusBar'
+import { Icon } from '../Icon'
+import { RELAY_OFFLINE_ERROR } from '../../collab/constants'
 
 type Props = {
   channel: Channel
-  workspaceProtected?: boolean
   onToggleFiles: () => void
   showFiles: boolean
   /** Opens the off-canvas sidebar; only rendered where the sidebar is hidden. */
@@ -22,7 +23,6 @@ type Props = {
 
 export function ChannelPanel({
   channel,
-  workspaceProtected,
   onToggleFiles,
   showFiles,
   onOpenSidebar,
@@ -45,6 +45,10 @@ export function ChannelPanel({
   const dmPeer = channel.kind === 'dm' ? peers.find(peer => peer.id === channel.peerId) : undefined
   const title = dmPeer?.name ?? channel.name
   const dmAvatar = dmPeer?.avatar
+  // Relay health already has a persistent, compact home in the sidebar. Keep
+  // the conversation banner for errors that add specific recovery context
+  // (TURN, password mismatch, local relay configuration, etc.).
+  const visibleConnectionError = connectionError === RELAY_OFFLINE_ERROR ? null : connectionError
 
   return (
     <>
@@ -57,7 +61,7 @@ export function ChannelPanel({
             aria-label="Open workspace menu"
             data-testid="open-sidebar"
           >
-            ☰
+            <Icon name="menu" />
           </button>
         )}
         <div className="min-w-0 flex-1">
@@ -74,9 +78,7 @@ export function ChannelPanel({
               </>
             ) : (
               <>
-                <span className="text-base-content/40" aria-hidden="true">
-                  #
-                </span>
+                <Icon name="hash" size={16} className="text-base-content/40" />
                 <span className="truncate">{channel.name}</span>
               </>
             )}
@@ -96,7 +98,7 @@ export function ChannelPanel({
             data-testid="video-call-button"
             aria-label={inCall ? 'End call' : 'Start video call'}
           >
-            <span aria-hidden="true">{inCall ? '📞' : '📹'}</span>
+            <Icon name={inCall ? 'phone-off' : 'video'} />
             <span className="hidden sm:inline">{inCall ? 'In call' : 'Start video call'}</span>
           </button>
           <button
@@ -104,18 +106,13 @@ export function ChannelPanel({
             onClick={onToggleFiles}
             aria-label="Toggle shared files"
             aria-pressed={showFiles}
+            data-testid="toggle-files"
           >
-            <span aria-hidden="true">📁</span>
+            <Icon name="folder" />
             <span className="hidden sm:inline">Files</span>
           </button>
         </div>
       </header>
-
-      {workspaceProtected && (
-        <div className="shrink-0 border-b border-info/20 bg-info/10 px-3 py-1.5 text-xs text-info sm:px-5">
-          🔒 Invite-only workspace — verified identities
-        </div>
-      )}
 
       <SyncStatusBar progress={syncProgress} />
 
@@ -128,12 +125,12 @@ export function ChannelPanel({
         </div>
       )}
 
-      {connectionError && (
+      {visibleConnectionError && (
         <div
           className="shrink-0 border-b border-error/25 bg-error/10 px-3 py-1.5 text-xs text-error sm:px-5"
           data-testid="error-banner"
         >
-          {connectionError}
+          {visibleConnectionError}
         </div>
       )}
 
