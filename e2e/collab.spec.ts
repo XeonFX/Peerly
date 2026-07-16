@@ -163,6 +163,23 @@ test.describe('Peerly P2P collaboration', () => {
     })
   })
 
+  test('profile name and colour survive leaving and rejoining a workspace', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+
+    await openProfile(page)
+    await page.getByTestId('profile-name').fill('Krystian')
+    await page.getByTestId('color-preset-#e01e5a').click()
+    await page.getByTestId('profile-back').click()
+
+    await leaveToPicker(page)
+    await page.getByTestId('open-workspace-test-ws').click()
+    await waitForWorkspace(page)
+
+    await openProfile(page)
+    await expect(page.getByTestId('profile-name')).toHaveValue('Krystian')
+    await expect(page.getByTestId('profile-color')).toHaveValue('#e01e5a')
+  })
+
   test('backup round-trip: export, clear local data, import restores messages', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await sendMessage(page, 'message worth keeping')

@@ -116,13 +116,21 @@ export const DEFAULT_NOSTR_RELAYS = [
   'wss://relay.primal.net',
   'wss://purplerelay.com',
   'wss://nostr.mom',
-  'wss://nostr.oxtr.dev',
+  'wss://offchain.pub',
 ]
-// Two relays are deliberately absent, for different reasons:
+// Relays deliberately absent, for different reasons:
 //
-// - relay.damus.io accepts a one-off ephemeral event but rate-limits this
-//   traffic pattern in normal use ("rate-limited: you are noting too much"), so
-//   it logs failures without carrying signaling.
+// - relay.damus.io and nostr.oxtr.dev accept one-off ephemeral events (they
+//   pass check:relays) but rate-limit this traffic pattern in normal use —
+//   oxtr throttled a single quiet client. A relay like that logs failures
+//   without carrying signaling, and every connected relay receives every
+//   publish, so keep the pool at five vetted hosts rather than growing it:
+//   more relays means more fan-out, which is what trips the limits.
+// - Of ten public candidates probed 3x on 2026-07-16, only offchain.pub
+//   (healthy, ~1.7s) and relay.snort.social (slow, throttle-prone) were
+//   usable; the rest were dead or gated (NIP-05 required). Public relay
+//   capacity is donated and thinning — see docs/MATCHMAKING.md for why the
+//   long-term answer is not more free relays.
 // - relay.mostr.pub stopped accepting connections entirely (it was in this list
 //   and produced a stream of "WebSocket connection failed" in the console).
 //
