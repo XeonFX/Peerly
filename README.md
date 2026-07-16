@@ -175,18 +175,19 @@ npm run build
 
 Output goes to `dist/`. The build runs a bundle guard that fails if E2E test key material leaked into the production bundle.
 
-### Cloudflare Pages (recommended)
+### Cloudflare Workers Static Assets (recommended)
 
-Use a **Pages project**, not a Workers Builds project. Peerly produces a static `dist/` directory and does not contain a Worker entry point or `wrangler deploy` configuration. If the GitHub status check is named **Workers Builds**, the repository is connected to the wrong Cloudflare project type.
+The committed [`wrangler.jsonc`](wrangler.jsonc) deploys `dist/` as an assets-only Worker and returns `index.html` for SPA navigation routes. No server-side Worker code runs for requests.
 
 | Setting | Value |
 |---------|--------|
-| Framework preset | None (or Vite) |
 | Build command | `npm run build` |
-| Build output directory | `dist` |
+| Deploy command | `npx wrangler deploy` (default) |
+| Non-production deploy | `npx wrangler versions upload` (default) |
 | Root directory | *(repo root)* |
 | Node version | `22.23.1` (or env var `NODE_VERSION=22.23.1`) |
-| Deploy command | *(leave empty)* |
+
+The connected Worker must be named `peerly`, matching `wrangler.jsonc`. The default deploy commands obtain Wrangler through `npx`; it is intentionally not installed as an application dependency.
 
 Cloudflare may print `npm@10.9.2` during its initial tool-detection phase. Installing Node 22.23.1 then exposes that runtime's bundled npm 10.9.8, which is the executable that runs `npm clean-install` and the version Peerly enforces.
 
@@ -198,9 +199,11 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 
 Add TURN, signaling overrides, or other providers as needed (see `.env.example`).
 
-Register your production origin (`https://your-project.pages.dev` and any custom domain) in each OAuth provider's allowed JavaScript origins / redirect URIs.
+Register your production origin (`https://peerly.<your-subdomain>.workers.dev` and any custom domain) in each OAuth provider's allowed JavaScript origins / redirect URIs.
 
-Cloudflare injects `CF_PAGES_COMMIT_SHA` at build time, which appears in the UI as `v0.1.3 · abc1234`.
+Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v0.1.3 · abc1234`.
+
+Cloudflare Pages also works: use `npm run build`, publish `dist/`, and set the same build-time environment variables.
 
 ### Other hosts
 
@@ -248,6 +251,7 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 ├── .nvmrc                  Node 22.23.1 (npm 10.9.8 / CI alignment)
 ├── playwright.config.ts
 ├── vite.config.ts
+├── wrangler.jsonc          Cloudflare assets-only SPA deployment
 └── vitest.config.ts
 ```
 
