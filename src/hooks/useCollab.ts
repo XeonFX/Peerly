@@ -6,7 +6,8 @@ import { APP_ID, buildRoomId } from '../config'
 import { routeDmChannel } from '../collab/dmStore'
 import { FileCache } from '../collab/fileCache'
 import type { ChatPayload } from '../protocol/types'
-import type { Message, UserProfile } from '../types'
+import type { Message, SharedFile, UserProfile } from '../types'
+import { estimateBrowserStorage, hasRoomForWrite } from '../utils/browserStorage'
 import { buildSenderDirectory } from '../utils/senderDirectory'
 import { useLatest } from './useLatest'
 import { chatPayloadToMessage, createChatPayload } from './collab/wireRoomProtocol'
@@ -120,8 +121,10 @@ export function useCollab(
     reset: resetFileTransfer,
     bindFileAction,
     bindFileRequestAction,
+    bindFileMetaAction,
     unbindFileAction,
     unbindFileRequestAction,
+    unbindFileMetaAction,
     sendFile: sendFileTransfer,
   } = files
   const history = useHistorySync(
@@ -135,6 +138,7 @@ export function useCollab(
     syncFromPeers,
     bindHistoryAction,
     unbindHistoryAction,
+    progress: syncProgress,
   } = history
   const video = useVideoCall(room)
   const { reset: resetVideo } = video
@@ -176,6 +180,7 @@ export function useCollab(
     onChat: () => {},
     onFileProgress: () => {},
     onFile: () => {},
+    onFileMeta: () => {},
     onHistoryRequest: () => [],
     onFileRequest: () => {},
     onPeerJoin: () => {},
@@ -221,6 +226,12 @@ export function useCollab(
         return
       }
       files.handleFileReceived(data, meta)
+    },
+    onFileMeta: (meta, peerId) => {
+      const route = routeDmChannel(meta.channelId, selfId)
+      if (route.kind === 'foreign-dm') return
+      if (route.kind === 'dm' && peerId !== route.peerId) return
+      void files.handleFileMeta(meta, peerId)
     },
     onHistoryRequest: channelId => channelStore.getHistoryEntries(channelId),
     onFileRequest: (fileIds, peerId) => {
@@ -292,6 +303,7 @@ export function useCollab(
       onChat: (...args) => handlersRef.current.onChat(...args),
       onFileProgress: (...args) => handlersRef.current.onFileProgress(...args),
       onFile: (...args) => handlersRef.current.onFile(...args),
+      onFileMeta: (...args) => handlersRef.current.onFileMeta(...args),
       onHistoryRequest: channelId => handlersRef.current.onHistoryRequest(channelId),
       onFileRequest: (...args) => handlersRef.current.onFileRequest(...args),
       onPeerJoin: (...args) => handlersRef.current.onPeerJoin(...args),
@@ -305,6 +317,7 @@ export function useCollab(
       bindChatAction,
       bindProfileAction,
       bindFileAction,
+      bindFileMetaAction,
       bindHistoryAction,
       bindChannelAction,
       bindFileRequestAction,
@@ -316,6 +329,7 @@ export function useCollab(
       unbindChatAction()
       unbindProfileAction()
       unbindFileAction()
+      unbindFileMetaAction()
       unbindFileRequestAction()
       unbindHistoryAction()
       unbindChannelAction()
@@ -327,7 +341,9 @@ export function useCollab(
     bindProfileAction,
     unbindProfileAction,
     bindFileAction,
+    bindFileMetaAction,
     unbindFileAction,
+    unbindFileMetaAction,
     bindFileRequestAction,
     unbindFileRequestAction,
     bindHistoryAction,
@@ -375,6 +391,25 @@ export function useCollab(
     [appendChannelMessage, sendFileTransfer]
   )
 
+  const requestFile = useCallback(
+    async (file: SharedFile) => {
+      if (file.url) return
+      const estimate = await estimateBrowserStorage()
+      if (!hasRoomForWrite(estimate, file.size)) {
+        files.reportFileError('Not enough browser storage for this file. Free local space and try again.')
+        return
+      }
+      const peerIds = room ? Object.keys(room.getPeers()) : []
+      if (peerIds.length === 0) {
+        files.reportFileError('This original is waiting for a peer who has it.')
+        return
+      }
+      files.reportFileError(null)
+      await files.requestFilesFromPeers(peerIds, [file.id])
+    },
+    [files, room]
+  )
+
   const sharedFiles = useMemo(
     () =>
       channelStore.messages
@@ -398,6 +433,8 @@ export function useCollab(
     connectionNotice: connection.connectionNotice,
     relayOnline: connection.relayOnline,
     rtcPeerCount: connection.rtcPeerCount,
+    p2pCapability: connection.p2pCapability,
+    retryP2pCapability: connection.retryP2pCapability,
     relayUrls: connection.relayUrls,
     isReady: connection.isReady,
     inCall: video.inCall,
@@ -408,6 +445,8 @@ export function useCollab(
     mediaError: video.mediaError,
     sendMessage,
     sendFile,
+    requestFile,
+    syncProgress,
     startCall: video.startCall,
     endCall: video.endCall,
     toggleVideo: video.toggleVideo,

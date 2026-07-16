@@ -42,6 +42,31 @@ async function joinAlice(browser: Browser) {
 test.describe.configure({ mode: 'serial' })
 
 test.describe('Peerly P2P collaboration', () => {
+  test('theme preference persists and P2P readiness stays visible', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+
+    await expect(page.getByTestId('p2p-capability')).toContainText('P2P ready', {
+      timeout: 10_000,
+    })
+
+    const initialTheme = await page.locator('html').getAttribute('data-theme')
+    const expectedTheme = initialTheme === 'peerly-dark' ? 'peerly' : 'peerly-dark'
+    await page.getByTestId('theme-toggle').click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', expectedTheme)
+
+    await page.reload()
+    await waitForWorkspace(page)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', expectedTheme)
+
+    await page.getByTestId('workspace-settings-open').click()
+    await expect(page.getByTestId('p2p-capability-card')).toContainText('P2P ready', {
+      timeout: 10_000,
+    })
+    await expect(page.getByTestId('p2p-capability-card')).toContainText(
+      'Strict NAT and corporate firewalls'
+    )
+  })
+
   test('remembered workspaces let you switch without the invite link', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await expect(page.locator('.workspace-name')).toContainText('test-ws')
@@ -200,6 +225,9 @@ test.describe('Peerly P2P collaboration', () => {
     await waitForPeerConnection(alice)
     await waitForPeerConnection(bob)
 
+    await expect(alice.getByTestId('p2p-capability')).toContainText('P2P active')
+    await expect(bob.getByTestId('p2p-capability')).toContainText('P2P active')
+
     await expectPeerVisible(alice, 'Bob')
     await expectPeerVisible(bob, 'Alice')
 
@@ -278,6 +306,27 @@ test.describe('Peerly P2P collaboration', () => {
 
     await expect(bob.locator('.message-list')).toContainText('test-', { timeout: 45_000 })
     await expect(bob.locator('.files-panel')).toContainText('txt', { timeout: 45_000 })
+
+    const onDemandFile = bob.locator('button.file-download')
+    await expect(onDemandFile).toContainText('Download on demand')
+    await onDemandFile.click()
+    const cachedFile = bob.locator('a.file-download')
+    await expect(cachedFile).toContainText('Ready on this device', { timeout: 45_000 })
+    await expect
+      .poll(
+        () =>
+          bob.evaluate(async () => {
+            const link = document.querySelector<HTMLAnchorElement>('a.file-download')
+            if (!link?.href) return 'NO_LINK'
+            try {
+              return (await fetch(link.href)).ok ? 'OK' : 'FAILED'
+            } catch {
+              return 'FAILED'
+            }
+          }),
+        { timeout: 30_000 }
+      )
+      .toBe('OK')
 
     fs.unlinkSync(tmpFile)
     await aliceCtx.close()

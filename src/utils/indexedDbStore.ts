@@ -69,11 +69,25 @@ export function createIndexedDbStore(dbName: string, storeName: string) {
     })
   }
 
+  /** Ids only — never materializes the stored buffers. */
+  async function keys(): Promise<string[]> {
+    const db = await openDb()
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readonly')
+      const request = tx.objectStore(storeName).getAllKeys()
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        db.close()
+        resolve((request.result as IDBValidKey[]).filter((k): k is string => typeof k === 'string'))
+      }
+    })
+  }
+
   async function getBlob(id: string): Promise<Blob | null> {
     const record = await get(id)
     if (!record) return null
     return new Blob([record.buffer], { type: record.mimeType })
   }
 
-  return { put, get, remove, getBlob }
+  return { put, get, remove, getBlob, keys }
 }

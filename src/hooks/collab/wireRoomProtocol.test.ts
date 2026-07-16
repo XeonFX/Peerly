@@ -33,6 +33,7 @@ function noopHandlers(): RoomProtocolHandlers {
     onChat: vi.fn(),
     onFileProgress: vi.fn(),
     onFile: vi.fn(),
+    onFileMeta: vi.fn(),
     onHistoryRequest: vi.fn(() => []),
     onFileRequest: vi.fn(),
     onPeerJoin: vi.fn(),
@@ -48,6 +49,7 @@ function noopBindings() {
     bindChatAction: vi.fn(),
     bindProfileAction: vi.fn(),
     bindFileAction: vi.fn(),
+    bindFileMetaAction: vi.fn(),
     bindHistoryAction: vi.fn(),
     bindChannelAction: vi.fn(),
     bindFileRequestAction: vi.fn(),
@@ -111,6 +113,13 @@ describe('wireRoomProtocol identity handling', () => {
     const progressMeta = (handlers.onFileProgress as ReturnType<typeof vi.fn>).mock
       .calls[0][2] as FileMetaPayload
     expect(progressMeta.senderId).toBe('mallory-peer-id')
+
+    const fileMeta = actions.get('file-meta') as {
+      onMessage: (m: FileMetaPayload, context: unknown) => void
+    }
+    fileMeta.onMessage(spoofedMeta, { peerId: 'mallory-peer-id' })
+    const announcedMeta = (handlers.onFileMeta as ReturnType<typeof vi.fn>).mock.calls[0][0] as FileMetaPayload
+    expect(announcedMeta.senderId).toBe('mallory-peer-id')
   })
 
   it('passes the requesting peer id to file requests so DM files can be scoped', () => {

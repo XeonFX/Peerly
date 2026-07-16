@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Peer } from '../types'
 import { getPeerColor } from '../config'
 import { safeColor } from '../utils/profileSanitize'
+import { isProbablyNsfwElement } from '../collab/nsfwGate'
 
 type Props = {
   localStream: MediaStream | null
@@ -27,6 +28,10 @@ function VideoTile({
   color?: string
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [flagged, setFlagged] = useState(false)
+  const [revealed, setRevealed] = useState(false)
+  const flaggedRef = useRef(false)
+  flaggedRef.current = flagged
 
   useEffect(() => {
     if (videoRef.current) {
@@ -34,7 +39,42 @@ function VideoTile({
     }
   }, [stream])
 
+  useEffect(() => {
+    if (muted) return
+    let cancelled = false
+    let running = false
+    const check = async () => {
+      const video = videoRef.current
+      if (
+        cancelled ||
+        flaggedRef.current ||
+        running ||
+        !video ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        document.visibilityState !== 'visible' ||
+        video.offsetParent === null
+      ) {
+        return
+      }
+      running = true
+      try {
+        if (await isProbablyNsfwElement(video)) setFlagged(true)
+      } finally {
+        running = false
+      }
+    }
+    const first = window.setTimeout(() => void check(), 1_000)
+    const interval = window.setInterval(() => void check(), 3_000)
+    return () => {
+      cancelled = true
+      window.clearTimeout(first)
+      window.clearInterval(interval)
+    }
+  }, [muted, stream])
+
   const hasVideo = stream.getVideoTracks().some(t => t.enabled)
+
+  const hidden = flagged && !revealed
 
   return (
     <div className="relative aspect-video overflow-hidden rounded-lg bg-base-300">
@@ -44,7 +84,7 @@ function VideoTile({
           autoPlay
           playsInline
           muted={muted}
-          className="h-full w-full object-cover"
+          className={`h-full w-full object-cover transition duration-200 ${hidden ? 'scale-110 blur-2xl' : ''}`}
         />
       ) : (
         <div
@@ -58,6 +98,19 @@ function VideoTile({
         {label}
         {muted ? ' (you)' : ''}
       </span>
+      {hidden && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/55 p-3 text-center text-white">
+          <span aria-hidden="true">🛡️</span>
+          <strong className="text-xs">Sensitive video hidden</strong>
+          <button
+            type="button"
+            className="btn btn-xs border-white/30 bg-white/15 text-white hover:bg-white/25"
+            onClick={() => setRevealed(true)}
+          >
+            Reveal stream
+          </button>
+        </div>
+      )}
     </div>
   )
 }

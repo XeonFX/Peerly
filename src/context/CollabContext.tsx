@@ -74,6 +74,8 @@ export function CollabProvider({
       connectionNotice: collab.connectionNotice,
       relayOnline: collab.relayOnline,
       rtcPeerCount: collab.rtcPeerCount,
+      p2pCapability: collab.p2pCapability,
+      retryP2pCapability: collab.retryP2pCapability,
       relayUrls: collab.relayUrls,
       isReady: collab.isReady,
     }),
@@ -83,6 +85,8 @@ export function CollabProvider({
       collab.connectionNotice,
       collab.relayOnline,
       collab.rtcPeerCount,
+      collab.p2pCapability,
+      collab.retryP2pCapability,
       collab.relayUrls,
       collab.isReady,
     ]
@@ -98,6 +102,8 @@ export function CollabProvider({
       totalUnread: collab.totalUnread,
       sendMessage: collab.sendMessage,
       sendFile: collab.sendFile,
+      requestFile: collab.requestFile,
+      syncProgress: collab.syncProgress,
     }),
     [
       collab.messages,
@@ -108,6 +114,8 @@ export function CollabProvider({
       collab.totalUnread,
       collab.sendMessage,
       collab.sendFile,
+      collab.requestFile,
+      collab.syncProgress,
     ]
   )
 

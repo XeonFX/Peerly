@@ -34,7 +34,12 @@ export type SharedFile = {
   name: string
   mimeType: string
   size: number
+  /** Blob URL of the full body; '' until the body is fetched/cached locally. */
   url: string
+  /** Small inline preview (data URL) that travels with metadata and history. */
+  thumbnail?: string
+  /** Flagged by the local NSFW screen on receipt; UI blurs until revealed. */
+  nsfw?: boolean
 }
 
 export type Peer = {
@@ -48,10 +53,24 @@ export type Peer = {
 
 export type ConnectionStatus = 'connecting' | 'ready' | 'connected' | 'error'
 
+export type P2pCapability = {
+  status: 'checking' | 'available' | 'unavailable'
+  detail: string
+}
+
 export type FileTransfer = {
   id: string
   name: string
   percent: number
   direction: 'send' | 'receive'
   peerId: string
+}
+
+export type WorkspaceSyncProgress = {
+  phase: 'idle' | 'history' | 'originals' | 'ready' | 'paused' | 'error'
+  completedChannels: number
+  totalChannels: number
+  receivedEntries: number
+  missingOriginals: number
+  message?: string
 }

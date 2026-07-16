@@ -16,11 +16,13 @@ import {
 } from '../context/useCollabSlices'
 import type { PeerHandshake } from '@trystero-p2p/core'
 import { encodeInviteLink } from '../collab/inviteLink'
+import { useBrowserStorage } from '../hooks/useBrowserStorage'
 import type { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { rememberWorkspace, snapshotWorkspace } from '../collab/workspaceStore'
 import { sessionProfile, type Session } from '../session'
 import type { Channel, Peer, UserProfile } from '../types'
 import { FilesPanel } from './FilesPanel'
+import { StoragePressureBanner } from './BrowserStorageCard'
 import { Sidebar } from './Sidebar'
 import { ChannelPanel } from './workspace/ChannelPanel'
 import { ProfilePanel } from './workspace/ProfilePanel'
@@ -77,8 +79,17 @@ function WorkspaceShell({
   onWorkspaceAvatarClear: () => void
 }) {
   const { announceChannel } = useWorkspaceSlice()
-  const { connectionStatus, relayOnline, rtcPeerCount, relayUrls } = useConnectionSlice()
-  const { sharedFiles, transfers, unreadByChannel } = useChatSlice()
+  const {
+    connectionStatus,
+    connectionError,
+    relayOnline,
+    rtcPeerCount,
+    relayUrls,
+    p2pCapability,
+    retryP2pCapability,
+  } = useConnectionSlice()
+  const { sharedFiles, transfers, unreadByChannel, requestFile } = useChatSlice()
+  const browserStorage = useBrowserStorage(transfers.length > 0)
   const { selfId, profile, peers } = useProfileSlice()
   const channel = getChannelById(channels, activeChannel)
 
@@ -136,6 +147,8 @@ function WorkspaceShell({
         connectionStatus={connectionStatus}
         relayOnline={relayOnline}
         rtcPeerCount={rtcPeerCount}
+        p2pCapability={p2pCapability}
+        connectionError={connectionError}
         relayUrls={relayUrls}
         onChannelSelect={selectAndClose}
         onAddChannel={handleAddChannel}
@@ -153,6 +166,11 @@ function WorkspaceShell({
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
+        <StoragePressureBanner
+          pressure={browserStorage.pressure}
+          availableBytes={browserStorage.estimate.availableBytes}
+          onManage={onWorkspaceSettings}
+        />
         {activeView === 'profile' ? (
           <ProfilePanel
             workspace={session.workspaceName}
@@ -167,9 +185,15 @@ function WorkspaceShell({
           />
         ) : activeView === 'workspace' ? (
           <WorkspaceSettingsPanel
+            workspaceId={session.workspaceId}
             workspaceName={session.workspaceName}
             workspaceAvatar={session.workspaceAvatar}
             workspaceAvatarId={session.workspaceAvatarId}
+            browserStorage={browserStorage}
+            p2pCapability={p2pCapability}
+            rtcPeerCount={rtcPeerCount}
+            connectionError={connectionError}
+            onRetryP2p={retryP2pCapability}
             onNameChange={onWorkspaceNameChange}
             onAvatarChange={onWorkspaceAvatarChange}
             onAvatarClear={onWorkspaceAvatarClear}
@@ -187,7 +211,7 @@ function WorkspaceShell({
       </main>
 
       {activeView === 'channel' && showFiles && (
-        <FilesPanel files={sharedFiles} transfers={transfers} />
+        <FilesPanel files={sharedFiles} transfers={transfers} onRequestFile={requestFile} />
       )}
     </div>
   )

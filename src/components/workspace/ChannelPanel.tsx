@@ -9,6 +9,7 @@ import { Avatar } from '../Avatar'
 import { MessageInput } from '../MessageInput'
 import { MessageList } from '../MessageList'
 import { VideoCall } from '../VideoCall'
+import { SyncStatusBar } from '../SyncStatusBar'
 
 type Props = {
   channel: Channel
@@ -27,7 +28,7 @@ export function ChannelPanel({
   onOpenSidebar,
 }: Props) {
   const { connectionError, connectionNotice, isReady } = useConnectionSlice()
-  const { messages, sendMessage, sendFile, fileError } = useChatSlice()
+  const { messages, transfers, sendMessage, sendFile, requestFile, syncProgress, fileError } = useChatSlice()
   const {
     inCall,
     localStream,
@@ -116,6 +117,8 @@ export function ChannelPanel({
         </div>
       )}
 
+      <SyncStatusBar progress={syncProgress} />
+
       {connectionNotice && (
         <div
           className="shrink-0 border-b border-info/20 bg-info/10 px-3 py-1.5 text-xs text-info sm:px-5"
@@ -170,6 +173,8 @@ export function ChannelPanel({
         pastSelfIds={pastSelfIds}
         selfProfile={profile}
         peers={peers}
+        transfers={transfers}
+        onRequestFile={requestFile}
       />
       <MessageInput
         channelName={title}

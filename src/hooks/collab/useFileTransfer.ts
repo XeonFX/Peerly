@@ -15,6 +15,11 @@ import { FileCache } from '../../collab/fileCache'
 import type { BlobUrlRegistry } from '../../utils/blobUrls'
 import { safeFileMimeType } from '../../utils/fileType'
 import { fileContentMatchesId, hashFileBytes } from '../../utils/fileHash'
+import { makeMediaThumbnail } from '../../utils/imageThumbnail'
+import { isProbablyNsfwMedia } from '../../collab/nsfwGate'
+import { estimateBrowserStorage, hasRoomForWrite, storagePressure } from '../../utils/browserStorage'
+import { isInlineImageType, isInlineVideoType } from '../../utils/fileType'
+import { loadFileSyncMode } from '../../collab/syncPreferences'
 
 type FileAction = {
   send: (
@@ -31,6 +36,10 @@ type FileRequestAction = {
   send: (data: string[], options?: { target?: string }) => Promise<void>
 }
 
+type FileMetaAction = {
+  send: (data: FileMetaPayload, options?: { target?: string }) => Promise<void>
+}
+
 export function useFileTransfer(
   channelId: string,
   profileRef: RefObject<UserProfile>,
@@ -42,6 +51,7 @@ export function useFileTransfer(
   const [fileError, setFileError] = useState<string | null>(null)
   const fileActionRef = useRef<FileAction | null>(null)
   const fileRequestActionRef = useRef<FileRequestAction | null>(null)
+  const fileMetaActionRef = useRef<FileMetaAction | null>(null)
   const channelIdRef = useRef(channelId)
   channelIdRef.current = channelId
 
@@ -49,6 +59,8 @@ export function useFileTransfer(
     setTransfers([])
     setFileError(null)
   }, [])
+
+  const reportFileError = useCallback((message: string | null) => setFileError(message), [])
 
   const bindFileAction = useCallback((action: FileAction) => {
     fileActionRef.current = action
@@ -60,6 +72,14 @@ export function useFileTransfer(
 
   const bindFileRequestAction = useCallback((action: FileRequestAction) => {
     fileRequestActionRef.current = action
+  }, [])
+
+  const bindFileMetaAction = useCallback((action: FileMetaAction) => {
+    fileMetaActionRef.current = action
+  }, [])
+
+  const unbindFileMetaAction = useCallback(() => {
+    fileMetaActionRef.current = null
   }, [])
 
   const unbindFileRequestAction = useCallback(() => {
@@ -128,12 +148,21 @@ export function useFileTransfer(
       // history rather than being re-trusted on every later restore.
       const safeMeta = { ...meta, mimeType: safeFileMimeType(meta.mimeType) }
 
-      await fileCache.set(safeMeta, data)
+      const visual = isInlineImageType(safeMeta.mimeType) || isInlineVideoType(safeMeta.mimeType)
+      const nsfw = visual ? await isProbablyNsfwMedia(data, safeMeta.mimeType) : false
+      const storage = await estimateBrowserStorage()
+      const persist = hasRoomForWrite(storage, data.byteLength)
+      await fileCache.set(safeMeta, data, { persist })
+      if (!persist) {
+        setFileError('The file is open for this session but was not cached because browser storage is low.')
+      }
       const url = blobUrls.current.create(
         safeMeta.id,
         new Blob([data], { type: safeMeta.mimeType })
       )
-      onFileMessage(messageFromFileMeta(safeMeta, url))
+      const message = messageFromFileMeta(safeMeta, url)
+      if (message.file) message.file.nsfw = nsfw
+      onFileMessage(message)
       setTransfers(prev => prev.filter(t => t.id !== safeMeta.id))
     },
     [blobUrls, fileCache, onFileMessage]
@@ -168,6 +197,21 @@ export function useFileTransfer(
     [blobUrls]
   )
 
+  const handleFileMeta = useCallback(
+    async (meta: FileMetaPayload, peerId: string) => {
+      if (meta.size > MAX_FILE_BYTES) return
+      const safeMeta = { ...meta, mimeType: safeFileMimeType(meta.mimeType) }
+      onFileMessage(messageFromFileMeta(safeMeta, ''))
+
+      if (loadFileSyncMode() !== 'auto') return
+      const storage = await estimateBrowserStorage()
+      const pressure = storagePressure(storage.usageBytes, storage.quotaBytes)
+      if (pressure === 'warning' || pressure === 'critical') return
+      await requestFilesFromPeers([peerId], [safeMeta.id])
+    },
+    [onFileMessage, requestFilesFromPeers]
+  )
+
   /** Serve a peer's request, sending only ids we hold and they may see. */
   const handleFileRequest = useCallback(
     async (fileIds: string[], peerId: string) => {
@@ -196,8 +240,8 @@ export function useFileTransfer(
 
   const sendFile = useCallback(
     async (file: File, onLocalMessage: (message: Message) => void) => {
-      const fileAction = fileActionRef.current
-      if (!fileAction) return
+      const fileMetaAction = fileMetaActionRef.current
+      if (!fileMetaAction) return
 
       // Check before arrayBuffer(): reading it is what would blow the heap.
       if (file.size > MAX_FILE_BYTES) {
@@ -215,14 +259,20 @@ export function useFileTransfer(
       const buffer = await file.arrayBuffer()
       // Content-addressed: the id IS the hash, so nothing needs to reconcile
       // "this id" with "these bytes" later — they're the same fact.
-      const id = await hashFileBytes(buffer)
+      const safeMimeType = safeFileMimeType(file.type)
+      const [id, thumbnail, nsfw] = await Promise.all([
+        hashFileBytes(buffer),
+        makeMediaThumbnail(buffer, safeMimeType),
+        isProbablyNsfwMedia(buffer, safeMimeType),
+      ])
       const meta: FileMetaPayload = {
         id,
         name: file.name,
         // Sanitize our own uploads too: a local SVG is the same hazard to us as
         // a received one, and peers should not have to trust our labelling.
-        mimeType: safeFileMimeType(file.type),
+        mimeType: safeMimeType,
         size: file.size,
+        thumbnail,
         ...senderFromProfile(profile, selfId),
         timestamp: Date.now(),
         channelId: channelIdRef.current,
@@ -230,28 +280,16 @@ export function useFileTransfer(
 
       await fileCache.set(meta, buffer)
 
-      setTransfers(prev => [
-        ...prev,
-        { id, name: file.name, percent: 0, direction: 'send', peerId: 'all' },
-      ])
-
       // Build from the sanitized type, not the raw File — otherwise our own
       // preview is still a live SVG document pointed at our own origin.
       const url = blobUrls.current.create(id, new Blob([buffer], { type: meta.mimeType }))
       const message = messageFromFileMeta(meta, url)
+      if (message.file) message.file.nsfw = nsfw
       onLocalMessage(message)
 
-      await fileAction.send(buffer, {
-        metadata: meta,
-        target,
-        onProgress: percent => {
-          setTransfers(prev =>
-            prev.map(t => (t.id === id && t.direction === 'send' ? { ...t, percent } : t))
-          )
-        },
-      })
-
-      setTransfers(prev => prev.filter(t => t.id !== id))
+      // Announce metadata only. Peers request the content-addressed body when
+      // opened, or immediately when their device is in automatic sync mode.
+      await fileMetaAction.send(meta, target ? { target } : undefined)
     },
     [blobUrls, fileCache, profileRef]
   )
@@ -263,11 +301,15 @@ export function useFileTransfer(
     bindFileAction,
     unbindFileAction,
     bindFileRequestAction,
+    bindFileMetaAction,
     unbindFileRequestAction,
+    unbindFileMetaAction,
     handleReceiveProgress,
     handleFileReceived,
     handleFileRequest,
+    handleFileMeta,
     requestFilesFromPeers,
     sendFile,
+    reportFileError,
   }
 }

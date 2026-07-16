@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { DOWNLOAD_MIME_TYPE, isInlineImageType, safeFileMimeType } from './fileType'
+import {
+  DOWNLOAD_MIME_TYPE,
+  isInlineImageType,
+  isInlineVideoType,
+  safeFileMimeType,
+} from './fileType'
 
 describe('inline image types', () => {
   it('allows raster images', () => {
@@ -37,5 +42,12 @@ describe('inline image types', () => {
       expect(safeFileMimeType(mime)).toBe(DOWNLOAD_MIME_TYPE)
       expect(isInlineImageType(mime)).toBe(false)
     }
+  })
+
+  it('allows common video containers without treating them as images', () => {
+    expect(isInlineVideoType('video/mp4')).toBe(true)
+    expect(isInlineVideoType('video/webm; codecs=vp9')).toBe(true)
+    expect(isInlineImageType('video/mp4')).toBe(false)
+    expect(safeFileMimeType('video/mp4')).toBe('video/mp4')
   })
 })

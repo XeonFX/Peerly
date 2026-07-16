@@ -1,53 +1,88 @@
 @import 'tailwindcss';
 @plugin "daisyui" {
-  themes: peerly --default;
+  themes: peerly --default, peerly-dark --prefersdark;
 }
 
 /**
  * The Peerly theme.
  *
- * Colours are carried over from the previous hand-written CSS rather than
- * picked fresh, so the app stays recognisably itself: emerald (#2eb67d) was
- * already the primary action colour and cyan (#36c5f0) the accent — they were
- * just applied inconsistently, which is how "Copy invite link" ended up looking
- * like disabled text. Defining them once here means every DaisyUI component
- * derives from the same palette instead of styling itself.
+ * Derived from the supplied Peerly icon: violet collaboration, blue
+ * connectivity, and teal files. Content surfaces stay neutral and bright so
+ * the dimensional artwork remains an accent rather than visual noise.
  */
 @plugin "daisyui/theme" {
   name: 'peerly';
   default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-base-100: oklch(99% 0.004 275);
+  --color-base-200: oklch(97% 0.008 275);
+  --color-base-300: oklch(91% 0.015 275);
+  --color-base-content: oklch(27% 0.035 270);
+
+  --color-primary: oklch(55% 0.22 295);
+  --color-primary-content: oklch(99% 0.005 295);
+
+  --color-secondary: oklch(62% 0.17 245);
+  --color-secondary-content: oklch(99% 0.005 245);
+
+  --color-accent: oklch(66% 0.13 185);
+  --color-accent-content: oklch(21% 0.04 185);
+
+  --color-neutral: oklch(34% 0.035 270);
+  --color-neutral-content: oklch(98% 0.005 270);
+
+  --color-info: oklch(62% 0.17 245);
+  --color-info-content: oklch(99% 0.005 245);
+  --color-success: oklch(65% 0.14 175);
+  --color-success-content: oklch(99% 0.005 175);
+  --color-warning: oklch(72% 0.16 75);
+  --color-warning-content: oklch(25% 0.05 75);
+  --color-error: oklch(59% 0.2 20);
+  --color-error-content: oklch(99% 0.005 20);
+
+  --radius-selector: 0.75rem;
+  --radius-field: 0.75rem;
+  --radius-box: 1rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: 'peerly-dark';
+  default: false;
   prefersdark: true;
   color-scheme: dark;
 
-  --color-base-100: oklch(19% 0.006 150); /* app background */
-  --color-base-200: oklch(23% 0.006 150); /* raised surfaces: sidebar, cards */
-  --color-base-300: oklch(29% 0.008 150); /* borders, hover */
-  --color-base-content: oklch(91% 0.01 150);
+  --color-base-100: oklch(16% 0.025 275);
+  --color-base-200: oklch(20% 0.03 275);
+  --color-base-300: oklch(27% 0.035 275);
+  --color-base-content: oklch(92% 0.015 275);
 
-  --color-primary: oklch(64% 0.13 162); /* emerald — brand action colour */
-  --color-primary-content: oklch(98% 0.01 162);
+  --color-primary: oklch(70% 0.19 295);
+  --color-primary-content: oklch(16% 0.04 295);
+  --color-secondary: oklch(72% 0.14 245);
+  --color-secondary-content: oklch(16% 0.035 245);
+  --color-accent: oklch(73% 0.12 185);
+  --color-accent-content: oklch(15% 0.035 185);
+  --color-neutral: oklch(30% 0.035 270);
+  --color-neutral-content: oklch(94% 0.01 270);
+  --color-info: oklch(72% 0.14 245);
+  --color-info-content: oklch(15% 0.035 245);
+  --color-success: oklch(72% 0.13 175);
+  --color-success-content: oklch(14% 0.035 175);
+  --color-warning: oklch(78% 0.14 75);
+  --color-warning-content: oklch(18% 0.04 75);
+  --color-error: oklch(70% 0.17 20);
+  --color-error-content: oklch(15% 0.04 20);
 
-  --color-secondary: oklch(29% 0.008 150);
-  --color-secondary-content: oklch(91% 0.01 150);
-
-  --color-accent: oklch(73% 0.13 220); /* cyan — links, active channel */
-  --color-accent-content: oklch(18% 0.02 220);
-
-  --color-neutral: oklch(26% 0.006 150);
-  --color-neutral-content: oklch(89% 0.01 150);
-
-  --color-info: oklch(73% 0.13 220);
-  --color-info-content: oklch(18% 0.02 220);
-  --color-success: oklch(64% 0.13 162);
-  --color-success-content: oklch(98% 0.01 162);
-  --color-warning: oklch(78% 0.14 85);
-  --color-warning-content: oklch(20% 0.03 85);
-  --color-error: oklch(62% 0.19 20);
-  --color-error-content: oklch(98% 0.01 20);
-
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.75rem;
+  --radius-selector: 0.75rem;
+  --radius-field: 0.75rem;
+  --radius-box: 1rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
@@ -70,17 +105,152 @@
   body {
     @apply bg-base-100 text-base-content font-sans antialiased;
     text-rendering: optimizeLegibility;
-    /* Ambient glow in the brand colours; every screen sits on this, so panels
-       that should feel "raised" only need translucency, not their own art. */
     background-image:
-      radial-gradient(80rem 50rem at 20% -10%, oklch(45% 0.09 162 / 0.13), transparent 55%),
-      radial-gradient(70rem 45rem at 105% 115%, oklch(50% 0.1 220 / 0.1), transparent 55%);
+      radial-gradient(70rem 42rem at 5% -10%, oklch(78% 0.14 305 / 0.22), transparent 58%),
+      radial-gradient(60rem 42rem at 105% 105%, oklch(80% 0.12 205 / 0.2), transparent 56%),
+      linear-gradient(145deg, #f9f8ff 0%, #f5f9ff 48%, #f4fbfb 100%);
     background-attachment: fixed;
+  }
+
+  [data-theme='peerly-dark'] body {
+    background-image:
+      radial-gradient(70rem 42rem at 5% -10%, oklch(57% 0.18 305 / 0.18), transparent 58%),
+      radial-gradient(60rem 42rem at 105% 105%, oklch(56% 0.12 205 / 0.14), transparent 56%),
+      linear-gradient(145deg, #11111e 0%, #121625 48%, #101c20 100%);
   }
 
   /* Keyboard users must be able to see where they are. DaisyUI handles focus on
      its own components; this covers anything custom. */
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-primary;
+  }
+}
+
+@layer components {
+  .brand-wordmark {
+    background: linear-gradient(100deg, #762dcc 10%, #445bd2 56%, #238dcc 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .brand-mark {
+    @apply relative block h-11 w-11 shrink-0 overflow-hidden rounded-2xl shadow-lg shadow-primary/15;
+  }
+
+  .brand-mark-sm {
+    @apply h-9 w-9 rounded-xl;
+  }
+
+  .brand-mark img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+  }
+
+  .join-auth-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(25rem, 0.92fr);
+  }
+
+  .brand-showcase {
+    @apply relative min-h-[43rem] flex-col justify-end overflow-hidden p-9 text-white;
+    background: linear-gradient(150deg, #6f35ca, #465fcf 55%, #2a9bae);
+  }
+
+  .brand-showcase::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(to top, rgb(31 24 78 / 0.82), transparent 62%);
+  }
+
+  .brand-showcase-image {
+    @apply absolute inset-x-0 top-4 h-[66%] w-full object-contain opacity-95;
+    object-position: center;
+  }
+
+  .brand-showcase-copy {
+    @apply relative z-10 max-w-lg;
+  }
+
+  .brand-kicker,
+  .eyebrow {
+    @apply text-[0.68rem] font-bold uppercase tracking-[0.16em];
+  }
+
+  .brand-kicker {
+    @apply text-white/70;
+  }
+
+  .eyebrow {
+    @apply text-primary/70;
+  }
+
+  .brand-showcase-copy h2 {
+    @apply mt-3 text-3xl font-semibold leading-tight tracking-tight;
+  }
+
+  .brand-showcase-copy p {
+    @apply mt-3 text-sm leading-relaxed text-white/75;
+  }
+
+  .sidebar,
+  .files-panel {
+    box-shadow: 0 18px 55px rgb(58 51 107 / 0.07);
+  }
+
+  .storage-pressure-pill {
+    @apply rounded-full border px-3 py-1 text-xs font-semibold;
+  }
+
+  .storage-pressure-ok {
+    @apply border-success/25 bg-success/10 text-success;
+  }
+
+  .storage-pressure-notice {
+    @apply border-info/25 bg-info/10 text-info;
+  }
+
+  .storage-pressure-warning {
+    @apply border-warning/30 bg-warning/10 text-warning;
+  }
+
+  .storage-pressure-critical {
+    @apply border-error/30 bg-error/10 text-error;
+  }
+
+  .storage-pressure-banner,
+  .sync-status {
+    @apply flex shrink-0 items-center gap-3 border-b border-info/20 bg-info/8 px-3 py-2 text-xs text-base-content sm:px-5;
+  }
+
+  .storage-pressure-banner-urgent {
+    @apply border-warning/30 bg-warning/10;
+  }
+
+  .sync-status-icon {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold text-primary;
+  }
+
+  .card {
+    box-shadow: 0 12px 35px rgb(70 58 125 / 0.06);
+  }
+
+  [data-theme='peerly-dark'] .sidebar,
+  [data-theme='peerly-dark'] .files-panel,
+  [data-theme='peerly-dark'] .card {
+    box-shadow: 0 14px 40px rgb(0 0 0 / 0.24);
+  }
+
+  [data-theme='peerly-dark'] .join-auth-layout {
+    @apply border-base-300/80 bg-base-100/88;
+  }
+}
+
+@media (max-width: 1023px) {
+  .join-auth-layout {
+    display: block;
+    max-width: 30rem;
   }
 }

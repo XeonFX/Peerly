@@ -23,3 +23,15 @@ export function isSafeAvatarUrl(avatar: string | undefined): boolean {
 export function safeAvatarUrl(avatar: string | undefined): string | undefined {
   return isSafeAvatarUrl(avatar) ? avatar : undefined
 }
+
+/**
+ * File thumbnails ride the same rules as avatars (inline raster data only),
+ * plus a length cap: they are stored per message in localStorage and relayed
+ * in history, so an oversized one is a storage/bandwidth griefing vector.
+ */
+const MAX_THUMBNAIL_CHARS = 100_000
+
+export function safeThumbnailUrl(value: string | undefined): string | undefined {
+  if (!value || value.length > MAX_THUMBNAIL_CHARS) return undefined
+  return isSafeAvatarUrl(value) ? value : undefined
+}

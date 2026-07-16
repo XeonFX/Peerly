@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { appBuildLabel, WORKSPACE_COLOR } from '../config'
-import type { Channel, ConnectionStatus, Peer, UserProfile } from '../types'
+import type { Channel, ConnectionStatus, P2pCapability, Peer, UserProfile } from '../types'
 import { Avatar } from './Avatar'
 import { ConnectionStatus as ConnectionStatusLabel } from './ConnectionStatus'
 import { InvitePeople } from './InvitePeople'
+import { ThemeToggle } from './ThemeToggle'
+import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
 
 type Props = {
   workspace: string
@@ -24,6 +26,8 @@ type Props = {
   connectionStatus: ConnectionStatus
   relayOnline: boolean
   rtcPeerCount: number
+  p2pCapability: P2pCapability
+  connectionError: string | null
   relayUrls: string[]
   onChannelSelect: (id: string) => void
   onAddChannel: (name: string) => void
@@ -91,6 +95,8 @@ export function Sidebar({
   connectionStatus,
   relayOnline,
   rtcPeerCount,
+  p2pCapability,
+  connectionError,
   relayUrls,
   onChannelSelect,
   onAddChannel,
@@ -133,15 +139,18 @@ export function Sidebar({
           <Avatar name={workspace} color={WORKSPACE_COLOR} avatar={workspaceAvatar} size="md" />
           <span className="truncate">{workspace}</span>
         </button>
-        <button
-          className="btn btn-ghost btn-square btn-sm shrink-0"
-          onClick={onLeave}
-          title="Switch workspace"
-          aria-label="Switch workspace"
-          data-testid="leave-workspace"
-        >
-          ⏻
-        </button>
+        <div className="flex shrink-0 items-center">
+          <ThemeToggle compact />
+          <button
+            className="btn btn-ghost btn-square btn-sm shrink-0"
+            onClick={onLeave}
+            title="Switch workspace"
+            aria-label="Switch workspace"
+            data-testid="leave-workspace"
+          >
+            ⏻
+          </button>
+        </div>
       </div>
 
       <nav className="mt-3">
@@ -294,6 +303,13 @@ export function Sidebar({
             onInvite={onInvite}
           />
         )}
+
+        <P2pCapabilityIndicator
+          capability={p2pCapability}
+          rtcPeerCount={rtcPeerCount}
+          connectionError={connectionError}
+          compact
+        />
 
         <div className="flex flex-col gap-1 pt-1">
           <ConnectionStatusLabel

@@ -1,11 +1,13 @@
 import { createIndexedDbStore } from './indexedDbStore'
 import { BlobUrlRegistry } from './blobUrls'
 import { safeFileMimeType } from './fileType'
+import { notifyStorageChanged } from './browserStorage'
 
 const store = createIndexedDbStore('peerly-files', 'files')
 
 export async function saveFileBlob(id: string, mimeType: string, buffer: ArrayBuffer): Promise<void> {
   await store.put(id, mimeType, buffer)
+  notifyStorageChanged()
 }
 
 export async function loadFileBlob(
@@ -29,4 +31,14 @@ export async function loadFileUrls(
     })
   )
   return urls
+}
+
+/** Ids of every cached file blob, without loading any bytes. */
+export async function listFileBlobIds(): Promise<string[]> {
+  return store.keys()
+}
+
+export async function deleteFileBlobs(ids: string[]): Promise<void> {
+  await Promise.all(ids.map(id => store.remove(id)))
+  if (ids.length > 0) notifyStorageChanged()
 }

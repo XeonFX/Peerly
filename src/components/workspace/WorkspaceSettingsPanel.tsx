@@ -1,12 +1,31 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { uploadAvatar, removeAvatar } from '../../collab/avatarService'
+import { loadFileSyncMode, saveFileSyncMode, type FileSyncMode } from '../../collab/syncPreferences'
 import { WORKSPACE_COLOR } from '../../config'
+import {
+  clearWorkspaceData,
+  clearWorkspaceFiles,
+  estimateWorkspaceUsage,
+  formatUsage,
+  type WorkspaceUsage,
+} from '../../utils/workspaceUsage'
 import { Avatar } from '../Avatar'
+import { BrowserStorageCard } from '../BrowserStorageCard'
+import type { useBrowserStorage } from '../../hooks/useBrowserStorage'
+import type { P2pCapability } from '../../types'
+import { P2pCapabilityIndicator } from '../P2pCapabilityIndicator'
+import { ThemeToggle } from '../ThemeToggle'
 
 type Props = {
+  workspaceId: string
   workspaceName: string
   workspaceAvatar?: string
   workspaceAvatarId?: string
+  browserStorage: ReturnType<typeof useBrowserStorage>
+  p2pCapability: P2pCapability
+  rtcPeerCount: number
+  connectionError: string | null
+  onRetryP2p: () => void
   onNameChange: (name: string) => void
   onAvatarChange: (avatarId: string, preview: string) => void
   onAvatarClear: () => void
@@ -14,15 +33,39 @@ type Props = {
 }
 
 export function WorkspaceSettingsPanel({
+  workspaceId,
   workspaceName,
   workspaceAvatar,
   workspaceAvatarId,
+  browserStorage,
+  p2pCapability,
+  rtcPeerCount,
+  connectionError,
+  onRetryP2p,
   onNameChange,
   onAvatarChange,
   onAvatarClear,
   onBack,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const [usage, setUsage] = useState<WorkspaceUsage | null>(null)
+  const [syncMode, setSyncMode] = useState<FileSyncMode>(() => loadFileSyncMode())
+
+  const refreshUsage = async () => {
+    setUsage(await estimateWorkspaceUsage(workspaceId))
+    await browserStorage.refresh(true)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    void estimateWorkspaceUsage(workspaceId).then(next => {
+      if (!cancelled) setUsage(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceId])
+
   // Local draft so the field can be cleared while typing without persisting an
   // empty name; only trimmed non-empty values are saved.
   const [nameDraft, setNameDraft] = useState(workspaceName)
@@ -141,6 +184,107 @@ export function WorkspaceSettingsPanel({
             {uploadError && <p className="text-sm text-error">{uploadError}</p>}
           </div>
         </section>
+
+        <section className="card mt-5 border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
+          <div className="card-body gap-3">
+            <div>
+              <h3 className="text-base font-semibold">Appearance</h3>
+              <p className="mt-1 text-xs leading-relaxed text-base-content/50">
+                Theme preference is stored only on this device.
+              </p>
+            </div>
+            <ThemeToggle />
+          </div>
+        </section>
+
+        <div className="mt-5">
+          <P2pCapabilityIndicator
+            capability={p2pCapability}
+            rtcPeerCount={rtcPeerCount}
+            connectionError={connectionError}
+            onRetry={onRetryP2p}
+          />
+        </div>
+
+        <section className="card mt-5 border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
+          <div className="card-body gap-4">
+            <h3 className="text-base font-semibold">Storage &amp; sync</h3>
+
+            <dl className="flex flex-col gap-3 text-sm" data-testid="workspace-storage">
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-xs font-medium text-base-content/50">On this device</dt>
+                <dd data-testid="workspace-storage-total">
+                  {usage
+                    ? `${formatUsage(usage.totalBytes)} — ${formatUsage(usage.messagesBytes)} messages, ${formatUsage(usage.filesBytes)} in ${usage.fileCount} cached file${usage.fileCount === 1 ? '' : 's'}`
+                    : 'Measuring…'}
+                </dd>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-xs font-medium text-base-content/50">Shared total</dt>
+                <dd data-testid="workspace-storage-shared">
+                  {usage
+                    ? `${formatUsage(usage.sharedFilesBytes)} across ${usage.sharedFileCount} file${usage.sharedFileCount === 1 ? '' : 's'}`
+                    : 'Measuring…'}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn btn-outline btn-primary btn-sm"
+                disabled={!usage?.reclaimableBytes}
+                onClick={() => {
+                  if (!window.confirm('Remove unpinned full-size files from this device? Messages and previews stay available.')) return
+                  void clearWorkspaceFiles(workspaceId).then(refreshUsage)
+                }}
+              >
+                Free {usage ? formatUsage(usage.reclaimableBytes) : 'local space'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm text-error"
+                onClick={() => {
+                  if (!window.confirm('Clear local messages, previews, read state, and cached files for this workspace? Access remains, and history can re-sync from online peers.')) return
+                  void clearWorkspaceData(workspaceId).then(refreshUsage)
+                }}
+              >
+                Clear local history
+              </button>
+            </div>
+
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                className="toggle toggle-primary toggle-sm mt-0.5"
+                checked={syncMode === 'auto'}
+                data-testid="sync-mode-toggle"
+                onChange={e => {
+                  const mode: FileSyncMode = e.target.checked ? 'auto' : 'ondemand'
+                  setSyncMode(mode)
+                  saveFileSyncMode(mode)
+                }}
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium">Auto-download full files</span>
+                <span className="text-xs leading-relaxed text-base-content/50">
+                  Off: joining syncs messages and image thumbnails only; full-size files download
+                  when you open them. On: every shared file downloads immediately. Applies to all
+                  workspaces on this device.
+                </span>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        <div className="mt-5">
+          <BrowserStorageCard
+            estimate={browserStorage.estimate}
+            pressure={browserStorage.pressure}
+            onRefresh={() => void browserStorage.refresh(true)}
+            onRequestPersistence={browserStorage.requestPersistence}
+            requestingPersistence={browserStorage.requestingPersistence}
+          />
+        </div>
       </div>
     </div>
   )

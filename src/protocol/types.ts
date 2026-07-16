@@ -37,6 +37,8 @@ export type FileMetaPayload = {
   senderAvatar?: string
   timestamp: number
   channelId: string
+  /** Small inline preview (data URL). Peer-supplied: sanitize before use. */
+  thumbnail?: string
 }
 
 export type HistoryFileMeta = {
@@ -44,6 +46,8 @@ export type HistoryFileMeta = {
   name: string
   mimeType: string
   size: number
+  /** Peer-supplied when the entry came off the wire: sanitize before use. */
+  thumbnail?: string
 }
 
 /** Serializable message for history sync and local persistence. */
@@ -51,6 +55,8 @@ export type HistoryEntry = {
   id: string
   text: string
   senderId: string
+  /** Durable sender identity; best-effort in relayed history (unsigned). */
+  senderUserId?: string
   senderName: string
   senderColor: string
   senderAvatar?: string
@@ -82,6 +88,8 @@ export const ACTION_IDS = {
   chat: 'chat',
   profile: 'profile',
   file: 'file',
+  /** Announces file metadata/thumbnail without pushing the original body. */
+  fileMeta: 'file-meta',
   /** Joiner asks holders for specific file bodies it is missing. */
   fileRequest: 'file-req',
   historySync: 'history-sync',
