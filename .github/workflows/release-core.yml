@@ -146,20 +146,31 @@ jobs:
             echo "Tags: \`core-v${VERSION}\`, \`v${VERSION}\`"
           } > "$BODY_FILE"
 
-          if ! PR_URL=$(gh pr create \
+          # A missing PR is a leftover manual step, not a failed release: npm
+          # and the tags are already done, and the core-release-reminder issue
+          # keeps nagging until main matches the published version. Failing the
+          # whole run here made a successful publish look broken (v0.3.1).
+          if PR_URL=$(gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "chore: release @peerly/core v${VERSION}" \
             --body-file "$BODY_FILE" 2>&1); then
-            echo "::error::Could not open PR (npm + tags already done)."
+            echo "Opened release PR: ${PR_URL}"
+            {
+              echo "## Release @peerly/core v${VERSION}"
+              echo "Published to npm, tags pushed, release PR: ${PR_URL}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            COMPARE="https://github.com/${{ github.repository }}/compare/main...${BRANCH}?expand=1"
+            echo "::warning::Published v${VERSION} and pushed tags, but could not open the release PR."
             echo "$PR_URL"
-            echo "Enable: Settings → Actions → General → Workflow permissions →"
-            echo "  Allow GitHub Actions to create and approve pull requests"
-            echo "Then open: https://github.com/${{ github.repository }}/compare/main...${BRANCH}?expand=1"
-            exit 1
+            {
+              echo "## Release @peerly/core v${VERSION} — one manual step left"
+              echo "npm publish and tags succeeded. Actions may not create PRs in this repo"
+              echo "(Settings → Actions → General → Workflow permissions → allow PR creation),"
+              echo "so open the release PR yourself: ${COMPARE}"
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
-
-          echo "Opened release PR: ${PR_URL}"
 
       - name: Dry-run summary
         if: steps.flags.outputs.dry_run == 'true'
