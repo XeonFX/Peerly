@@ -263,14 +263,15 @@ Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publi
 
 The generic P2P room core — room-code generation, signaling strategy selection,
 `joinRoomByCode`, the `useRoom` React hook, device identity, signing
-primitives, and browser-side OIDC token verification — lives in
-[`packages/core`](packages/core) and is published to npm as
-[`@peerly/core`](packages/core/README.md). The app consumes it from source via
-a Vite/tsconfig alias; other apps consume the published package.
-Workspace semantics — creator-signed allow-lists, peer handshakes, history
-sanitization — deliberately stay in the app, not the package. Releases run
-through the `release-core.yml` workflow: manual trigger, npm Trusted Publishing
-with provenance, automatic version bump committed back to `main`.
+primitives, browser-side OIDC verification, room media, attention helpers, and
+shared avatar/IDB utilities — lives in [`packages/core`](packages/core) and is
+published to npm as [`@peerly/core`](packages/core/README.md) (see that README
+for the API surface; do not pin a version in prose here). The app consumes it
+from source via a Vite/tsconfig alias; other apps (e.g. HeyHubs) consume the
+published package. Workspace semantics — creator-signed allow-lists, peer
+handshakes, history sanitization — deliberately stay in the app, not the
+package. Releases run through the `release-core.yml` workflow: manual trigger,
+npm Trusted Publishing with provenance, automatic version bump via release PR.
 
 ## Project structure
 
@@ -316,9 +317,9 @@ with provenance, automatic version bump committed back to `main`.
 | `npm run dev:app` | Vite only, using the signaling strategy from the environment |
 | `npm run stop` | Stop the common local Peerly development ports |
 | `npm run build` | Typecheck + production build + bundle guard |
-| `npm test` | Vitest unit/component tests (210 tests) |
+| `npm test` | Vitest unit/component tests (counts change with the suite — run `npm test` for the current total) |
 | `npm run test:watch` | Vitest in watch mode |
-| `npm run test:e2e` | Playwright E2E (50 tests, local relay, 4 parallel workers) |
+| `npm run test:e2e` | Playwright E2E (local relay; parallel workers per Playwright config) |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
 | `npm run test:e2e:ui` | Playwright interactive UI |
 | `npm run preview` | Preview the production build locally |

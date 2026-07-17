@@ -187,8 +187,11 @@ leaves the browser.
 | Export | Purpose |
 |--------|---------|
 | `getPeerColor(seed)`, `PEER_COLORS`, `avatarInitial(name)` | Deterministic peer bubble color + initials |
+| `isSafeAvatarUrl` / `safeAvatarUrl` | Allowlist for rendering peer avatars (`data:image/*` only — blocks remote URL tracking) |
+| `processAvatarBlob` / `processAvatarImage` | Resize/compress uploads to a safe data URL |
 | `formatClockTime(timestamp)` | Locale-aware `HH:MM` for message timestamps |
 | `createKvStore(name)` | Small IndexedDB key-value store |
+| `createBlobStore` / `openIndexedDb` | Shared IndexedDB helpers for apps that cache blobs |
 | `probeP2pCapability()` | WebRTC self-test (`P2pCapability`) |
 | `classifyJoinError(message)` | Map Trystero errors → `password-mismatch` / `needs-turn` / `unknown` |
 | `base64UrlToBytes` / `bytesToBase64Url` / `utf8ToBase64Url` / `base64UrlToUtf8` | Base64url codecs |
@@ -197,6 +200,11 @@ leaves the browser.
 | `signTextChat` / `verifyTextChat` / … | Simple text-room signed wires |
 | `createRoomMedia` / `useRoomMedia` | Progressive mic/camera over a room |
 | `primeAttentionAudio` / `playMatchChime` / `formatUnreadTitle` | Tab + sound attention |
+
+Apps that also need remote OIDC photos (e.g. Google) should layer their own
+host allowlist on top of `isSafeAvatarUrl` — the core helper deliberately
+refuses remote `https://` avatars so a peer cannot force every client to
+phone home to an attacker-controlled URL.
 
 ## What this package is not
 
@@ -218,7 +226,7 @@ opens a **release PR** (main is protected — no direct push) and pushes
 | Input | Real release example |
 |-------|----------------------|
 | `dry_run` | **`false`** (default is `true` — dry-run only) |
-| `bump` | `patch`, **`minor`** (e.g. → 0.3.0), or `major` |
+| `bump` | `patch`, **`minor`** (e.g. 1.0.0 → 1.1.0), or `major` |
 
 Dry-run still applies the bump in the runner workspace so the tarball is a
 *new* version (re-publishing an existing version fails). For a local sanity
