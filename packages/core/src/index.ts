@@ -63,3 +63,34 @@ export {
   bytesToBase64Url,
   utf8ToBase64Url,
 } from './base64url.js'
+export { encodeCanonicalLines } from './canonical.js'
+export {
+  applyToggleReaction,
+  isAcceptableRevision,
+  mergeReactionsByActorKey,
+  revisionScore,
+  upsertByIdSorted,
+  type RevisionFields,
+} from './messageMerge.js'
+export {
+  attentionSoundPreferenceKey,
+  formatUnreadTitle,
+  loadAttentionSoundsEnabled,
+  playMatchChime,
+  playNotificationChime,
+  primeAttentionAudio,
+  saveAttentionSoundsEnabled,
+  startIncomingCallRingtone,
+} from './attentionSound.js'
+export {
+  DEFAULT_HISTORY_CAP,
+  signTextChat,
+  signTextReaction,
+  textChatBytes,
+  textReactionBytes,
+  verifyTextChat,
+  verifyTextReaction,
+  type DeviceSigner,
+  type TextChatWire,
+  type TextReactionWire,
+} from './textChatSigning.js'

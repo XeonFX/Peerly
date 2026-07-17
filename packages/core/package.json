@@ -1,7 +1,7 @@
 {
   "name": "@peerly/core",
   "version": "0.4.0",
-  "description": "Peerly's P2P room core — join encrypted Trystero rooms by high-entropy room codes, with device identity, signing, and signaling strategy selection",
+  "description": "Shared P2P primitives for Peerly and HeyHubs — rooms, device identity, signed chat, media, attention",
   "license": "MIT",
   "repository": {
     "type": "git",

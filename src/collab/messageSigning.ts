@@ -1,4 +1,4 @@
-import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity'
+import { encodeCanonicalLines, verifyWithDeviceKeyId, type DeviceKeyId } from '@peerly/core'
 import type { HistoryEntry } from '../protocol/types'
 import { sanitizeReactions } from './reactionSigning'
 
@@ -13,13 +13,8 @@ import { sanitizeReactions } from './reactionSigning'
  * the full P-256 public key (see deviceIdentity), so verification needs no key
  * distribution.
  *
- * What a valid signature proves: the holder of that device key authored these
- * exact fields. Binding the key to a *person* (durable userId) comes from live
- * handshakes (see keyBindings): entries signed by a key we've never met keep
- * their text but have their identity claim stripped rather than trusted.
- *
- * Unsigned entries are tolerated (older app versions) but likewise carry no
- * identity claim — otherwise stripping the signature would be the forgery.
+ * Canonical encoding is shared with HeyHubs via @peerly/core encodeCanonicalLines.
+ * Wire field layout stays Peerly-specific (channels, files, v1/v2 schemes).
  */
 
 export type SignedFields = {
@@ -38,25 +33,30 @@ export type SignedFields = {
 export function signedMessageBytes(fields: SignedFields): Uint8Array {
   const content =
     fields.type === 'file' && fields.fileMeta
-      ? ['file', fields.fileMeta.id, fields.fileMeta.name, fields.fileMeta.mimeType, String(fields.fileMeta.size)]
+      ? [
+          'file',
+          fields.fileMeta.id,
+          fields.fileMeta.name,
+          fields.fileMeta.mimeType,
+          String(fields.fileMeta.size),
+        ]
       : ['text', fields.text]
   // \n cannot appear in ids/keys/timestamps; text goes last so embedded
   // newlines cannot shift any other field's position.
-  const revision = fields.editedAt || fields.deletedAt
-    ? [String(fields.editedAt ?? ''), String(fields.deletedAt ?? '')]
-    : []
-  return new TextEncoder().encode(
-    [
-      revision.length > 0 ? 'peerly-msg-v2' : 'peerly-msg-v1',
-      fields.id,
-      fields.channelId,
-      String(fields.timestamp),
-      fields.senderUserId ?? '',
-      fields.senderDeviceKeyId,
-      ...revision,
-      ...content,
-    ].join('\n')
-  )
+  const revision =
+    fields.editedAt || fields.deletedAt
+      ? [String(fields.editedAt ?? ''), String(fields.deletedAt ?? '')]
+      : []
+  return encodeCanonicalLines([
+    revision.length > 0 ? 'peerly-msg-v2' : 'peerly-msg-v1',
+    fields.id,
+    fields.channelId,
+    String(fields.timestamp),
+    fields.senderUserId ?? '',
+    fields.senderDeviceKeyId,
+    ...revision,
+    ...content,
+  ])
 }
 
 export type EntryVerdict = 'valid' | 'invalid' | 'unsigned'
