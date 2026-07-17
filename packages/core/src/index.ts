@@ -25,6 +25,7 @@ export {
   type Room,
 } from './joinRoom.js'
 export { createRelayHealth, type RelayHealth } from './relayHealth.js'
+export { probeNostrRelay, probeNostrRelays, type RelayProbeResult } from './relayProbe.js'
 export { probeP2pCapability, type P2pCapability } from './p2pCapability.js'
 export {
   canonicalizePublicKey,

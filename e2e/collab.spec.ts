@@ -21,7 +21,7 @@ import {
   openProfile,
   rejoinWorkspace,
   withTwoUsers,
-  E2E_WORKSPACE_ID,
+  e2eWorkspaceId,
 } from './helpers'
 import path from 'path'
 import fs from 'fs'
@@ -39,8 +39,9 @@ async function joinAlice(browser: Browser) {
   return { context, page }
 }
 
-test.describe.configure({ mode: 'serial' })
-
+// Not `mode: 'serial'`: tests are self-contained (fresh contexts, storage
+// wiped per test) and each worker has its own workspace/room (e2eWorkspaceId),
+// so they parallelize safely — serial mode was pinning the suite to 1 worker.
 test.describe('Peerly P2P collaboration', () => {
   test('theme preference persists and P2P readiness stays visible', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
@@ -205,7 +206,7 @@ test.describe('Peerly P2P collaboration', () => {
             Object.keys(localStorage).some(key =>
               key.startsWith(`peerly-history-${workspaceId}__`)
             ),
-          E2E_WORKSPACE_ID
+          e2eWorkspaceId()
         )
       )
       .toBe(false)
@@ -333,7 +334,7 @@ test.describe('Peerly P2P collaboration', () => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
 
     const leaked = async () =>
-      page.evaluate(id => document.body.innerText.includes(id), E2E_WORKSPACE_ID)
+      page.evaluate(id => document.body.innerText.includes(id), e2eWorkspaceId())
 
     expect(await leaked()).toBe(false)
 
@@ -677,6 +678,31 @@ test.describe('Peerly P2P collaboration', () => {
     await bobCtx.close()
   })
 
+  test('camera re-enable restores the local preview', async ({ page }) => {
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await waitForRelay(page)
+
+    await page.getByTestId('video-call-button').click()
+    await expect(page.locator('.video-call-overlay')).toBeVisible()
+
+    const previewPlaying = () =>
+      page.evaluate(() => {
+        const video = document.querySelector<HTMLVideoElement>('.video-call-overlay video')
+        return video ? video.srcObject !== null && video.videoWidth > 0 : false
+      })
+    await expect.poll(previewPlaying, { timeout: 15_000 }).toBe(true)
+
+    // Camera off: the <video> unmounts in favour of the initial placeholder.
+    await page.getByRole('button', { name: 'Turn off camera' }).click()
+    await expect(page.locator('.video-call-overlay video')).toHaveCount(0)
+
+    // Camera on again: the remounted <video> must be re-attached to the same
+    // stream. Regression: it kept srcObject = null and stayed a gray tile.
+    await page.getByRole('button', { name: 'Turn on camera' }).click()
+    await expect(page.locator('.video-call-overlay video')).toBeVisible()
+    await expect.poll(previewPlaying, { timeout: 15_000 }).toBe(true)
+  })
+
   test('shared image preview survives page reload', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await waitForRelay(page)
@@ -696,7 +722,10 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(preview).toHaveAttribute('src', /^blob:/)
     await expect
       .poll(async () => {
-        const raw = await page.evaluate(() => localStorage.getItem('peerly-history-e2e00000000000000000000000000001__general'))
+        const raw = await page.evaluate(
+          key => localStorage.getItem(key),
+          `peerly-history-${e2eWorkspaceId()}__general`
+        )
         return raw?.includes('shared-photo.png') ?? false
       })
       .toBe(true)
@@ -727,7 +756,10 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(page.locator('.message-list .file-download')).toBeVisible({ timeout: 15_000 })
     await expect
       .poll(async () => {
-        const raw = await page.evaluate(() => localStorage.getItem('peerly-history-e2e00000000000000000000000000001__general'))
+        const raw = await page.evaluate(
+          key => localStorage.getItem(key),
+          `peerly-history-${e2eWorkspaceId()}__general`
+        )
         return raw?.includes('notes.txt') ?? false
       })
       .toBe(true)
