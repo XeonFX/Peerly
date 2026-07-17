@@ -8,6 +8,7 @@ import { ThemeToggle } from './ThemeToggle'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
 import { Icon } from './Icon'
 import { useI18n } from '../i18n'
+import { useRelayDiagnostics } from '../hooks/useRelayDiagnostics'
 
 type Props = {
   workspace: string
@@ -128,6 +129,7 @@ export function Sidebar({
   unreadByChannel,
 }: Props) {
   const { tr } = useI18n()
+  const relayDiagnostics = useRelayDiagnostics()
   const [showAddChannel, setShowAddChannel] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
 
@@ -408,14 +410,19 @@ export function Sidebar({
             diagnostic value that line actually had.
           */}
           <span className="text-[0.65rem] text-base-content/60" data-testid="signaling-info">
-            {relayUrls.length > 0
-              ? tr(
-                  relayUrls.length === 1
-                    ? '{count} signaling endpoint · P2P encrypted'
-                    : '{count} signaling endpoints · P2P encrypted',
-                  { count: relayUrls.length }
-                )
-              : `${tr('Connecting to signaling')}…`}
+            {relayDiagnostics.status === 'done'
+              ? tr('{healthy}/{total} signaling endpoints carrying traffic · P2P encrypted', {
+                  healthy: relayDiagnostics.results.filter(result => result.ok).length,
+                  total: relayDiagnostics.results.length,
+                })
+              : relayUrls.length > 0
+                ? tr(
+                    relayUrls.length === 1
+                      ? '{count} signaling endpoint · P2P encrypted'
+                      : '{count} signaling endpoints · P2P encrypted',
+                    { count: relayUrls.length }
+                  )
+                : `${tr('Connecting to signaling')}…`}
           </span>
           <span
             className="font-mono text-[0.65rem] text-base-content/50"

@@ -36,6 +36,16 @@ const plByEnglish: Record<string, string> = {
   'Message {name}': 'Napisz do {name}',
   '{count} signaling endpoint · P2P encrypted':
     '{count} punkt sygnalizacyjny · szyfrowanie P2P',
+  '{healthy}/{total} signaling endpoints carrying traffic · P2P encrypted':
+    '{healthy}/{total} punktów sygnalizacyjnych przekazuje ruch · szyfrowanie P2P',
+  'Signaling relays': 'Przekaźniki sygnalizacyjne',
+  'Re-check': 'Sprawdź ponownie',
+  Checking: 'Sprawdzanie',
+  failed: 'niedostępny',
+  'An open connection is not enough — each relay is tested by publishing a signaling event and requiring it back. A relay can look connected while rejecting everything.':
+    'Otwarte połączenie to za mało — każdy przekaźnik jest testowany przez publikację zdarzenia sygnalizacyjnego i oczekiwanie na jego zwrot. Przekaźnik może wyglądać na połączony, odrzucając wszystko.',
+  '{healthy} of {total} relays carrying signaling':
+    '{healthy} z {total} przekaźników przekazuje sygnalizację',
   '{count} signaling endpoints · P2P encrypted':
     '{count} punkty sygnalizacyjne · szyfrowanie P2P',
   'Connecting to signaling': 'Łączenie z sygnalizacją',
