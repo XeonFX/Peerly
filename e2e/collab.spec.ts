@@ -719,6 +719,38 @@ test.describe('Peerly P2P collaboration', () => {
     await bobCtx.close()
   })
 
+  test('a cancelled call stops presenting as incoming on the callee', async ({ browser }) => {
+    const aliceCtx = await browser.newContext()
+    const bobCtx = await browser.newContext()
+    const alice = await aliceCtx.newPage()
+    const bob = await bobCtx.newPage()
+
+    await joinWorkspace(alice, { name: 'Alice', email: 'alice@e2e.test' })
+    await waitForRelay(alice)
+    await joinWorkspace(bob, { name: 'Bob', email: 'bob@e2e.test' })
+    await waitForPeerConnection(alice)
+    await waitForPeerConnection(bob)
+
+    await alice.getByTestId('video-call-button').click()
+    await expect(alice.locator('.video-call-overlay')).toBeVisible()
+    await expect(bob.getByTestId('incoming-call-banner')).toContainText('Alice', {
+      timeout: 30_000,
+    })
+
+    // Alice hangs up before Bob answers. The banner (and its ringtone) must
+    // go away on its own and STAY away — regression: Alice's lingering stream
+    // re-announced on renegotiation and re-armed Bob's incoming-call state in
+    // a loop only a page refresh could break.
+    await alice.getByTestId('video-call-button').click()
+    await expect(alice.locator('.video-call-overlay')).not.toBeVisible()
+    await expect(bob.getByTestId('incoming-call-banner')).toHaveCount(0, { timeout: 45_000 })
+    await bob.waitForTimeout(3_000)
+    await expect(bob.getByTestId('incoming-call-banner')).toHaveCount(0)
+
+    await aliceCtx.close()
+    await bobCtx.close()
+  })
+
   test('camera re-enable restores the local preview', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await waitForRelay(page)
@@ -1140,6 +1172,9 @@ test.describe('Peerly P2P collaboration', () => {
     await page.getByTestId('workspace-settings-open').click()
     await expect(page.getByTestId('workspace-storage')).toBeVisible()
     await expect(page.getByTestId('notification-settings')).toBeVisible()
+    // Relay health is Nostr-only diagnostics; E2E runs ws-relay, so the card
+    // must stay hidden rather than probe a strategy it doesn't apply to.
+    await expect(page.getByTestId('relay-health-card')).toHaveCount(0)
     await page.getByTestId('locale-select').selectOption('pl')
     await expect(page.getByRole('heading', { name: 'Uwaga i powiadomienia' })).toBeVisible()
     await expect(page.getByTestId('attention-sound-toggle')).toContainText('Włącz dźwięki powiadomień')

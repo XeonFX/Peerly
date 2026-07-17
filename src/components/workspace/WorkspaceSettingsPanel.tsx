@@ -16,6 +16,7 @@ import { BrowserStorageCard } from '../BrowserStorageCard'
 import type { useBrowserStorage } from '../../hooks/useBrowserStorage'
 import type { P2pCapability } from '../../types'
 import { P2pCapabilityIndicator } from '../P2pCapabilityIndicator'
+import { RelayHealthCard } from './RelayHealthCard'
 import { ThemeToggle } from '../ThemeToggle'
 import { useI18n } from '../../i18n'
 
@@ -308,6 +309,8 @@ export function WorkspaceSettingsPanel({
             onRetry={onRetryP2p}
           />
         </div>
+
+        <RelayHealthCard />
 
         <section className="card mt-5 border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
           <div className="card-body gap-4">
