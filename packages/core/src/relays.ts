@@ -58,14 +58,21 @@ export async function resolveRelayUrls(env: Env): Promise<string[]> {
  * Public relays come and go — override with VITE_NOSTR_RELAYS if these rot.
  */
 export const DEFAULT_NOSTR_RELAYS = [
-  'wss://nos.lol',
   'wss://relay.primal.net',
   'wss://purplerelay.com',
   'wss://relay.snort.social',
-  'wss://relay.wellorder.net',
+  'wss://nostr.sathoarder.com',
+  'wss://soloco.nl',
 ]
 // Relays deliberately absent, for different reasons:
 //
+// - nos.lol and relay.wellorder.net rotted in place (2026-07-17, second
+//   sweep): wellorder now answers every publish "blocked: spam not
+//   permitted"; nos.lol still passes one-shot probes but demands 28-bit
+//   proof-of-work once a chatty lobby publishes at a steady rate — the
+//   conditional-throttle class that a single probe cannot catch (see damus
+//   below). Replacements nostr.sathoarder.com and soloco.nl probed 3x at
+//   ~1.1s each.
 // - nostr.mom and offchain.pub were in this list and rotted in place
 //   (2026-07-17): both keep the socket open, so they look connected, then
 //   reject every publish — mom now demands 28-bit proof-of-work, offchain
