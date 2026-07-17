@@ -21,6 +21,10 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
 
+  // SPA navigations (including deep links like /workspace/channel/…) fall back
+  // to the cached shell when the network is away. The `?? Response.error()`
+  // matters: respondWith(undefined) is itself a TypeError, so a missing cache
+  // entry must degrade to an explicit network error, not a second exception.
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
@@ -29,7 +33,7 @@ self.addEventListener('fetch', event => {
           void caches.open(CACHE).then(cache => cache.put('/', copy))
           return response
         })
-        .catch(() => caches.match('/'))
+        .catch(async () => (await caches.match('/')) ?? Response.error())
     )
     return
   }
@@ -37,13 +41,18 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached
-      return fetch(request).then(response => {
-        if (response.ok) {
-          const copy = response.clone()
-          void caches.open(CACHE).then(cache => cache.put(request, copy))
-        }
-        return response
-      })
+      return fetch(request)
+        .then(response => {
+          if (response.ok) {
+            const copy = response.clone()
+            void caches.open(CACHE).then(cache => cache.put(request, copy))
+          }
+          return response
+        })
+        // Offline and not cached: answer with a clean network error instead of
+        // letting the rejected fetch escape respondWith as an uncaught
+        // "TypeError: Failed to fetch" in the console.
+        .catch(() => Response.error())
     })
   )
 })

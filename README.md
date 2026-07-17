@@ -2,7 +2,7 @@
 
 Serverless peer-to-peer team collaboration — channels, chat, progressive file sharing, and video calls over WebRTC. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), and [Trystero](https://github.com/dmotz/trystero). Peerly has no application backend that stores workspace messages or files; signaling services are used only to help browsers discover each other.
 
-**v0.2.1** — the P2P room core now ships as the npm package [`@peerly/core`](packages/core), reusable by other apps, on top of v0.2.0's messenger attention, signed message actions, richer file/call workflows, channel management, installable offline shell, complete English/Polish UI, and accessibility hardening.
+Highlights: the P2P room core ships as the npm package [`@peerly/core`](packages/core), reusable by other apps — alongside messenger attention, signed message actions, rich file/call workflows, channel management, an installable offline shell, URL routing, complete English/Polish UI, and accessibility hardening. The running app always shows its exact version and commit in the UI.
 
 **Live app:** [peerly.cc](https://peerly.cc)
 
@@ -215,7 +215,7 @@ Add TURN, signaling overrides, or other providers as needed (see `.env.example`)
 
 Register the production origin (`https://peerly.cc`) in each OAuth provider's allowed JavaScript origins / redirect URIs. Add the direct `workers.dev` address too if you use it for testing.
 
-Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v0.2.1 · abc1234`.
+Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v<version> · <commit>`.
 
 Cloudflare Pages also works: use `npm run build`, publish `dist/`, and set the same build-time environment variables.
 
@@ -303,7 +303,7 @@ with provenance, automatic version bump committed back to `main`.
 | `npm run guard:bundle` | Fail if test key material reached `dist/` (runs in `build`) |
 | `npm run lint` | oxlint |
 
-The app shows its version and commit (`v0.2.0 · a1b2c3d`) on the join screen and
+The app shows its version and commit (`v<version> · <commit>`) on the join screen and
 in the sidebar footer. Hosts that expose a commit SHA
 (`CF_PAGES_COMMIT_SHA`, `GITHUB_SHA`, `VERCEL_GIT_COMMIT_SHA`, …) are picked up
 automatically; otherwise it falls back to local git.
