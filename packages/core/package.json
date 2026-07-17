@@ -1,6 +1,6 @@
 {
   "name": "@peerly/core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Peerly's P2P room core — join encrypted Trystero rooms by high-entropy room codes, with device identity, signing, media, and attention helpers",
   "license": "MIT",
   "repository": {
