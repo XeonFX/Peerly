@@ -3,6 +3,7 @@ import { isE2eAuthBypass } from './collab/e2eAuth'
 import { WorkspaceAuthManager } from './collab/workspaceAuth'
 import { JoinScreen } from './components/JoinScreen'
 import { Workspace } from './components/Workspace'
+import { useAppRouting } from './hooks/useAppRouting'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
 import { rememberWorkspace, snapshotWorkspace } from './collab/workspaceStore'
 import {
@@ -21,6 +22,8 @@ import {
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [ready, setReady] = useState(false)
+  const { pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
+    useAppRouting(Boolean(session), ready)
 
   const { manager, peerHandshake, resolvePeerUserId, signMessage, signReaction, getBoundUserId } = useWorkspaceAuth(session, allowList => {
     setSession(prev => {
@@ -81,8 +84,11 @@ function App() {
   if (!session) {
     return (
       <JoinScreen
+        pickerTab={pickerTab}
+        onPickerTabChange={setPickerTab}
         onJoined={async next => {
           setSession(await hydrateSessionAvatar(next))
+          enterWorkspace()
         }}
       />
     )
@@ -91,6 +97,8 @@ function App() {
   return (
     <Workspace
       session={session}
+      workspaceRoute={workspaceRoute}
+      onWorkspaceRouteChange={setWorkspaceRoute}
       peerHandshake={peerHandshake}
       resolvePeerUserId={resolvePeerUserId}
       signMessage={signMessage}
@@ -103,6 +111,7 @@ function App() {
         // and can open another workspace without authenticating again.
         clearActiveWorkspace()
         setSession(null)
+        leaveToPicker()
       }}
     />
   )

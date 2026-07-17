@@ -36,9 +36,12 @@ import { ChannelPanel } from './workspace/ChannelPanel'
 import { ProfilePanel } from './workspace/ProfilePanel'
 import { WorkspaceSettingsPanel } from './workspace/WorkspaceSettingsPanel'
 import { useI18n } from '../i18n'
+import type { WorkspaceRoute } from '../routing'
 
 type Props = {
   session: Session
+  workspaceRoute: WorkspaceRoute
+  onWorkspaceRouteChange: (route: WorkspaceRoute) => void
   peerHandshake?: PeerHandshake
   /** Handshake-verified peerId -> durable user id. See useWorkspaceAuth. */
   resolvePeerUserId?: (peerId: string) => string | undefined
@@ -304,13 +307,37 @@ function WorkspaceShell({
   )
 }
 
-export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessage, signReaction, getBoundUserId, authManager, onSessionChange, onLeave }: Props) {
+export function Workspace({
+  session,
+  workspaceRoute,
+  onWorkspaceRouteChange,
+  peerHandshake,
+  resolvePeerUserId,
+  signMessage,
+  signReaction,
+  getBoundUserId,
+  authManager,
+  onSessionChange,
+  onLeave,
+}: Props) {
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
-  const [activeChannel, setActiveChannel] = useState(GENERAL_CHANNEL.id)
-  const [activeView, setActiveView] = useState<'channel' | 'profile' | 'workspace'>('channel')
-  // Start with the conversation at full width. The files rail remains one click
-  // away and no longer opens as a large empty column in a new channel.
-  const [showFiles, setShowFiles] = useState(false)
+  const lastChannelRef = useRef(GENERAL_CHANNEL.id)
+
+  const activeView =
+    workspaceRoute.view === 'profile'
+      ? 'profile'
+      : workspaceRoute.view === 'settings'
+        ? 'workspace'
+        : 'channel'
+  const activeChannel =
+    workspaceRoute.view === 'channel' ? workspaceRoute.channelId : lastChannelRef.current
+  const showFiles = workspaceRoute.view === 'channel' ? workspaceRoute.showFiles : false
+
+  useEffect(() => {
+    if (workspaceRoute.view === 'channel') {
+      lastChannelRef.current = workspaceRoute.channelId
+    }
+  }, [workspaceRoute])
   const [canInvite, setCanInvite] = useState(false)
   const identityExpiry = useIdentityExpiry()
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -381,8 +408,12 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessa
   }
 
   const openChannel = (id: string) => {
-    setActiveChannel(id)
-    setActiveView('channel')
+    onWorkspaceRouteChange({
+      screen: 'workspace',
+      view: 'channel',
+      channelId: id,
+      showFiles: workspaceRoute.view === 'channel' ? workspaceRoute.showFiles : false,
+    })
   }
 
   const refreshChannels = useCallback(() => {
@@ -429,10 +460,17 @@ export function Workspace({ session, peerHandshake, resolvePeerUserId, signMessa
         onSidebarOpenChange={setSidebarOpen}
         onChannelSelect={openChannel}
         onChannelsUpdated={refreshChannels}
-        onProfileSelect={() => setActiveView('profile')}
-        onWorkspaceSettings={() => setActiveView('workspace')}
+        onProfileSelect={() => onWorkspaceRouteChange({ screen: 'workspace', view: 'profile' })}
+        onWorkspaceSettings={() => onWorkspaceRouteChange({ screen: 'workspace', view: 'settings' })}
         onLeave={onLeave}
-        onToggleFiles={() => setShowFiles(value => !value)}
+        onToggleFiles={() =>
+          onWorkspaceRouteChange({
+            screen: 'workspace',
+            view: 'channel',
+            channelId: activeChannel,
+            showFiles: !showFiles,
+          })
+        }
         onWorkspaceNameChange={name => persistWorkspaceAppearance({ workspaceName: name })}
         onWorkspaceAvatarChange={(avatarId, preview) =>
           persistWorkspaceAppearance({ workspaceAvatarId: avatarId, workspaceAvatar: preview })
