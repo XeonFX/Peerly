@@ -5,5 +5,20 @@
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
+  },
+  "env": {
+    // A single, stable staging worker for testing any branch with real Google
+    // sign-in. Google OAuth requires exact JavaScript origins (no wildcards),
+    // so per-branch preview URLs can never sign in — this fixed hostname is
+    // registered once in the OAuth client and reused for every branch:
+    //   npm run build && npx wrangler deploy --env preview
+    "preview": {
+      "name": "peerly-preview",
+      // assets is a non-inheritable key: every env re-declares it.
+      "assets": {
+        "directory": "./dist",
+        "not_found_handling": "single-page-application"
+      }
+    }
   }
 }
