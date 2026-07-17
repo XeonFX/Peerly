@@ -1,3 +1,10 @@
+/**
+ * Re-encodes any uploaded/fetched image through a canvas into a small WebP —
+ * this isn't just a size optimization: rasterizing through `createImageBitmap`
+ * + `canvas.drawImage` strips any embedded scripts/metadata a malicious file
+ * could carry, so the resulting data URL is always safe to hand back out as
+ * an avatar (see `avatarSafety.ts` for the corresponding receive-side check).
+ */
 const MAX_DIMENSION = 256
 const WEBP_QUALITY = 0.82
 
