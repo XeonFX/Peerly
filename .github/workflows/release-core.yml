@@ -66,7 +66,7 @@ jobs:
           npm run lint
           npm test
 
-      # Bump even on dry_run so the tarball is a *new* version (0.2.1 is already on npm).
+      # Bump even on dry_run so the tarball is a *new* version.
       - name: Bump versions (lockstep)
         if: steps.flags.outputs.bump != 'none'
         id: bump
@@ -106,6 +106,8 @@ jobs:
 
       # main is protected (PR required + status checks). Open a release PR instead
       # of git push origin HEAD:main.
+      # Requires: Settings → Actions → General → Workflow permissions
+      # → "Allow GitHub Actions to create and approve pull requests"
       - name: Open release PR and push tags
         if: steps.flags.outputs.dry_run == 'false' && steps.flags.outputs.bump != 'none'
         env:
@@ -113,6 +115,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           BRANCH="release/core-v${VERSION}"
+          BUMP="${{ steps.flags.outputs.bump }}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -128,24 +131,26 @@ jobs:
           git push origin "HEAD:refs/heads/${BRANCH}"
           git push origin "core-v${VERSION}" "v${VERSION}"
 
-          # Requires: Settings → Actions → General → Workflow permissions
-          # → "Allow GitHub Actions to create and approve pull requests"
+          # Write PR body to a file so the markdown never breaks YAML parsing
+          # (unindented ## / - lines inside a heredoc end the run: | block).
+          BODY_FILE=$(mktemp)
+          {
+            echo "## Release @peerly/core v${VERSION}"
+            echo ""
+            echo "Automated by **Release @peerly/core** (bump=\`${BUMP}\`)."
+            echo ""
+            echo "- [x] npm: \`@peerly/core@${VERSION}\` already published"
+            echo "- [ ] Merge this PR so \`main\` matches the published version"
+            echo "- [ ] Then run HeyHubs **Release** with \`sync_core=true\` if consumers should pick it up"
+            echo ""
+            echo "Tags: \`core-v${VERSION}\`, \`v${VERSION}\`"
+          } > "$BODY_FILE"
+
           if ! PR_URL=$(gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "chore: release @peerly/core v${VERSION}" \
-            --body "$(cat <<EOF
-## Release @peerly/core v${VERSION}
-
-Automated by **Release @peerly/core** (bump=\`${{ steps.flags.outputs.bump }}\`).
-
-- [x] npm: \`@peerly/core@${VERSION}\` already published
-- [ ] Merge this PR so \`main\` matches the published version
-- [ ] Then run HeyHubs **Release** with \`sync_core=true\` if consumers should pick it up
-
-Tags: \`core-v${VERSION}\`, \`v${VERSION}\`
-EOF
-)" 2>&1); then
+            --body-file "$BODY_FILE" 2>&1); then
             echo "::error::Could not open PR (npm + tags already done)."
             echo "$PR_URL"
             echo "Enable: Settings → Actions → General → Workflow permissions →"
@@ -155,7 +160,6 @@ EOF
           fi
 
           echo "Opened release PR: ${PR_URL}"
-          echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
 
       - name: Dry-run summary
         if: steps.flags.outputs.dry_run == 'true'
