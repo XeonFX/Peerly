@@ -39,6 +39,7 @@ function noopHandlers(): RoomProtocolHandlers {
     onPeerJoin: vi.fn(),
     onPeerLeave: vi.fn(),
     onPeerStream: vi.fn(),
+    onPeerCallEnd: vi.fn(),
     onInitialPeers: vi.fn(),
     onChannel: vi.fn(),
     onReaction: vi.fn(),
@@ -48,6 +49,7 @@ function noopHandlers(): RoomProtocolHandlers {
 function noopBindings() {
   return {
     bindChatAction: vi.fn(),
+    bindCallEndAction: vi.fn(),
     bindProfileAction: vi.fn(),
     bindFileAction: vi.fn(),
     bindFileMetaAction: vi.fn(),

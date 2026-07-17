@@ -208,6 +208,12 @@ export function useCollab({
     unbind: unbindReactionAction,
     send: sendReactionPayload,
   } = reactionAction
+  const callEndAction = useRoomAction<true>()
+  const {
+    bind: bindCallEndAction,
+    unbind: unbindCallEndAction,
+    send: sendCallEnd,
+  } = callEndAction
   const { reset: resetConnection } = connection
 
   const profileManager = useProfileManager(displayProfile, avatarId, handleProfileChange)
@@ -252,6 +258,7 @@ export function useCollab({
     onPeerJoin: () => {},
     onPeerLeave: () => {},
     onPeerStream: () => {},
+    onPeerCallEnd: () => {},
     onInitialPeers: () => {},
     onChannel: () => {},
     onReaction: () => {},
@@ -331,6 +338,9 @@ export function useCollab({
     onPeerStream: (stream, peerId) => {
       video.onPeerStream(stream, peerId)
     },
+    onPeerCallEnd: peerId => {
+      video.onPeerCallEnd(peerId)
+    },
     onInitialPeers: peerIds => {
       connection.setRtcPeerCount(peerIds.length)
       connection.setConnectionStatus(peerIds.length > 0 ? 'connected' : 'ready')
@@ -409,6 +419,7 @@ export function useCollab({
       onPeerJoin: (...args) => handlersRef.current.onPeerJoin(...args),
       onPeerLeave: (...args) => handlersRef.current.onPeerLeave(...args),
       onPeerStream: (...args) => handlersRef.current.onPeerStream(...args),
+      onPeerCallEnd: (...args) => handlersRef.current.onPeerCallEnd(...args),
       onInitialPeers: (...args) => handlersRef.current.onInitialPeers(...args),
       onChannel: (...args) => handlersRef.current.onChannel(...args),
       onReaction: (...args) => handlersRef.current.onReaction(...args),
@@ -423,12 +434,14 @@ export function useCollab({
       bindChannelAction,
       bindFileRequestAction,
       bindReactionAction,
+      bindCallEndAction,
       broadcastProfile,
     })
 
     return () => {
       cleanup()
       unbindChatAction()
+      unbindCallEndAction()
       unbindProfileAction()
       unbindFileAction()
       unbindFileMetaAction()
@@ -455,6 +468,8 @@ export function useCollab({
     unbindChannelAction,
     bindReactionAction,
     unbindReactionAction,
+    bindCallEndAction,
+    unbindCallEndAction,
     broadcastProfile,
   ])
 
@@ -709,7 +724,13 @@ export function useCollab({
     syncProgress,
     startCall: video.startCall,
     declineCall: video.declineCall,
-    endCall: video.endCall,
+    // Tell peers first: without the explicit signal, a cancelled call sits on
+    // the callee's screen until the 30s incoming-call timeout (the fallback
+    // for peers that crash instead of hanging up).
+    endCall: () => {
+      void sendCallEnd(true)
+      video.endCall()
+    },
     toggleVideo: video.toggleVideo,
     toggleAudio: video.toggleAudio,
     startScreenShare: video.startScreenShare,

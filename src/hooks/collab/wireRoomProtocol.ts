@@ -25,6 +25,7 @@ export type RoomProtocolHandlers = {
   onPeerJoin: (peerId: string) => void
   onPeerLeave: (peerId: string) => void
   onPeerStream: (stream: MediaStream, peerId: string) => void
+  onPeerCallEnd: (peerId: string) => void
   onInitialPeers: (peerIds: string[]) => void
   onChannel: (payload: ChannelPayload, peerId: string) => void
   onReaction: (payload: ReactionPayload, peerId: string) => void
@@ -70,6 +71,9 @@ export type RoomProtocolBindings = {
   bindReactionAction: (action: {
     send: (data: ReactionPayload, options?: { target?: string }) => Promise<void>
   }) => void
+  bindCallEndAction: (action: {
+    send: (data: true, options?: { target?: string }) => Promise<void>
+  }) => void
   broadcastProfile: (target?: string) => void
 }
 
@@ -89,6 +93,7 @@ export function wireRoomProtocol(
   const channelAction = room.makeAction<ChannelPayload>(ACTION_IDS.channelSync)
   const fileRequestAction = room.makeAction<string[]>(ACTION_IDS.fileRequest)
   const reactionAction = room.makeAction<ReactionPayload>(ACTION_IDS.reaction)
+  const callEndAction = room.makeAction<true>(ACTION_IDS.callEnd)
 
   bindings.bindChatAction(chatAction)
   bindings.bindProfileAction(profileAction)
@@ -98,6 +103,7 @@ export function wireRoomProtocol(
   bindings.bindChannelAction(channelAction)
   bindings.bindFileRequestAction(fileRequestAction)
   bindings.bindReactionAction(reactionAction)
+  bindings.bindCallEndAction(callEndAction)
 
   profileAction.onMessage = (peerProfile, { peerId }) => {
     handlers.onProfile(peerProfile, peerId)
@@ -137,6 +143,13 @@ export function wireRoomProtocol(
     handlers.onReaction({ ...payload, actorId: peerId }, peerId)
   }
 
+  // The payload carries nothing; the transport-authenticated peerId is the
+  // entire message ("this peer hung up") — nothing here a peer could forge
+  // beyond ending its own call, which it can always do by disconnecting.
+  callEndAction.onMessage = (_data, { peerId }) => {
+    handlers.onPeerCallEnd(peerId)
+  }
+
   room.onPeerJoin = peerId => {
     bindings.broadcastProfile(peerId)
     handlers.onPeerJoin(peerId)
@@ -165,6 +178,7 @@ export function wireRoomProtocol(
     channelAction.onMessage = null
     fileRequestAction.onMessage = null
     reactionAction.onMessage = null
+    callEndAction.onMessage = null
     room.onPeerJoin = null
     room.onPeerLeave = null
     room.onPeerStream = null
