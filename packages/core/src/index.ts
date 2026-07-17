@@ -45,6 +45,16 @@ export {
   type VerifyOidcIdTokenOptions,
 } from './oidcIdToken.js'
 export { renderGoogleSignInButton } from './googleSignIn.js'
+export {
+  GOOGLE_ISSUERS,
+  GOOGLE_JWKS_URL,
+  resetGoogleJwksCache,
+  verifyGoogleIdToken,
+  type GoogleIdTokenClaims,
+  type VerifyGoogleIdTokenOptions,
+} from './googleIdToken.js'
+export { avatarInitial, getPeerColor, PEER_COLORS } from './identicon.js'
+export { formatClockTime } from './format.js'
 export { createKvStore, type KvStore } from './kvStore.js'
 export {
   base64UrlToBytes,

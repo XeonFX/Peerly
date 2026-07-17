@@ -1,3 +1,4 @@
+import { GOOGLE_ISSUERS, GOOGLE_JWKS_URL } from '@peerly/core'
 import { isE2eAuthBypass } from './e2eAuth'
 import type { JwksFetcher } from './oidcIdToken'
 
@@ -28,7 +29,6 @@ export type IdentityProvider = {
   fetchJwks?: JwksFetcher
 }
 
-const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com'])
 
 function env(key: keyof ImportMetaEnv): string | undefined {
   const value = import.meta.env[key]
@@ -43,7 +43,7 @@ function googleProvider(): IdentityProvider | null {
     label: 'Google',
     clientId,
     issuers: GOOGLE_ISSUERS,
-    jwksUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+    jwksUrl: GOOGLE_JWKS_URL,
   }
 }
 

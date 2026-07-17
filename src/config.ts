@@ -33,24 +33,9 @@ export { GENERAL_CHANNEL } from './collab/channelStore'
 /** Fallback tile colour for workspace avatars (brand emerald). */
 export const WORKSPACE_COLOR = '#2eb67d'
 
-export const PEER_COLORS = [
-  '#e01e5a',
-  '#36c5f0',
-  '#2eb67d',
-  '#ecb22e',
-  '#9b59b6',
-  '#e67e22',
-  '#1abc9c',
-  '#3498db',
-]
-
-export function getPeerColor(peerId: string): string {
-  let hash = 0
-  for (let i = 0; i < peerId.length; i++) {
-    hash = peerId.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  return PEER_COLORS[Math.abs(hash) % PEER_COLORS.length]
-}
+// Peer colors moved to @peerly/core (identicon.ts) so every app renders the
+// same peer identically; re-exported here so existing imports keep working.
+export { getPeerColor, PEER_COLORS } from '@peerly/core'
 
 export function normalizeWorkspaceId(workspace: string): string {
   return workspace.trim().toLowerCase().replace(/\s+/g, '-')

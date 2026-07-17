@@ -1,0 +1,86 @@
+name: Core release reminder
+
+# Version bumps are deliberately human decisions (release-core.yml), which
+# means they are also human-forgettable: main can accumulate @peerly/core
+# changes for days while npm serves an old build to HeyHubs and other
+# consumers. This workflow makes that state impossible to miss — every push
+# to main that touches packages/core compares against the published version
+# and keeps exactly one "release needed" issue up to date (closing it when a
+# release catches up).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/core/**'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Compare main against the published package
+        id: diff
+        run: |
+          PUBLISHED=$(npm view @peerly/core version)
+          echo "published=${PUBLISHED}" >> "$GITHUB_OUTPUT"
+          TAG="core-v${PUBLISHED}"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            RANGE="${TAG}..HEAD"
+          else
+            # Releases before tagging existed (or a deleted tag): fall back to
+            # everything since the last commit that set this version string.
+            BASE=$(git log -1 --format=%H -S"\"version\": \"${PUBLISHED}\"" -- packages/core/package.json || true)
+            RANGE="${BASE:+${BASE}..HEAD}"
+          fi
+          if [ -z "${RANGE}" ]; then
+            echo "unreleased=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          COUNT=$(git rev-list --count "${RANGE}" -- packages/core)
+          echo "unreleased=${COUNT}" >> "$GITHUB_OUTPUT"
+          {
+            echo 'commits<<EOF'
+            git log --format='- %h %s' "${RANGE}" -- packages/core | head -30
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upsert the reminder issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHED: ${{ steps.diff.outputs.published }}
+          UNRELEASED: ${{ steps.diff.outputs.unreleased }}
+          COMMITS: ${{ steps.diff.outputs.commits }}
+        run: |
+          TITLE="Release @peerly/core: main has unreleased changes"
+          EXISTING=$(gh issue list --state open --search "in:title \"${TITLE}\"" --json number --jq '.[0].number // empty')
+
+          if [ "${UNRELEASED}" = "0" ]; then
+            if [ -n "${EXISTING}" ]; then
+              gh issue close "${EXISTING}" --comment "npm now matches main (v${PUBLISHED}) — nothing left to release."
+            fi
+            exit 0
+          fi
+
+          BODY=$(cat <<BODYEOF
+          npm serves **v${PUBLISHED}**, but \`packages/core\` on main has **${UNRELEASED}** unreleased commit(s):
+
+          ${COMMITS}
+
+          Run the **Release @peerly/core** workflow (dry_run=false, pick a bump) to publish, then sync HeyHubs via its Release workflow (\`sync_core=true\`).
+
+          _This issue is maintained automatically by core-release-reminder.yml — it closes itself once a release catches up._
+          BODYEOF
+          )
+          if [ -n "${EXISTING}" ]; then
+            gh issue edit "${EXISTING}" --body "${BODY}"
+          else
+            gh issue create --title "${TITLE}" --body "${BODY}"
+          fi
