@@ -7,6 +7,14 @@ function stopStream(stream: MediaStream | null): void {
   stream?.getTracks().forEach(track => track.stop())
 }
 
+/**
+ * An unanswered incoming call expires. There is no explicit "call cancelled"
+ * signal to observe — the caller ending the call removes their stream, which
+ * fires no peer event — so without a timeout the incoming-call banner (and its
+ * ringtone) would outlive the call it announces indefinitely.
+ */
+const INCOMING_CALL_TIMEOUT_MS = 30_000
+
 export function useVideoCall(room: Room | null) {
   const [inCall, setInCall] = useState(false)
   const [incomingCallPeerId, setIncomingCallPeerId] = useState<string | null>(null)
@@ -124,6 +132,12 @@ export function useVideoCall(room: Room | null) {
     setIncomingCallPeerId(null)
     setPeerStreams({})
   }, [])
+
+  useEffect(() => {
+    if (!incomingCallPeerId || inCall) return
+    const timer = window.setTimeout(declineCall, INCOMING_CALL_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [incomingCallPeerId, inCall, declineCall])
 
   const endCall = useCallback(() => {
     removeAndStopLocalStreams()

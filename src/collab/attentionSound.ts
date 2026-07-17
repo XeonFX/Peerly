@@ -55,7 +55,16 @@ export function playDirectMessageChime(): void {
   ])
 }
 
-/** Repeats a gentle two-note call cue until the caller is joined or dismissed. */
+const RING_INTERVAL_MS = 2_800
+/** ~28s of ringing — a phone's "missed call", not an alarm clock. */
+const MAX_RINGS = 10
+
+/**
+ * Repeats a gentle two-note call cue until joined or dismissed — but never
+ * forever: a caller who cancels before the callee answers sends no signal we
+ * can observe (removing a stream fires no peer event), so an unanswered ring
+ * must give up on its own instead of looping all night.
+ */
 export function startIncomingCallRingtone(): () => void {
   const ring = () =>
     playNotes([
@@ -63,6 +72,14 @@ export function startIncomingCallRingtone(): () => void {
       { frequency: 783.99, offset: 0.24, duration: 0.32 },
     ])
   ring()
-  const interval = window.setInterval(ring, 2800)
+  let rings = 1
+  const interval = window.setInterval(() => {
+    rings++
+    if (rings > MAX_RINGS) {
+      window.clearInterval(interval)
+      return
+    }
+    ring()
+  }, RING_INTERVAL_MS)
   return () => window.clearInterval(interval)
 }
