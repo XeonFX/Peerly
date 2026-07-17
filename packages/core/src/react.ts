@@ -69,6 +69,19 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
   const reportRef = useRef(report)
   reportRef.current = report
 
+  /**
+   * Self-healing rejoin. A session can wedge so that every ICE attempt to a
+   * peer fails after the SDP exchange — seen after browser restarts, where a
+   * session-restored tab starts signaling before the network/WebRTC stack is
+   * actually ready. The failure then repeats within that join, while a manual
+   * refresh (a clean join) fixes it immediately. So when SDP-exchange failures
+   * repeat and we are connected to nobody, do what the refresh does: leave and
+   * join again. Bounded attempts with backoff; only after they are exhausted
+   * does the user see the TURN advice, which is then likely to be true.
+   */
+  const [rejoinNonce, setRejoinNonce] = useState(0)
+  const recoveryRef = useRef({ failures: 0, attempts: 0, timer: 0 })
+
   useEffect(() => {
     if (strategy !== 'ws-relay') return
 
@@ -123,6 +136,23 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
             const connectedPeers = Object.keys(instanceRef.current?.getPeers() ?? {}).length
             if (connectedPeers === 0) reportRef.current('password-mismatch', msg)
           } else if (kind === 'needs-turn') {
+            const connectedPeers = Object.keys(instanceRef.current?.getPeers() ?? {}).length
+            const recovery = recoveryRef.current
+            if (connectedPeers === 0 && recovery.attempts < 2) {
+              // Nobody reachable and repeated SDP failures: this join may be
+              // wedged — rejoin instead of telling the user to buy a TURN
+              // server. Threshold 2 skips one-off blips; backoff 5s then 15s.
+              recovery.failures++
+              if (recovery.failures >= 2 && recovery.timer === 0) {
+                recovery.failures = 0
+                recovery.attempts++
+                recovery.timer = window.setTimeout(() => {
+                  recovery.timer = 0
+                  setRejoinNonce(nonce => nonce + 1)
+                }, recovery.attempts === 1 ? 5_000 : 15_000)
+              }
+              return
+            }
             // Signaling worked and the direct connection still failed: one side
             // is behind a NAT/firewall that needs a relay. Trystero's own text
             // tells the *developer* to configure TURN, no help to an end user.
@@ -156,7 +186,21 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
       }
       setRoom(null)
     }
-  }, [appId, roomId, password, strategy, resolvedRelayUrls, onPeerHandshake])
+  }, [appId, roomId, password, strategy, resolvedRelayUrls, onPeerHandshake, rejoinNonce])
+
+  // A new room is a fresh start for recovery accounting; a pending rejoin
+  // timer must not fire into a room it no longer belongs to.
+  useEffect(() => {
+    const recovery = recoveryRef.current
+    recovery.failures = 0
+    recovery.attempts = 0
+    return () => {
+      if (recovery.timer) {
+        window.clearTimeout(recovery.timer)
+        recovery.timer = 0
+      }
+    }
+  }, [appId, roomId])
 
   return { room }
 }
