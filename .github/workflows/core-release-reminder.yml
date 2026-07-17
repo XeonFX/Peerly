@@ -26,6 +26,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Any npm command run inside this checkout enforces the repo's
+      # devEngines (node ^24, onFail: error) — the runner's default Node 22
+      # fails before `npm view` even reaches the registry.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
       - name: Compare main against the published package
         id: diff
         run: |

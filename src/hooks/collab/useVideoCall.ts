@@ -37,6 +37,18 @@ export function useVideoCall(room: Room | null) {
   const roomRef = useRef(room)
   roomRef.current = room
 
+  /**
+   * Stream ids that are residue of a call WE already ended or declined.
+   * Ending a call removes only our own stream; the other side keeps
+   * transmitting, and any renegotiation re-announces their stream to us.
+   * Without this, that re-announcement is indistinguishable from a brand-new
+   * incoming call — the ex-caller gets an "incoming call" (and its ringtone)
+   * from a conversation they just hung up on. Keyed by stream id, not peer
+   * id: a genuine call-back creates a fresh getUserMedia stream with a new
+   * id and still rings, while the old stream re-surfacing stays silent.
+   */
+  const staleStreamIdsRef = useRef(new Set<string>())
+
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return
     const devices = await navigator.mediaDevices.enumerateDevices()
@@ -56,6 +68,7 @@ export function useVideoCall(room: Room | null) {
   }, [])
 
   const reset = useCallback(() => {
+    staleStreamIdsRef.current.clear()
     removeAndStopLocalStreams()
     setLocalStream(null)
     setInCall(false)
@@ -69,6 +82,8 @@ export function useVideoCall(room: Room | null) {
   }, [removeAndStopLocalStreams])
 
   const onPeerStream = useCallback((stream: MediaStream, peerId: string) => {
+    // A stream id we already hung up on is renegotiation residue, not a call.
+    if (!localStreamRef.current && staleStreamIdsRef.current.has(stream.id)) return
     setPeerStreams(prev => ({ ...prev, [peerId]: stream }))
     if (localStreamRef.current) setInCall(true)
     else setIncomingCallPeerId(peerId)
@@ -76,6 +91,8 @@ export function useVideoCall(room: Room | null) {
 
   const onPeerLeave = useCallback((peerId: string) => {
     setPeerStreams(prev => {
+      const gone = prev[peerId]
+      if (gone) staleStreamIdsRef.current.delete(gone.id)
       const next = { ...prev }
       delete next[peerId]
       return next
@@ -130,7 +147,10 @@ export function useVideoCall(room: Room | null) {
 
   const declineCall = useCallback(() => {
     setIncomingCallPeerId(null)
-    setPeerStreams({})
+    setPeerStreams(prev => {
+      for (const stream of Object.values(prev)) staleStreamIdsRef.current.add(stream.id)
+      return {}
+    })
   }, [])
 
   useEffect(() => {
@@ -144,7 +164,10 @@ export function useVideoCall(room: Room | null) {
     setLocalStream(null)
     setInCall(false)
     setIncomingCallPeerId(null)
-    setPeerStreams({})
+    setPeerStreams(prev => {
+      for (const stream of Object.values(prev)) staleStreamIdsRef.current.add(stream.id)
+      return {}
+    })
     setScreenSharing(false)
     screenSharingRef.current = false
   }, [removeAndStopLocalStreams])
