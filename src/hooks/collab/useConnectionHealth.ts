@@ -7,6 +7,7 @@ import {
   RELAY_OFFLINE_ERROR,
 } from '../../collab/constants'
 import { getConnectedRelayUrls, isRelayOnline } from '../../collab/relayHealth'
+import { scheduleSessionRelayProbe } from '../../collab/relayDiagnostics'
 import type { ConnectionStatus } from '../../types'
 import { useP2pCapability } from '../useP2pCapability'
 
@@ -45,6 +46,7 @@ export function useConnectionHealth(room: Room | null) {
 
   useEffect(() => {
     if (!room) return
+    scheduleSessionRelayProbe()
 
     const tick = () => {
       const urls = getConnectedRelayUrls()

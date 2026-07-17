@@ -1099,6 +1099,9 @@ test.describe('Peerly P2P collaboration', () => {
     await page.getByTestId('workspace-settings-open').click()
     await expect(page.getByTestId('workspace-storage')).toBeVisible()
     await expect(page.getByTestId('notification-settings')).toBeVisible()
+    // Relay health is Nostr-only diagnostics; E2E runs ws-relay, so the card
+    // must stay hidden rather than probe a strategy it doesn't apply to.
+    await expect(page.getByTestId('relay-health-card')).toHaveCount(0)
     await page.getByTestId('locale-select').selectOption('pl')
     await expect(page.getByRole('heading', { name: 'Uwaga i powiadomienia' })).toBeVisible()
     await expect(page.getByTestId('attention-sound-toggle')).toContainText('Włącz dźwięki powiadomień')
