@@ -6,6 +6,9 @@ Highlights: the P2P room core ships as the npm package [`@peerly/core`](packages
 
 **Live app:** [peerly.cc](https://peerly.cc)
 
+Per-screen behavior, routes, and major functions:
+**[docs/views.md](docs/views.md)**.
+
 ## Features
 
 - **Invite-only workspaces** — a high-entropy workspace ID in the URL fragment doubles as the room encryption secret; share the full signed invite to grant access
@@ -274,7 +277,7 @@ with provenance, automatic version bump committed back to `main`.
 ```
 .
 ├── e2e/                    Playwright end-to-end tests
-├── docs/                   Implementation notes
+├── docs/                   views.md (screens & functions), implementation notes
 ├── public/                 Static assets (favicon, etc.)
 ├── scripts/
 │   ├── guard-bundle.mjs    Fail build if E2E keys reached dist/
