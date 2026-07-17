@@ -128,22 +128,31 @@ jobs:
           git push origin "HEAD:refs/heads/${BRANCH}"
           git push origin "core-v${VERSION}" "v${VERSION}"
 
-          PR_URL=$(gh pr create \
+          # Requires: Settings → Actions → General → Workflow permissions
+          # → "Allow GitHub Actions to create and approve pull requests"
+          if ! PR_URL=$(gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "chore: release @peerly/core v${VERSION}" \
             --body "$(cat <<EOF
-          ## Release @peerly/core v${VERSION}
+## Release @peerly/core v${VERSION}
 
-          Automated by **Release @peerly/core** (bump=\`${{ steps.flags.outputs.bump }}\`).
+Automated by **Release @peerly/core** (bump=\`${{ steps.flags.outputs.bump }}\`).
 
-          - [ ] npm: \`@peerly/core@${VERSION}\` already published
-          - [ ] Merge this PR so \`main\` matches the published version
-          - [ ] Then run HeyHubs **Release** with \`sync_core=true\` if consumers should pick it up
+- [x] npm: \`@peerly/core@${VERSION}\` already published
+- [ ] Merge this PR so \`main\` matches the published version
+- [ ] Then run HeyHubs **Release** with \`sync_core=true\` if consumers should pick it up
 
-          Tags: \`core-v${VERSION}\`, \`v${VERSION}\`
-          EOF
-          )")
+Tags: \`core-v${VERSION}\`, \`v${VERSION}\`
+EOF
+)" 2>&1); then
+            echo "::error::Could not open PR (npm + tags already done)."
+            echo "$PR_URL"
+            echo "Enable: Settings → Actions → General → Workflow permissions →"
+            echo "  Allow GitHub Actions to create and approve pull requests"
+            echo "Then open: https://github.com/${{ github.repository }}/compare/main...${BRANCH}?expand=1"
+            exit 1
+          fi
 
           echo "Opened release PR: ${PR_URL}"
           echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
