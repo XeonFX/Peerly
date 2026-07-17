@@ -181,8 +181,9 @@ credentials and share them in URL fragments, never query strings.
 
 Releases go through the `release-core.yml` GitHub Actions workflow (manual
 trigger): it lints and tests the repo, bumps **peerly** and **@peerly/core** in
-lockstep (patch/minor/major), publishes with npm **Trusted Publishing**, and
-commits + tags on `main`.
+lockstep (patch/minor/major), publishes with npm **Trusted Publishing**, then
+opens a **release PR** (main is protected — no direct push) and pushes
+`core-v*` / `v*` tags. Merge the PR so `main` matches npm.
 
 | Input | Real release example |
 |-------|----------------------|
