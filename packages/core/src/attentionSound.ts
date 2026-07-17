@@ -2,7 +2,7 @@
  * Browser attention audio: chimes and ringers that only play after a user
  * gesture has unlocked AudioContext (autoplay policy).
  *
- * Preference storage is keyed by the app so Peerly and HeyHubs do not share a
+ * Preference storage is keyed by the app so multiple products do not share a
  * single toggle.
  */
 
@@ -109,7 +109,7 @@ export function startIncomingCallRingtone(): () => void {
   return () => window.clearInterval(interval)
 }
 
-/** Document title with optional unread badge: `(3) HeyHubs`. */
+/** Document title with optional unread badge: `(3) AppName`. */
 export function formatUnreadTitle(base: string, unread: number): string {
   if (unread <= 0) return base
   const label = unread > 99 ? '99+' : String(unread)

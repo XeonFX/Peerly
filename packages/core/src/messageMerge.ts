@@ -16,8 +16,8 @@ export function revisionScore(fields: RevisionFields): number {
 /**
  * Whether `incoming` should replace `existing` content.
  * Same author is required when both sides declare an author key.
- * `strict` (default true) requires a strictly greater revision score (Peerly);
- * HeyHubs uses `strict: false` so equal scores prefer the latest packet.
+ * `strict` (default true) requires a strictly greater revision score;
+ * pass `strict: false` so equal scores prefer the latest packet.
  */
 export function isAcceptableRevision(
   existing: RevisionFields,

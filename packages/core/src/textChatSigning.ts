@@ -2,9 +2,9 @@ import { encodeCanonicalLines } from './canonical.js'
 import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity.js'
 
 /**
- * Simple text-room chat wires (HeyHubs rooms / 1:1). Peerly workspaces use a
- * richer HistoryEntry format in the app; both share encodeCanonicalLines and
- * device-key verification.
+ * Simple text-room chat wires. Peerly workspaces use a richer HistoryEntry
+ * format in the app; both share encodeCanonicalLines and device-key
+ * verification.
  *
  * Scheme strings are app-owned so wire formats stay stable across releases.
  */

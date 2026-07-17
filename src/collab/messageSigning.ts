@@ -13,7 +13,7 @@ import { sanitizeReactions } from './reactionSigning'
  * the full P-256 public key (see deviceIdentity), so verification needs no key
  * distribution.
  *
- * Canonical encoding is shared with HeyHubs via @peerly/core encodeCanonicalLines.
+ * Canonical encoding uses @peerly/core encodeCanonicalLines.
  * Wire field layout stays Peerly-specific (channels, files, v1/v2 schemes).
  */
 

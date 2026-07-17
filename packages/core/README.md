@@ -6,8 +6,8 @@ with device identity, signing primitives, and signaling-strategy selection.
 No application server: signaling (Nostr by default) is used only so browsers can
 find each other; everything after the handshake is direct WebRTC.
 
-Powers Peerly (invite-only team workspaces) and HeyHubs (interest-based
-networking). MIT.
+Powers Peerly and any app that joins the same style of encrypted Trystero
+rooms. MIT.
 
 ## Install
 
@@ -130,14 +130,14 @@ Also: `canonicalizePublicKey`.
 
 ## Shared chat, merge, media, attention
 
-These are the cross-app primitives Peerly and HeyHubs both consume. App-specific
-wire schemes stay in each app; encoding and crypto are shared.
+Reusable primitives for apps built on this core. App-specific wire schemes stay
+in the app; encoding and crypto are shared.
 
 ```ts
 import {
   // Canonical signing bytes (newline-joined fields; free text last)
   encodeCanonicalLines,
-  // Simple text-room wires (HeyHubs). Pass your scheme string for wire stability.
+  // Simple text-room wires. Pass your scheme string for wire stability.
   signTextChat, verifyTextChat, signTextReaction, verifyTextReaction,
   // Pure merge rules for edits/deletes/reactions
   isAcceptableRevision, mergeReactionsByActorKey, applyToggleReaction,
