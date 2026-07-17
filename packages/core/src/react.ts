@@ -11,6 +11,7 @@ import type { Env } from './env.js'
 import { classifyJoinError, joinRoomByCode, type Room } from './joinRoom.js'
 import { getSupabaseRoomConfig, resolveRelayUrls } from './relays.js'
 import { resolveSignalingStrategy } from './signaling.js'
+import { createRoomMedia, type RoomMediaController, type RoomMediaState } from './roomMedia.js'
 
 export type RoomErrorKind =
   | 'password-mismatch'
@@ -213,3 +214,62 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
 }
 
 export type { Room }
+
+const IDLE_MEDIA: RoomMediaState = {
+  localStream: null,
+  micOn: false,
+  micMuted: false,
+  cameraOn: false,
+  peerStreams: {},
+  mediaError: null,
+}
+
+/**
+ * React face of createRoomMedia (progressive media: in the room silently by
+ * default, opt into mic, upgrade to camera). Returns stable handler
+ * references so consumers can wire room.onPeerStream / onPeerLeave and their
+ * own "peer ended media" action inside their existing effects.
+ */
+export function useRoomMedia(room: Room | null): RoomMediaState & {
+  enableMic: () => Promise<void>
+  disableMic: () => void
+  setMicMuted: (muted: boolean) => void
+  enableCamera: () => Promise<void>
+  disableCamera: () => Promise<void>
+  stopMedia: () => void
+  handlePeerStream: (stream: MediaStream, peerId: string) => void
+  handlePeerLeave: (peerId: string) => void
+  handlePeerMediaEnd: (peerId: string) => void
+} {
+  const [state, setState] = useState<RoomMediaState>(IDLE_MEDIA)
+  const controllerRef = useRef<RoomMediaController | null>(null)
+
+  useEffect(() => {
+    if (!room) {
+      setState(IDLE_MEDIA)
+      return
+    }
+    const controller = createRoomMedia(room, setState)
+    controllerRef.current = controller
+    return () => {
+      controllerRef.current = null
+      controller.dispose()
+      setState(IDLE_MEDIA)
+    }
+  }, [room])
+
+  const call = useRef({
+    enableMic: async () => controllerRef.current?.enableMic(),
+    disableMic: () => controllerRef.current?.disableMic(),
+    setMicMuted: (muted: boolean) => controllerRef.current?.setMicMuted(muted),
+    enableCamera: async () => controllerRef.current?.enableCamera(),
+    disableCamera: async () => controllerRef.current?.disableCamera(),
+    stopMedia: () => controllerRef.current?.stopMedia(),
+    handlePeerStream: (stream: MediaStream, peerId: string) =>
+      controllerRef.current?.handlePeerStream(stream, peerId),
+    handlePeerLeave: (peerId: string) => controllerRef.current?.handlePeerLeave(peerId),
+    handlePeerMediaEnd: (peerId: string) => controllerRef.current?.handlePeerMediaEnd(peerId),
+  }).current
+
+  return { ...state, ...call }
+}

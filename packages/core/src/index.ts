@@ -55,6 +55,7 @@ export {
 } from './googleIdToken.js'
 export { avatarInitial, getPeerColor, PEER_COLORS } from './identicon.js'
 export { formatClockTime } from './format.js'
+export { createRoomMedia, type RoomMediaController, type RoomMediaState } from './roomMedia.js'
 export { createKvStore, type KvStore } from './kvStore.js'
 export {
   base64UrlToBytes,
