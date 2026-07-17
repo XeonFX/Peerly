@@ -1,22 +1,21 @@
+import { openIndexedDb } from './idb.js'
+
 type BlobRecord = {
   id: string
   mimeType: string
   buffer: ArrayBuffer
 }
 
-export function createIndexedDbStore(dbName: string, storeName: string) {
+/**
+ * Generic keyPath-based blob store (id + mime type + raw bytes) — used for
+ * anything a peer needs to persist and later hand back out as a Blob/data
+ * URL: chat file bodies, avatar images, and so on. Distinct from `kvStore`
+ * (out-of-line keys, structured-clone values, used for things like the
+ * device keypair) even though both build on the same `openIndexedDb` helper.
+ */
+export function createBlobStore(dbName: string, storeName: string) {
   function openDb(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(dbName, 1)
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-      request.onupgradeneeded = () => {
-        const db = request.result
-        if (!db.objectStoreNames.contains(storeName)) {
-          db.createObjectStore(storeName, { keyPath: 'id' })
-        }
-      }
-    })
+    return openIndexedDb(dbName, storeName, { keyPath: 'id' })
   }
 
   async function put(id: string, mimeType: string, buffer: ArrayBuffer): Promise<void> {
@@ -26,12 +25,18 @@ export function createIndexedDbStore(dbName: string, storeName: string) {
       const store = tx.objectStore(storeName)
       const record: BlobRecord = { id, mimeType, buffer }
       const request = store.put(record)
-      request.onerror = () => reject(request.error)
+      request.onerror = () => {
+        db.close()
+        reject(request.error)
+      }
       tx.oncomplete = () => {
         db.close()
         resolve()
       }
-      tx.onerror = () => reject(tx.error)
+      tx.onerror = () => {
+        db.close()
+        reject(tx.error)
+      }
     })
   }
 
@@ -41,7 +46,10 @@ export function createIndexedDbStore(dbName: string, storeName: string) {
       const tx = db.transaction(storeName, 'readonly')
       const store = tx.objectStore(storeName)
       const request = store.get(id)
-      request.onerror = () => reject(request.error)
+      request.onerror = () => {
+        db.close()
+        reject(request.error)
+      }
       request.onsuccess = () => {
         const record = request.result as BlobRecord | undefined
         db.close()
@@ -60,12 +68,18 @@ export function createIndexedDbStore(dbName: string, storeName: string) {
       const tx = db.transaction(storeName, 'readwrite')
       const store = tx.objectStore(storeName)
       const request = store.delete(id)
-      request.onerror = () => reject(request.error)
+      request.onerror = () => {
+        db.close()
+        reject(request.error)
+      }
       tx.oncomplete = () => {
         db.close()
         resolve()
       }
-      tx.onerror = () => reject(tx.error)
+      tx.onerror = () => {
+        db.close()
+        reject(tx.error)
+      }
     })
   }
 
@@ -75,7 +89,10 @@ export function createIndexedDbStore(dbName: string, storeName: string) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(storeName, 'readonly')
       const request = tx.objectStore(storeName).getAllKeys()
-      request.onerror = () => reject(request.error)
+      request.onerror = () => {
+        db.close()
+        reject(request.error)
+      }
       request.onsuccess = () => {
         db.close()
         resolve((request.result as IDBValidKey[]).filter((k): k is string => typeof k === 'string'))

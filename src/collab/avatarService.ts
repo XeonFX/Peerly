@@ -1,6 +1,6 @@
+import { processAvatarBlob, processAvatarImage } from '@peerly/core'
 import { loadStoredProfile, saveStoredProfile } from './profileStore'
 import { deleteAvatar, loadAvatarDataUrl, saveAvatar } from '../utils/avatarStore'
-import { processAvatarBlob, processAvatarImage } from '../utils/avatarImage'
 
 function isAllowedOidcAvatarUrl(url: string): boolean {
   try {

@@ -1,6 +1,6 @@
-import { createIndexedDbStore } from './indexedDbStore'
+import { createBlobStore } from '@peerly/core'
 
-const store = createIndexedDbStore('peerly-avatars', 'avatars')
+const store = createBlobStore('peerly-avatars', 'avatars')
 
 export async function saveAvatar(id: string, blob: Blob): Promise<void> {
   const buffer = await blob.arrayBuffer()

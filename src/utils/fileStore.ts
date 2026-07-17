@@ -1,9 +1,9 @@
-import { createIndexedDbStore } from './indexedDbStore'
+import { createBlobStore } from '@peerly/core'
 import { BlobUrlRegistry } from './blobUrls'
 import { safeFileMimeType } from './fileType'
 import { notifyStorageChanged } from './browserStorage'
 
-const store = createIndexedDbStore('peerly-files', 'files')
+const store = createBlobStore('peerly-files', 'files')
 
 export async function saveFileBlob(id: string, mimeType: string, buffer: ArrayBuffer): Promise<void> {
   await store.put(id, mimeType, buffer)

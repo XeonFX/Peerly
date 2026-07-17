@@ -57,6 +57,10 @@ export { avatarInitial, getPeerColor, PEER_COLORS } from './identicon.js'
 export { formatClockTime } from './format.js'
 export { createRoomMedia, type RoomMediaController, type RoomMediaState } from './roomMedia.js'
 export { createKvStore, type KvStore } from './kvStore.js'
+export { createBlobStore } from './blobStore.js'
+export { openIndexedDb } from './idb.js'
+export { isSafeAvatarUrl, safeAvatarUrl } from './avatarSafety.js'
+export { processAvatarBlob, processAvatarImage } from './avatarImage.js'
 export {
   base64UrlToBytes,
   base64UrlToUtf8,
