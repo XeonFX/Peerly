@@ -222,6 +222,27 @@ Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the U
 
 Cloudflare Pages also works: use `npm run build`, publish `dist/`, and set the same build-time environment variables.
 
+### Testing branches with Google sign-in (preview worker)
+
+Google OAuth requires **exact** JavaScript origins — no wildcards — so
+per-branch preview URLs (`<branch>-peerly.<subdomain>.workers.dev`) can never
+complete sign-in. Instead, deploy whatever branch you want to test to the one
+stable staging worker:
+
+```bash
+git checkout <branch-to-test>
+npm run build
+npx wrangler deploy --env preview   # → https://peerly-preview.<subdomain>.workers.dev
+```
+
+One-time setup: add that origin to the OAuth client's authorized JavaScript
+origins (next to the production origin) — or, cleaner, create a second OAuth
+client just for previews and build with its id
+(`VITE_GOOGLE_CLIENT_ID=<preview-client-id> npm run build`), so experiments
+never touch the production client. The build-time env comes from your local
+`.env`, so a preview deploy uses whatever providers/relays you have configured
+there.
+
 ### Other hosts
 
 Vercel, Netlify, S3 + CloudFront, etc. work the same way: `npm run build`, publish `dist/`, set `VITE_*` env vars at build time, register OAuth origins.
