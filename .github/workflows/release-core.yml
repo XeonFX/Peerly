@@ -4,10 +4,11 @@ name: Release @peerly/core
 # npmjs.com → @peerly/core → Trusted publishing → XeonFX/Peerly / release-core.yml
 #
 # Real release: dry_run=false, bump=patch|minor|major → tests → bump (lockstep
-# app + core) → publish → commit + tag on main.
-# Dry run: same bump + pack/publish --dry-run, no git push.
+# app + core) → publish to npm → open a PR (main is protected) → push tags.
+# Dry run: same bump + pack/publish --dry-run, no git changes.
 #
-# For 0.3.0 from 0.2.x: dry_run=false, bump=minor (not the default patch).
+# main requires PRs + status checks — never push HEAD:main from this workflow.
+# For 0.3.0 from 0.2.x: dry_run=false, bump=minor.
 
 on:
   workflow_dispatch:
@@ -31,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
       id-token: write
     steps:
       - uses: actions/checkout@v5
@@ -46,6 +48,17 @@ jobs:
           node --version | grep -Eq '^v24\.' || (echo "need Node 24.x, got $(node --version)" && exit 1)
           npm --version | grep -Eq '^11\.' || (echo "need npm 11.x, got $(npm --version)" && exit 1)
 
+      # workflow_dispatch booleans may be real booleans or the strings "true"/"false".
+      - name: Normalize inputs
+        id: flags
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "bump=${{ inputs.bump }}" >> "$GITHUB_OUTPUT"
+
       - run: npm ci
 
       - name: Build and test against the package
@@ -53,13 +66,12 @@ jobs:
           npm run lint
           npm test
 
-      # workflow_dispatch booleans are strings ("true"/"false"), not JSON booleans.
       # Bump even on dry_run so the tarball is a *new* version (0.2.1 is already on npm).
       - name: Bump versions (lockstep)
-        if: inputs.bump != 'none'
+        if: steps.flags.outputs.bump != 'none'
         id: bump
         run: |
-          node scripts/bump-version.mjs "${{ inputs.bump }}" packages/core/package.json package.json
+          node scripts/bump-version.mjs "${{ steps.flags.outputs.bump }}" packages/core/package.json package.json
           npm install --package-lock-only
           node -p "'core ' + require('./packages/core/package.json').version"
           node -p "'app  ' + require('./package.json').version"
@@ -69,7 +81,7 @@ jobs:
         run: |
           VERSION=$(node -p "require('./packages/core/package.json').version")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Target @peerly/core@${VERSION} (dry_run=${{ inputs.dry_run }})"
+          echo "Target @peerly/core@${VERSION} (dry_run=${{ steps.flags.outputs.dry_run }})"
 
       - name: Refuse to re-publish an existing version
         run: |
@@ -85,21 +97,59 @@ jobs:
         run: |
           npm run build
           npm pack --dry-run
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
+          if [ "${{ steps.flags.outputs.dry_run }}" = "true" ]; then
             echo "Dry run — not publishing to the registry."
             npm publish --access public --dry-run
           else
             npm publish --access public
           fi
 
-      - name: Commit version bump and tag
-        if: inputs.dry_run != 'true' && inputs.bump != 'none'
+      # main is protected (PR required + status checks). Open a release PR instead
+      # of git push origin HEAD:main.
+      - name: Open release PR and push tags
+        if: steps.flags.outputs.dry_run == 'false' && steps.flags.outputs.bump != 'none'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="release/core-v${VERSION}"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "$BRANCH"
           git add packages/core/package.json package.json package-lock.json
           git commit -m "chore: release @peerly/core v${VERSION}"
+
+          # Tags point at the release commit; not subject to the main PR rule.
           git tag "core-v${VERSION}"
           git tag "v${VERSION}"
-          git push origin HEAD:main --follow-tags
+
+          git push origin "HEAD:refs/heads/${BRANCH}"
+          git push origin "core-v${VERSION}" "v${VERSION}"
+
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: release @peerly/core v${VERSION}" \
+            --body "$(cat <<EOF
+          ## Release @peerly/core v${VERSION}
+
+          Automated by **Release @peerly/core** (bump=\`${{ steps.flags.outputs.bump }}\`).
+
+          - [ ] npm: \`@peerly/core@${VERSION}\` already published
+          - [ ] Merge this PR so \`main\` matches the published version
+          - [ ] Then run HeyHubs **Release** with \`sync_core=true\` if consumers should pick it up
+
+          Tags: \`core-v${VERSION}\`, \`v${VERSION}\`
+          EOF
+          )")
+
+          echo "Opened release PR: ${PR_URL}"
+          echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Dry-run summary
+        if: steps.flags.outputs.dry_run == 'true'
+        run: |
+          echo "Dry run complete — would publish @peerly/core@${{ steps.version.outputs.version }}"
+          echo "Re-run with dry_run=false to publish, open a release PR, and push tags."
