@@ -1,3 +1,4 @@
+import { avatarInitial } from '@peerly/core'
 import { DEFAULT_USER_COLOR } from '../config'
 import { safeAvatarUrl } from '../utils/avatarUrl'
 import { safeColor } from '../utils/profileSanitize'
@@ -34,7 +35,7 @@ export function Avatar({ name, color, avatar, size = 'sm' }: Props) {
 
   return (
     <span className={base} style={{ background: safeColor(color, DEFAULT_USER_COLOR) }}>
-      {name.charAt(0).toUpperCase()}
+      {avatarInitial(name)}
     </span>
   )
 }
