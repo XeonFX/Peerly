@@ -1,6 +1,7 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
 import type { Room } from '@peerly/core'
 import { useRoom as useCodeRoom } from '@peerly/core/react'
+import { IDENTITY_DENIED_PREFIX } from '../collab/identityHandshake'
 
 // The join/teardown machinery moved to @peerly/core (react.ts) — including the
 // leave/rejoin race handling and Trystero error classification. This wrapper
@@ -16,7 +17,17 @@ const ERROR_TEXT = {
     `Connection failed: ${raw}. Ensure the local relay is running (npm run dev:relay).`,
   'supabase-config': () =>
     'Supabase signaling is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
-  generic: (raw: string) => `Connection failed: ${raw}. Check your network or try again.`,
+  generic: (raw: string) => {
+    // A denied handshake is the trust model working, not a network problem —
+    // "check your network" would send the user debugging the wrong thing.
+    if (raw.includes(IDENTITY_DENIED_PREFIX)) {
+      if (raw.includes('Token expired')) {
+        return 'A peer could not join: their sign-in has expired. They need to sign in again on their device — your own connection is fine.'
+      }
+      return `A peer was not admitted: ${raw.slice(raw.indexOf(IDENTITY_DENIED_PREFIX) + IDENTITY_DENIED_PREFIX.length + 2)}`
+    }
+    return `Connection failed: ${raw}. Check your network or try again.`
+  },
 }
 
 export function useRoom(

@@ -32,6 +32,8 @@ type CollabProviderProps = {
   avatarId?: string
   workspaceSecret?: string
   peerHandshake?: PeerHandshake
+  /** True once the signed-in ID token is past exp — drops the P2P room. */
+  identityExpired?: boolean
   /** Durable id of the signed-in user; stamped into messages we send. */
   selfUserId?: string
   /** Handshake-verified peerId -> user id; the only trusted source for peers. */
@@ -56,6 +58,7 @@ export function CollabProvider({
   avatarId,
   workspaceSecret,
   peerHandshake,
+  identityExpired,
   selfUserId,
   resolvePeerUserId,
   signMessage,
@@ -77,6 +80,7 @@ export function CollabProvider({
     onChannelsChange,
     activeView,
     peerHandshake,
+    identityExpired,
     identity: { selfUserId, resolvePeerUserId, signMessage, signReaction, getBoundUserId },
   })
 

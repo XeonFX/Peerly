@@ -42,6 +42,8 @@ export type UseCollabOptions = {
   onChannelsChange?: () => void
   activeView?: 'channel' | 'profile' | 'workspace'
   peerHandshake?: PeerHandshake
+  /** True once the signed-in ID token is past exp — see useIdentityExpiry. */
+  identityExpired?: boolean
   identity?: {
     /** Durable id of the signed-in user; stamped into messages we send. */
     selfUserId?: string
@@ -73,8 +75,13 @@ export function useCollab({
   activeView = 'channel',
   peerHandshake,
   identity,
+  identityExpired = false,
 }: UseCollabOptions) {
-  const roomId = buildRoomId(workspaceId)
+  // An expired ID token means every handshake we answer presents a dead
+  // credential — each newcomer rejects us and logs an error storm on both
+  // sides. Leaving the room (empty roomId joins nothing) is honest: this
+  // device cannot be verified right now. Re-auth restores the id and rejoins.
+  const roomId = identityExpired ? '' : buildRoomId(workspaceId)
 
   // Ids that were "me" in earlier sessions of this workspace. The current id is
   // registered for future sessions; this one resolves itself directly.
@@ -124,6 +131,13 @@ export function useCollab({
 
   const connection = useConnectionHealth(room)
   setErrorRef.current = connection.setError
+
+  // With the room gone, the health poller stops running — clear its last
+  // snapshot or the sidebar would keep claiming a connection that ended.
+  const resetConnectionOnExpiry = connection.reset
+  useEffect(() => {
+    if (identityExpired) resetConnectionOnExpiry()
+  }, [identityExpired, resetConnectionOnExpiry])
 
   const peers = usePeerProfiles(displayProfile)
   const {
