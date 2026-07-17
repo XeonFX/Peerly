@@ -1,4 +1,4 @@
-import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity'
+import { encodeCanonicalLines, verifyWithDeviceKeyId, type DeviceKeyId } from '@peerly/core'
 import type { ReactionRecord } from '../types'
 
 export type SignedReactionFields = {
@@ -12,18 +12,16 @@ export type SignedReactionFields = {
 }
 
 export function signedReactionBytes(fields: SignedReactionFields): Uint8Array {
-  return new TextEncoder().encode(
-    [
-      'peerly-reaction-v1',
-      fields.messageId,
-      fields.channelId,
-      fields.emoji,
-      fields.active ? '1' : '0',
-      fields.actorUserId ?? '',
-      fields.actorDeviceKeyId,
-      String(fields.timestamp),
-    ].join('\n')
-  )
+  return encodeCanonicalLines([
+    'peerly-reaction-v1',
+    fields.messageId,
+    fields.channelId,
+    fields.emoji,
+    fields.active ? '1' : '0',
+    fields.actorUserId ?? '',
+    fields.actorDeviceKeyId,
+    String(fields.timestamp),
+  ])
 }
 
 export async function verifyReaction(

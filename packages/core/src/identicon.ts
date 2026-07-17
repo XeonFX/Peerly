@@ -1,5 +1,5 @@
 /**
- * Deterministic peer visuals. Both Peerly and HeyHubs render peers as a
+ * Deterministic peer visuals. Peerly (and other consumers) render peers as a
  * colored bubble with initials; deriving both from the same seed on every
  * device is what makes a peer look identical to everyone without exchanging
  * any profile data.

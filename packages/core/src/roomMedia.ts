@@ -4,8 +4,8 @@ import type { Room } from './joinRoom.js'
  * Progressive media over a Trystero room: a client is in the conversation
  * with NO media by default, opts into audio (`enableMic`), and upgrades to
  * video (`enableCamera`) — the inverse of a classic call that grabs
- * camera+mic up front. Text-first apps (HeyHubs rooms) get "muted unless you
- * choose otherwise"; call-first apps can simply call both enables at start.
+ * camera+mic up front. Text-first apps get "muted unless you choose otherwise";
+ * call-first apps can simply call both enables at start.
  *
  * Derived from Peerly's battle-tested useVideoCall, generalized:
  * - Upgrades/downgrades swap the whole local stream (Peerly's switchDevices

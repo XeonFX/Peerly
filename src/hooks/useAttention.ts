@@ -1,3 +1,4 @@
+import { formatUnreadTitle } from '@peerly/core'
 import { useCallback, useEffect, useState } from 'react'
 import { APP_NAME } from '../config'
 import {
@@ -58,7 +59,7 @@ export function useAttention(totalUnread: number, workspaceName: string) {
   )
 
   useEffect(() => {
-    document.title = totalUnread > 0 ? `(${totalUnread}) ${APP_NAME}` : APP_NAME
+    document.title = formatUnreadTitle(APP_NAME, totalUnread)
     const restoreFavicon = updateFaviconBadge(totalUnread)
     return () => {
       document.title = APP_NAME
