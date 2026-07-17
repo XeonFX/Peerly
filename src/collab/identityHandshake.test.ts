@@ -599,6 +599,9 @@ describe('identity handshake', () => {
 
     expect(a.ok && b.ok).toBe(false)
     expectHandshakeError({ a, b }, 'expired')
+    // The denial names the device to go fix: a user with two open devices
+    // otherwise re-authenticates the healthy one and watches the error persist.
+    expectHandshakeError({ a, b }, 'peer claims to be alice@example.com')
   })
 
   it('denies a malformed attestation instead of crashing', async () => {

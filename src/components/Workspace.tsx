@@ -430,6 +430,7 @@ export function Workspace({
       profile={profile}
       avatarId={session.avatarId}
       workspaceSecret={session.workspaceId}
+      identityExpired={identityExpiry.phase === 'expired'}
       peerHandshake={peerHandshake}
       selfUserId={session.identityUserId}
       resolvePeerUserId={resolvePeerUserId}

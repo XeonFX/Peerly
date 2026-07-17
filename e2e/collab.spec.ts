@@ -265,6 +265,47 @@ test.describe('Peerly P2P collaboration', () => {
     await expectMessage(page, 'still here after renewing')
   })
 
+  test('an expired sign-in leaves the room until re-auth restores it', async ({ page }) => {
+    // Real time must pass for the token to lapse in place: ~60s of it.
+    test.setTimeout(180_000)
+    await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    await waitForRelay(page)
+
+    await page.evaluate(() => {
+      const token = sessionStorage.getItem('peerly-id-token')
+      if (!token) throw new Error('no stored token')
+      const [header, payload, sig] = token.split('.')
+      const decode = (part: string) =>
+        JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+      const encode = (value: unknown) =>
+        btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+      const claims = decode(payload)
+      claims.exp = Math.floor(Date.now() / 1000) + 62
+      sessionStorage.setItem('peerly-id-token', `${header}.${encode(claims)}.${sig}`)
+    })
+    await page.reload()
+    await waitForWorkspace(page)
+    await expect(page.getByTestId('signaling-info')).toContainText('signaling endpoint', {
+      timeout: 15_000,
+    })
+
+    // Once exp passes, this device must LEAVE the room — staying would present
+    // a dead token to every newcomer's handshake, producing an error storm on
+    // both sides ("identity verification failed: ID token: Token expired").
+    await expect(page.getByTestId('signaling-info')).toContainText('Connecting to signaling', {
+      timeout: 90_000,
+    })
+    await expect(page.getByTestId('reauth-banner')).toBeVisible()
+
+    // Re-auth mints a fresh token; the room comes back on its own.
+    await page.getByTestId('reauth-button').click()
+    await expect(page.getByTestId('signaling-info')).toContainText('signaling endpoint', {
+      timeout: 30_000,
+    })
+    await sendMessage(page, 'back after re-auth')
+    await expectMessage(page, 'back after re-auth')
+  })
+
   test('the creator can remove a member, and their name leaves the invite list', async ({ page }) => {
     await createWorkspace(page, {
       email: 'alice@e2e.test',
