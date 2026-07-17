@@ -100,6 +100,25 @@ export function useVideoCall(room: Room | null) {
     setIncomingCallPeerId(current => (current === peerId ? null : current))
   }, [])
 
+  /**
+   * A peer explicitly ended its call. Drop its tile and any incoming banner
+   * right away — without this, a cancelled call haunted the callee for the
+   * full 30s INCOMING_CALL_TIMEOUT (which remains the fallback for peers
+   * that crash instead of hanging up). The dying stream may still re-announce
+   * on renegotiation, so its id goes into the stale set.
+   */
+  const onPeerCallEnd = useCallback((peerId: string) => {
+    setPeerStreams(prev => {
+      const gone = prev[peerId]
+      if (!gone) return prev
+      staleStreamIdsRef.current.add(gone.id)
+      const next = { ...prev }
+      delete next[peerId]
+      return next
+    })
+    setIncomingCallPeerId(current => (current === peerId ? null : current))
+  }, [])
+
   const onPeerJoin = useCallback((peerId: string) => {
     const activeRoom = roomRef.current
     if (localStreamRef.current && activeRoom) {
@@ -267,6 +286,7 @@ export function useVideoCall(room: Room | null) {
     mediaError,
     reset,
     onPeerStream,
+    onPeerCallEnd,
     onPeerLeave,
     onPeerJoin,
     startCall,

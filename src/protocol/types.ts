@@ -125,6 +125,8 @@ export const ACTION_IDS = {
   historySync: 'history-sync',
   channelSync: 'channel-sync',
   reaction: 'reaction',
+  /** "I hung up" — clears the callee's incoming banner without the 30s timeout. */
+  callEnd: 'call-end',
 } as const
 
 export type SenderFields = Pick<

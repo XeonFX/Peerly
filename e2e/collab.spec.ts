@@ -266,8 +266,9 @@ test.describe('Peerly P2P collaboration', () => {
   })
 
   test('an expired sign-in leaves the room until re-auth restores it', async ({ page }) => {
-    // Real time must pass for the token to lapse in place: ~60s of it.
-    test.setTimeout(180_000)
+    // Real time must pass for the token to lapse in place — but only ~15s of
+    // it: the ok→expired transition is identical wherever exp sits.
+    test.setTimeout(120_000)
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await waitForRelay(page)
 
@@ -280,7 +281,7 @@ test.describe('Peerly P2P collaboration', () => {
       const encode = (value: unknown) =>
         btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
       const claims = decode(payload)
-      claims.exp = Math.floor(Date.now() / 1000) + 62
+      claims.exp = Math.floor(Date.now() / 1000) + 15
       sessionStorage.setItem('peerly-id-token', `${header}.${encode(claims)}.${sig}`)
     })
     await page.reload()
@@ -293,7 +294,7 @@ test.describe('Peerly P2P collaboration', () => {
     // a dead token to every newcomer's handshake, producing an error storm on
     // both sides ("identity verification failed: ID token: Token expired").
     await expect(page.getByTestId('signaling-info')).toContainText('Connecting to signaling', {
-      timeout: 90_000,
+      timeout: 45_000,
     })
     await expect(page.getByTestId('reauth-banner')).toBeVisible()
 
@@ -737,13 +738,14 @@ test.describe('Peerly P2P collaboration', () => {
       timeout: 30_000,
     })
 
-    // Alice hangs up before Bob answers. The banner (and its ringtone) must
-    // go away on its own and STAY away — regression: Alice's lingering stream
+    // Alice hangs up before Bob answers. Her explicit call-end signal must
+    // clear Bob's banner promptly (15s budget — NOT the 30s crash-fallback
+    // timeout), and it must STAY away — regression: Alice's lingering stream
     // re-announced on renegotiation and re-armed Bob's incoming-call state in
     // a loop only a page refresh could break.
     await alice.getByTestId('video-call-button').click()
     await expect(alice.locator('.video-call-overlay')).not.toBeVisible()
-    await expect(bob.getByTestId('incoming-call-banner')).toHaveCount(0, { timeout: 45_000 })
+    await expect(bob.getByTestId('incoming-call-banner')).toHaveCount(0, { timeout: 15_000 })
     await bob.waitForTimeout(3_000)
     await expect(bob.getByTestId('incoming-call-banner')).toHaveCount(0)
 
