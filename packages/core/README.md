@@ -6,7 +6,8 @@ with device identity, signing primitives, and signaling-strategy selection.
 No application server: signaling (Nostr by default) is used only so browsers can
 find each other; everything after the handshake is direct WebRTC.
 
-Extracted from and battle-tested by Peerly's invite-only team workspaces. MIT.
+Powers Peerly (invite-only team workspaces) and HeyHubs (interest-based
+networking). MIT.
 
 ## Install
 
@@ -39,6 +40,7 @@ const room = await joinRoomByCode({
   env: import.meta.env,
 })
 
+// Trystero action API (object form — not the older tuple form)
 const hello = room.makeAction<string>('hello')
 hello.onMessage = (msg, { peerId }) => console.log(peerId, msg)
 room.onPeerJoin = peerId => void hello.send('hi', { target: peerId })
@@ -48,10 +50,13 @@ Functions never read `import.meta.env` themselves — Vite substitutes that
 per-bundle, so a library cannot see the app's values. Pass your env (or any
 plain object) where a function takes `env`.
 
+`selfId` is re-exported from `@trystero-p2p/core` so apps can use one peer-id
+source without depending on Trystero directly.
+
 ## React
 
 ```tsx
-import { useRoom } from '@peerly/core/react'
+import { useRoom, useLatest } from '@peerly/core/react'
 
 function Chat({ code }: { code: string }) {
   const { room } = useRoom({
@@ -64,13 +69,17 @@ function Chat({ code }: { code: string }) {
   // room is null until joined; stable across re-renders; leaves on unmount.
   // An empty roomId means "no room yet" and joins nothing — safe for callers
   // whose room is still being negotiated (hooks must run unconditionally).
+  // Optional: onPeerHandshake, errorText overrides per RoomErrorKind.
 }
+
+// useLatest(value) — ref always pointing at the latest value (stale-closure helper)
 ```
 
 The hook carries Peerly's hard-won teardown handling: `leave()` is async and
 Nostr batches relay subscriptions across rooms, so a leave landing after the
 next join silently kills that room's signaling. The hook serializes them —
-StrictMode remounts and room switches just work.
+StrictMode remounts and room switches just work. It also auto-rejoins when ICE
+fails after SDP exchange (strict NAT / flaky path).
 
 ## Signaling strategies
 
@@ -80,8 +89,26 @@ StrictMode remounts and room switches just work.
 | `ws-relay` | Offline / CI / local relay | `VITE_SIGNALING=ws-relay`, `resolveRelayUrls(env)` |
 | `supabase` | A relay you control | `VITE_SIGNALING=supabase` + `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` |
 
+Related helpers: `signalingLabel()`, `buildRelayUrls()`, `getNostrRelayConfig()`,
+`getSupabaseRoomConfig()`, `resolveRelayPort()`.
+
 TURN for strict NATs: `VITE_TURN_URLS`, `VITE_TURN_USERNAME`,
 `VITE_TURN_CREDENTIAL` (see `getTurnConfig`).
+
+### Relay diagnostics
+
+```ts
+import { probeNostrRelay, probeNostrRelays, createRelayHealth } from '@peerly/core'
+
+// End-to-end: subscribe + publish + require echo (open socket ≠ healthy)
+const results = await probeNostrRelays(DEFAULT_NOSTR_RELAYS)
+
+// Live WebSocket visibility while a room is connected
+const health = createRelayHealth()
+```
+
+Call probes on demand (diagnostics UI / re-check), not on a tight interval —
+public relays throttle that.
 
 ## Identity primitives
 
@@ -99,29 +126,47 @@ const userId = await deriveUserId(jwt.iss, jwt.sub)  // durable, provider-namesp
 The private key is generated non-extractable and never leaves WebCrypto — an
 XSS can sign while it runs, but cannot copy the key out.
 
+Also: `canonicalizePublicKey`.
+
 ## OIDC verification (browser-only)
 
 ```ts
-import { renderGoogleSignInButton, verifyOidcIdToken } from '@peerly/core'
+import {
+  renderGoogleSignInButton,
+  verifyGoogleIdToken, // preferred for Google — issuers + JWKS pinned
+  verifyOidcIdToken,   // generic IdP
+  GOOGLE_ISSUERS,
+  GOOGLE_JWKS_URL,
+} from '@peerly/core'
 
 const nonce = await device.publicKeyId() // bind the token to this device key
 const token = await renderGoogleSignInButton(container, nonce, clientId)
-const claims = await verifyOidcIdToken(token, {
+
+// Google path (simplest)
+const claims = await verifyGoogleIdToken(token, {
   expectedAudience: clientId,
   expectedNonce: nonce,
-  issuers: new Set(['https://accounts.google.com', 'accounts.google.com']),
-  fetchJwks: async () => (await fetch('https://www.googleapis.com/oauth2/v3/certs')).json(),
 })
+
+// Or any OIDC issuer
+// await verifyOidcIdToken(token, { expectedAudience, expectedNonce, issuers, fetchJwks })
 ```
 
-`verifyOidcIdToken` checks the RS256 signature against the issuer's JWKS,
-pins exact issuers, requires a **verified** email claim, and rejects tokens
-whose nonce doesn't match the presenting device key — all client-side, no
-token ever leaves the browser.
+Both verifiers check the RS256 signature against the issuer's JWKS, pin exact
+issuers, require a **verified** email claim, and reject tokens whose nonce
+doesn't match the presenting device key — all client-side; the token never
+leaves the browser.
 
-Also exported: `probeP2pCapability()` (WebRTC self-test), `createRelayHealth()`
-(live relay socket visibility), `classifyJoinError()` (password mismatch vs.
-needs-TURN vs. unknown), `createKvStore` (IndexedDB KV), and base64url helpers.
+## UI / storage helpers
+
+| Export | Purpose |
+|--------|---------|
+| `getPeerColor(seed)`, `PEER_COLORS`, `avatarInitial(name)` | Deterministic peer bubble color + initials |
+| `formatClockTime(timestamp)` | Locale-aware `HH:MM` for message timestamps |
+| `createKvStore(name)` | Small IndexedDB key-value store |
+| `probeP2pCapability()` | WebRTC self-test (`P2pCapability`) |
+| `classifyJoinError(message)` | Map Trystero errors → `password-mismatch` / `needs-turn` / `unknown` |
+| `base64UrlToBytes` / `bytesToBase64Url` / `utf8ToBase64Url` / `base64UrlToUtf8` | Base64url codecs |
 
 ## What this package is not
 
@@ -135,9 +180,16 @@ credentials and share them in URL fragments, never query strings.
 ## Publishing (maintainers)
 
 Releases go through the `release-core.yml` GitHub Actions workflow (manual
-trigger): it lints and tests the repo, bumps the version (patch/minor/major),
-publishes with npm **Trusted Publishing** + provenance, and commits the bump
-back to `main`. Run it with `dry_run=true` first to inspect the tarball.
+trigger): it lints and tests the repo, bumps **peerly** and **@peerly/core** in
+lockstep (patch/minor/major), publishes with npm **Trusted Publishing**, and
+commits + tags on `main`.
 
-For a local sanity check: `cd packages/core && npm run build && npm pack --dry-run`
-(`prepack` builds automatically).
+| Input | Real release example |
+|-------|----------------------|
+| `dry_run` | **`false`** (default is `true` — dry-run only) |
+| `bump` | `patch`, **`minor`** (e.g. → 0.3.0), or `major` |
+
+Dry-run still applies the bump in the runner workspace so the tarball is a
+*new* version (re-publishing an existing version fails). For a local sanity
+check: `cd packages/core && npm run build && npm pack --dry-run` (`prepack`
+builds automatically).

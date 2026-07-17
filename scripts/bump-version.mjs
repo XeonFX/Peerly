@@ -21,20 +21,40 @@ function bumpSemver(version, type) {
   return `${major}.${minor}.${patch + 1}`
 }
 
-let lastVersion = null
+/** Compare a.b.c strings; positive if a > b. */
+function cmpSemver(a, b) {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i]
+  }
+  return 0
+}
 
-for (const file of files) {
+// Lockstep: base is the highest current version among the listed packages,
+// then every file is written to the same next version. Independent per-file
+// bumps left peerly at 0.2.2 and @peerly/core at 0.2.1.
+const currents = files.map(file => {
   const pkg = JSON.parse(readFileSync(file, 'utf8'))
   if (typeof pkg.version !== 'string') {
     throw new Error(`${file} has no string "version" field`)
   }
-  const next = bumpSemver(pkg.version, bump)
+  if (!/^\d+\.\d+\.\d+$/.test(pkg.version)) {
+    throw new Error(`${file} has invalid semver: ${pkg.version}`)
+  }
+  return { file, pkg, version: pkg.version }
+})
+
+const base = currents.reduce((max, c) => (cmpSemver(c.version, max) > 0 ? c.version : max), currents[0].version)
+const next = bumpSemver(base, bump)
+
+for (const { file, pkg, version } of currents) {
   pkg.version = next
   writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`)
-  console.log(`${file} → ${next}`)
-  lastVersion = next
+  console.log(`${file}: ${version} → ${next}`)
 }
 
-if (process.env.GITHUB_OUTPUT && lastVersion) {
-  appendFileSync(process.env.GITHUB_OUTPUT, `version=${lastVersion}\n`)
+if (process.env.GITHUB_OUTPUT) {
+  appendFileSync(process.env.GITHUB_OUTPUT, `version=${next}\n`)
+  appendFileSync(process.env.GITHUB_OUTPUT, `base=${base}\n`)
 }

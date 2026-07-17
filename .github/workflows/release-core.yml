@@ -3,18 +3,21 @@ name: Release @peerly/core
 # Publish @peerly/core via npm Trusted Publishing (OIDC).
 # npmjs.com → @peerly/core → Trusted publishing → XeonFX/Peerly / release-core.yml
 #
-# Real release: dry_run=false, bump=patch|minor|major → tests → bump versions →
-# publish → commit + tag on main. Dry run: no bump, no publish, no git changes.
+# Real release: dry_run=false, bump=patch|minor|major → tests → bump (lockstep
+# app + core) → publish → commit + tag on main.
+# Dry run: same bump + pack/publish --dry-run, no git push.
+#
+# For 0.3.0 from 0.2.x: dry_run=false, bump=minor (not the default patch).
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'npm publish --dry-run (inspect, publish nothing)'
+        description: 'npm publish --dry-run only (still bumps versions in the runner workspace)'
         type: boolean
         default: true
       bump:
-        description: 'Semver bump before publish (ignored when dry_run=true)'
+        description: 'Semver bump before publish (lockstep: peerly + @peerly/core)'
         type: choice
         options:
           - patch
@@ -50,32 +53,53 @@ jobs:
           npm run lint
           npm test
 
-      - name: Bump versions
-        if: inputs.dry_run != true && inputs.bump != 'none'
+      # workflow_dispatch booleans are strings ("true"/"false"), not JSON booleans.
+      # Bump even on dry_run so the tarball is a *new* version (0.2.1 is already on npm).
+      - name: Bump versions (lockstep)
+        if: inputs.bump != 'none'
         id: bump
         run: |
           node scripts/bump-version.mjs "${{ inputs.bump }}" packages/core/package.json package.json
           npm install --package-lock-only
+          node -p "'core ' + require('./packages/core/package.json').version"
+          node -p "'app  ' + require('./package.json').version"
+
+      - name: Resolve package version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./packages/core/package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Target @peerly/core@${VERSION} (dry_run=${{ inputs.dry_run }})"
+
+      - name: Refuse to re-publish an existing version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if npm view "@peerly/core@${VERSION}" version >/dev/null 2>&1; then
+            echo "::error::@peerly/core@${VERSION} is already on npm. Pick a higher bump (or bump≠none)."
+            exit 1
+          fi
+          echo "@peerly/core@${VERSION} is not on npm yet — ok to proceed."
 
       - name: Publish
-        id: publish
         working-directory: packages/core
         run: |
           npm run build
           npm pack --dry-run
           if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "Dry run — not publishing to the registry."
             npm publish --access public --dry-run
           else
             npm publish --access public
           fi
 
       - name: Commit version bump and tag
-        if: inputs.dry_run != true && inputs.bump != 'none'
+        if: inputs.dry_run != 'true' && inputs.bump != 'none'
         run: |
-          VERSION="${{ steps.bump.outputs.version }}"
+          VERSION="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add packages/core/package.json package.json package-lock.json
           git commit -m "chore: release @peerly/core v${VERSION}"
           git tag "core-v${VERSION}"
+          git tag "v${VERSION}"
           git push origin HEAD:main --follow-tags
