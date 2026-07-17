@@ -22,7 +22,8 @@ const ERROR_TEXT = {
     // "check your network" would send the user debugging the wrong thing.
     if (raw.includes(IDENTITY_DENIED_PREFIX)) {
       if (raw.includes('Token expired')) {
-        return 'A peer could not join: their sign-in has expired. They need to sign in again on their device — your own connection is fine.'
+        const claimed = /peer claims to be ([^)]+)\)/.exec(raw)?.[1]
+        return `A peer${claimed ? ` (${claimed})` : ''} could not join: their sign-in has expired. They need to sign in again on that device — your own connection is fine.`
       }
       return `A peer was not admitted: ${raw.slice(raw.indexOf(IDENTITY_DENIED_PREFIX) + IDENTITY_DENIED_PREFIX.length + 2)}`
     }

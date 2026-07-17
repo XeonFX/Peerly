@@ -1,5 +1,5 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
-import { bytesToBase64Url } from '../utils/base64url'
+import { base64UrlToUtf8, bytesToBase64Url } from '../utils/base64url'
 import { DeviceIdentity, verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity'
 import {
   defaultJwksFetcher,
@@ -82,6 +82,25 @@ function deny(reason: string): never {
   throw new Error(`${IDENTITY_DENIED_PREFIX}: ${reason}`)
 }
 
+/**
+ * The email a rejected token CLAIMS to belong to — read without verification,
+ * purely so the error can say which device to go fix. A user with two open
+ * devices otherwise sees "Token expired", re-authenticates the healthy one,
+ * and watches the error persist: nothing tells them the dead token lives on
+ * the machine they are not looking at. The claim is attacker-controlled, so
+ * it is length-capped and always labelled "claims to be", never trusted.
+ */
+function unverifiedEmailClaim(token: string): string | null {
+  try {
+    const payload = JSON.parse(base64UrlToUtf8(token.split('.')[1])) as { email?: unknown }
+    const email = payload.email
+    if (typeof email !== 'string' || !email.includes('@') || email.length > 100) return null
+    return email
+  } catch {
+    return null
+  }
+}
+
 function resolveProviderConfig(
   providerId: string,
   deps: IdentityHandshakeDeps
@@ -125,7 +144,12 @@ export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandsh
         emailVerifiedClaim: provider.emailVerifiedClaim,
       })
     } catch (err) {
-      deny(`ID token: ${err instanceof Error ? err.message : String(err)}`)
+      const claimed = unverifiedEmailClaim(theirs.idToken)
+      deny(
+        `ID token: ${err instanceof Error ? err.message : String(err)}${
+          claimed ? ` (peer claims to be ${claimed})` : ''
+        }`
+      )
     }
 
     if (!(await verifyAllowList(theirs.allowList, deps.creatorKeyId))) {
