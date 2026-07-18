@@ -687,6 +687,7 @@ export function useCollab({
     profile: displayProfile,
     peers: peers.peers,
     messages: channelStore.messages,
+    messagesByChannel: channelStore.messagesByChannel,
     sharedFiles,
     transfers: files.transfers,
     fileError: files.fileError,

@@ -112,6 +112,7 @@ export function CollabProvider({
   const chat = useMemo<ChatSlice>(
     () => ({
       messages: collab.messages,
+      messagesByChannel: collab.messagesByChannel,
       sharedFiles: collab.sharedFiles,
       transfers: collab.transfers,
       fileError: collab.fileError,
@@ -139,6 +140,7 @@ export function CollabProvider({
     }),
     [
       collab.messages,
+      collab.messagesByChannel,
       collab.sharedFiles,
       collab.transfers,
       collab.fileError,

@@ -30,6 +30,7 @@ export type IconName =
   | 'plus'
   | 'refresh'
   | 'screen-share'
+  | 'search'
   | 'shield'
   | 'sun'
   | 'trash'
@@ -103,6 +104,8 @@ export function Icon({ name, size = 18, className = '', ...props }: Props) {
         return <><path d="M20 7h-5V2"/><path d="M20 7a9 9 0 1 0 1 8"/></>
       case 'screen-share':
         return <><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4M8 10l4-4 4 4M12 6v7"/></>
+      case 'search':
+        return <><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></>
       case 'shield':
         return <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></>
       case 'sun':
