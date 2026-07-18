@@ -38,6 +38,12 @@ import { WorkspaceSettingsPanel } from './workspace/WorkspaceSettingsPanel'
 import { useI18n } from '../i18n'
 import type { WorkspaceRoute } from '../routing'
 
+type FriendRow = {
+  subjectUserId: string
+  subjectName: string
+  subjectEmail?: string
+}
+
 type Props = {
   session: Session
   workspaceRoute: WorkspaceRoute
@@ -45,12 +51,20 @@ type Props = {
   peerHandshake?: PeerHandshake
   /** Handshake-verified peerId -> durable user id. See useWorkspaceAuth. */
   resolvePeerUserId?: (peerId: string) => string | undefined
+  resolvePeerContact?: (
+    peerId: string
+  ) => { userId: string; email: string; name: string } | undefined
   signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
   signReaction?: (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => Promise<{ actorDeviceKeyId: string; signature: string }>
   getBoundUserId?: (deviceKeyId: string) => string | undefined
   /** Needed to re-sign the allow-list when inviting; only the creator's device can. */
   authManager: WorkspaceAuthManager | null
   onSessionChange: (patch: Partial<Session>) => void
+  friends: FriendRow[]
+  isFriend: (userId: string | undefined) => boolean
+  onAddFriend: (subject: { userId: string; name: string; email: string }) => Promise<void>
+  onRemoveFriend: (userId: string) => void
+  inviteableFriends: (alreadyInvited: readonly string[]) => FriendRow[]
   onLeave: () => void
 }
 
@@ -75,6 +89,10 @@ function WorkspaceShell({
   onWorkspaceNameChange,
   onWorkspaceAvatarChange,
   onWorkspaceAvatarClear,
+  resolvePeerContact,
+  isFriend,
+  onAddFriend,
+  inviteableFriends,
 }: {
   session: Session
   channels: Channel[]
@@ -96,6 +114,12 @@ function WorkspaceShell({
   onWorkspaceNameChange: (name: string) => void
   onWorkspaceAvatarChange: (avatarId: string, preview: string) => void
   onWorkspaceAvatarClear: () => void
+  resolvePeerContact?: (
+    peerId: string
+  ) => { userId: string; email: string; name: string } | undefined
+  isFriend: (userId: string | undefined) => boolean
+  onAddFriend: (subject: { userId: string; name: string; email: string }) => Promise<void>
+  inviteableFriends: (alreadyInvited: readonly string[]) => FriendRow[]
 }) {
   const { tr } = useI18n()
   const { announceChannel, announceChannelDeletion } = useWorkspaceSlice()
@@ -211,6 +235,10 @@ function WorkspaceShell({
         onInvite={onInvite}
         onRemoveMember={onRemoveMember}
         selfEmail={session.identityEmail}
+        resolvePeerContact={resolvePeerContact}
+        isFriend={isFriend}
+        onAddFriend={onAddFriend}
+        inviteableFriends={inviteableFriends}
         channels={channels}
         activeChannel={activeChannel}
         activeView={activeView}
@@ -313,13 +341,21 @@ export function Workspace({
   onWorkspaceRouteChange,
   peerHandshake,
   resolvePeerUserId,
+  resolvePeerContact,
   signMessage,
   signReaction,
   getBoundUserId,
   authManager,
   onSessionChange,
+  friends: _friends,
+  isFriend,
+  onAddFriend,
+  onRemoveFriend: _onRemoveFriend,
+  inviteableFriends,
   onLeave,
 }: Props) {
+  void _friends
+  void _onRemoveFriend
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
   const lastChannelRef = useRef(GENERAL_CHANNEL.id)
 
@@ -479,6 +515,10 @@ export function Workspace({
         onWorkspaceAvatarClear={() =>
           persistWorkspaceAppearance({ workspaceAvatarId: undefined, workspaceAvatar: undefined })
         }
+        resolvePeerContact={resolvePeerContact}
+        isFriend={isFriend}
+        onAddFriend={onAddFriend}
+        inviteableFriends={inviteableFriends}
       />
     </CollabProvider>
   )

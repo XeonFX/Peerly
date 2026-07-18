@@ -9,9 +9,18 @@ import { deriveUserId } from '../collab/userId'
 import { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { loadIdToken, loadIdentityProvider, type Session } from '../session'
 
+export type VerifiedPeerContact = {
+  peerId: string
+  userId: string
+  email: string
+  name: string
+  deviceKeyId: DeviceKeyId
+}
+
 export function useWorkspaceAuth(
   session: Session | null,
-  onAllowListUpdated?: (list: SignedAllowList) => void
+  onAllowListUpdated?: (list: SignedAllowList) => void,
+  onPeerContactVerified?: (contact: VerifiedPeerContact) => void
 ): {
   manager: WorkspaceAuthManager | null
   peerHandshake: PeerHandshake | undefined
@@ -22,6 +31,8 @@ export function useWorkspaceAuth(
    * claims about identity is attacker-controlled.
    */
   resolvePeerUserId: (peerId: string) => string | undefined
+  /** Verified email/name from handshake — only source safe for invite/friends. */
+  resolvePeerContact: (peerId: string) => Omit<VerifiedPeerContact, 'peerId' | 'deviceKeyId'> | undefined
   /** Sign message bytes with this device's key, or undefined pre-auth. */
   signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
   signReaction?: (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => Promise<{ actorDeviceKeyId: string; signature: string }>
@@ -30,6 +41,8 @@ export function useWorkspaceAuth(
 } {
   const onAllowListUpdatedRef = useRef(onAllowListUpdated)
   onAllowListUpdatedRef.current = onAllowListUpdated
+  const onPeerContactVerifiedRef = useRef(onPeerContactVerified)
+  onPeerContactVerifiedRef.current = onPeerContactVerified
 
   const sessionRef = useRef(session)
   sessionRef.current = session
@@ -55,6 +68,9 @@ export function useWorkspaceAuth(
   }, [manager, session?.allowList])
 
   const peerUserIdsRef = useRef(new Map<string, string>())
+  const peerContactsRef = useRef(
+    new Map<string, Omit<VerifiedPeerContact, 'peerId' | 'deviceKeyId'>>()
+  )
   const keyBindingsRef = useRef<Record<string, string>>({})
 
   useEffect(() => {
@@ -62,6 +78,7 @@ export function useWorkspaceAuth(
     // identities verified under the previous one. Key bindings reload from the
     // per-workspace store instead of leaking across workspaces.
     peerUserIdsRef.current = new Map()
+    peerContactsRef.current = new Map()
     keyBindingsRef.current = workspaceId ? loadKeyBindings(workspaceId) : {}
   }, [manager, workspaceId])
 
@@ -82,6 +99,12 @@ export function useWorkspaceAuth(
       onPeerVerified: (peerId, claims, deviceKeyId) => {
         void deriveUserId(claims.iss, claims.sub).then(userId => {
           peerUserIdsRef.current.set(peerId, userId)
+          const contact = {
+            userId,
+            email: claims.email,
+            name: typeof claims.name === 'string' && claims.name ? claims.name : claims.email,
+          }
+          peerContactsRef.current.set(peerId, contact)
           // The one moment key, token, and possession-proof were all verified
           // together — the only place a key↔user binding may be learned.
           const boundWorkspaceId = sessionRef.current?.workspaceId
@@ -89,6 +112,11 @@ export function useWorkspaceAuth(
             rememberKeyBinding(boundWorkspaceId, deviceKeyId, userId)
             keyBindingsRef.current[deviceKeyId] = userId
           }
+          onPeerContactVerifiedRef.current?.({
+            peerId,
+            deviceKeyId,
+            ...contact,
+          })
         })
       },
       onAllowListUpdated: list => onAllowListUpdatedRef.current?.(list),
@@ -97,6 +125,11 @@ export function useWorkspaceAuth(
 
   const resolvePeerUserId = useCallback(
     (peerId: string) => peerUserIdsRef.current.get(peerId),
+    []
+  )
+
+  const resolvePeerContact = useCallback(
+    (peerId: string) => peerContactsRef.current.get(peerId),
     []
   )
 
@@ -115,5 +148,13 @@ export function useWorkspaceAuth(
     return (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => manager.signReaction(fields)
   }, [manager])
 
-  return { manager, peerHandshake, resolvePeerUserId, signMessage, signReaction, getBoundUserId }
+  return {
+    manager,
+    peerHandshake,
+    resolvePeerUserId,
+    resolvePeerContact,
+    signMessage,
+    signReaction,
+    getBoundUserId,
+  }
 }

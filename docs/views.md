@@ -411,10 +411,11 @@ does not grant membership — the allow-list + handshake does.
 
 | Package / path | Role |
 |----------------|------|
-| [`@peerly/core`](../packages/core) | Room codes, signaling resolve, OIDC helpers, device keys, room media, avatar safety/processing, React `useRoom` / `useRoomMedia` — full API in [`packages/core/README.md`](../packages/core/README.md) |
+| [`@peerly/core`](../packages/core) | Room codes, signaling resolve, OIDC helpers, device keys, room media, avatar safety/processing, signed people lists (`block`/`friend`), React `useRoom` / `useRoomMedia` — full API in [`packages/core/README.md`](../packages/core/README.md) |
 | `@trystero-p2p/*` | Underlying room transport strategies |
 | App `src/protocol/` | Wire payload types and mappers |
 | App `src/utils/avatarService` (and peers) | Workspace/profile avatars built on core `processAvatar*` + `isSafeAvatarUrl` |
+| App `src/collab/friendsStore` | Personal friends list (email from handshake) for invite-from-friends |
 
 ---
 

@@ -23,6 +23,14 @@ type Props = {
   onInvite: (emails: string[]) => Promise<void>
   onRemoveMember?: (email: string) => Promise<void>
   selfEmail?: string
+  resolvePeerContact?: (
+    peerId: string
+  ) => { userId: string; email: string; name: string } | undefined
+  isFriend?: (userId: string | undefined) => boolean
+  onAddFriend?: (subject: { userId: string; name: string; email: string }) => Promise<void>
+  inviteableFriends?: (
+    alreadyInvited: readonly string[]
+  ) => Array<{ subjectUserId: string; subjectName: string; subjectEmail?: string }>
   channels: Channel[]
   activeChannel: string
   activeView: 'channel' | 'profile' | 'workspace'
@@ -127,6 +135,10 @@ export function Sidebar({
   onWorkspaceSettings,
   onLeave,
   unreadByChannel,
+  resolvePeerContact,
+  isFriend,
+  onAddFriend,
+  inviteableFriends,
 }: Props) {
   const { tr } = useI18n()
   const relayDiagnostics = useRelayDiagnostics()
@@ -361,16 +373,42 @@ export function Sidebar({
             >
               <Avatar name={peer.name} color={peer.color} avatar={peer.avatar} />
               <span className="min-w-0 flex-1 truncate">{peer.name}</span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-xs btn-square shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                title={tr('Message {name}', { name: peer.name })}
-                aria-label={tr('Message {name}', { name: peer.name })}
-                data-testid={`message-peer-${peer.name}`}
-                onClick={() => onStartDirectMessage(peer)}
-              >
-                <Icon name="message-circle" size={15} />
-              </button>
+              {(() => {
+                const contact = resolvePeerContact?.(peer.id)
+                const friendAlready = contact ? isFriend?.(contact.userId) : false
+                return (
+                  <>
+                    {contact && onAddFriend && !friendAlready && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs btn-square shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                        title={tr('Add friend')}
+                        aria-label={tr('Add {name} as friend', { name: peer.name })}
+                        data-testid={`add-friend-${peer.name}`}
+                        onClick={() =>
+                          void onAddFriend({
+                            userId: contact.userId,
+                            name: contact.name || peer.name,
+                            email: contact.email,
+                          })
+                        }
+                      >
+                        <Icon name="plus" size={15} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                      title={tr('Message {name}', { name: peer.name })}
+                      aria-label={tr('Message {name}', { name: peer.name })}
+                      data-testid={`message-peer-${peer.name}`}
+                      onClick={() => onStartDirectMessage(peer)}
+                    >
+                      <Icon name="message-circle" size={15} />
+                    </button>
+                  </>
+                )
+              })()}
             </li>
           ))}
         </ul>
@@ -385,6 +423,7 @@ export function Sidebar({
             selfEmail={selfEmail}
             canInvite={canInvite}
             onInvite={onInvite}
+            inviteableFriends={inviteableFriends?.(invitedEmails ?? []) ?? []}
           />
         )}
 

@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { isE2eAuthBypass } from './collab/e2eAuth'
+import { DeviceIdentity } from './collab/deviceIdentity'
 import { WorkspaceAuthManager } from './collab/workspaceAuth'
 import { JoinScreen } from './components/JoinScreen'
 import { Workspace } from './components/Workspace'
 import { useAppRouting } from './hooks/useAppRouting'
+import { useFriends } from './hooks/useFriends'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
 import { rememberWorkspace, snapshotWorkspace } from './collab/workspaceStore'
 import {
@@ -25,17 +27,21 @@ function App() {
   const { pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
     useAppRouting(Boolean(session), ready)
 
-  const { manager, peerHandshake, resolvePeerUserId, signMessage, signReaction, getBoundUserId } = useWorkspaceAuth(session, allowList => {
-    setSession(prev => {
-      if (!prev) return prev
-      const next = { ...prev, allowList }
-      saveSession(next)
-      // A peer showed us a newer creator-signed list (someone was invited).
-      // Persist it so the picker and future invite links carry it too.
-      rememberWorkspace(snapshotWorkspace(next))
-      return next
+  const deviceIdentity = useMemo(() => new DeviceIdentity(), [])
+  const friendsApi = useFriends(deviceIdentity, session?.identityUserId)
+
+  const { manager, peerHandshake, resolvePeerUserId, resolvePeerContact, signMessage, signReaction, getBoundUserId } =
+    useWorkspaceAuth(session, allowList => {
+      setSession(prev => {
+        if (!prev) return prev
+        const next = { ...prev, allowList }
+        saveSession(next)
+        // A peer showed us a newer creator-signed list (someone was invited).
+        // Persist it so the picker and future invite links carry it too.
+        rememberWorkspace(snapshotWorkspace(next))
+        return next
+      })
     })
-  })
 
   useEffect(() => {
     void (async () => {
@@ -101,11 +107,17 @@ function App() {
       onWorkspaceRouteChange={setWorkspaceRoute}
       peerHandshake={peerHandshake}
       resolvePeerUserId={resolvePeerUserId}
+      resolvePeerContact={resolvePeerContact}
       signMessage={signMessage}
       signReaction={signReaction}
       getBoundUserId={getBoundUserId}
       authManager={manager}
       onSessionChange={updateSession}
+      friends={friendsApi.friends}
+      isFriend={friendsApi.has}
+      onAddFriend={friendsApi.add}
+      onRemoveFriend={friendsApi.remove}
+      inviteableFriends={emails => friendsApi.inviteable(emails)}
       onLeave={() => {
         // Close the workspace, keep the sign-in: the user lands on the picker
         // and can open another workspace without authenticating again.
