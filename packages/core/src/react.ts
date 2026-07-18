@@ -11,7 +11,12 @@ import type { Env } from './env.js'
 import { classifyJoinError, joinRoomByCode, type Room } from './joinRoom.js'
 import { getSupabaseRoomConfig, resolveRelayUrls } from './relays.js'
 import { resolveSignalingStrategy } from './signaling.js'
-import { createRoomMedia, type RoomMediaController, type RoomMediaState } from './roomMedia.js'
+import {
+  createRoomMedia,
+  type RoomMediaController,
+  type RoomMediaDeviceIds,
+  type RoomMediaState,
+} from './roomMedia.js'
 
 export type RoomErrorKind =
   | 'password-mismatch'
@@ -222,6 +227,8 @@ const IDLE_MEDIA: RoomMediaState = {
   cameraOn: false,
   peerStreams: {},
   mediaError: null,
+  selectedAudioInput: '',
+  selectedVideoInput: '',
 }
 
 /**
@@ -229,27 +236,41 @@ const IDLE_MEDIA: RoomMediaState = {
  * default, opt into mic, upgrade to camera). Returns stable handler
  * references so consumers can wire room.onPeerStream / onPeerLeave and their
  * own "peer ended media" action inside their existing effects.
+ *
+ * `initialDevices` seeds preferred mic/camera deviceIds (e.g. from localStorage).
  */
-export function useRoomMedia(room: Room | null): RoomMediaState & {
+export function useRoomMedia(
+  room: Room | null,
+  initialDevices?: RoomMediaDeviceIds
+): RoomMediaState & {
   enableMic: () => Promise<void>
   disableMic: () => void
   setMicMuted: (muted: boolean) => void
   enableCamera: () => Promise<void>
   disableCamera: () => Promise<void>
+  switchAudioInput: (deviceId: string) => Promise<void>
+  switchVideoInput: (deviceId: string) => Promise<void>
   stopMedia: () => void
   handlePeerStream: (stream: MediaStream, peerId: string) => void
   handlePeerLeave: (peerId: string) => void
   handlePeerMediaEnd: (peerId: string) => void
 } {
-  const [state, setState] = useState<RoomMediaState>(IDLE_MEDIA)
+  const [state, setState] = useState<RoomMediaState>(() => ({
+    ...IDLE_MEDIA,
+    selectedAudioInput: initialDevices?.audioId?.trim() ?? '',
+    selectedVideoInput: initialDevices?.videoId?.trim() ?? '',
+  }))
   const controllerRef = useRef<RoomMediaController | null>(null)
+  // Only seed devices on room join — not when localStorage changes mid-session.
+  const initialDevicesRef = useRef(initialDevices)
+  if (!room) initialDevicesRef.current = initialDevices
 
   useEffect(() => {
     if (!room) {
       setState(IDLE_MEDIA)
       return
     }
-    const controller = createRoomMedia(room, setState)
+    const controller = createRoomMedia(room, setState, initialDevicesRef.current)
     controllerRef.current = controller
     return () => {
       controllerRef.current = null
@@ -264,6 +285,8 @@ export function useRoomMedia(room: Room | null): RoomMediaState & {
     setMicMuted: (muted: boolean) => controllerRef.current?.setMicMuted(muted),
     enableCamera: async () => controllerRef.current?.enableCamera(),
     disableCamera: async () => controllerRef.current?.disableCamera(),
+    switchAudioInput: async (deviceId: string) => controllerRef.current?.switchAudioInput(deviceId),
+    switchVideoInput: async (deviceId: string) => controllerRef.current?.switchVideoInput(deviceId),
     stopMedia: () => controllerRef.current?.stopMedia(),
     handlePeerStream: (stream: MediaStream, peerId: string) =>
       controllerRef.current?.handlePeerStream(stream, peerId),
