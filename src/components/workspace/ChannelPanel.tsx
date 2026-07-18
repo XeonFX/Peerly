@@ -22,6 +22,8 @@ type Props = {
   showFiles: boolean
   /** Opens the off-canvas sidebar; only rendered where the sidebar is hidden. */
   onOpenSidebar?: () => void
+  /** Opens workspace-wide message search. */
+  onOpenSearch: () => void
 }
 
 export function ChannelPanel({
@@ -29,6 +31,7 @@ export function ChannelPanel({
   onToggleFiles,
   showFiles,
   onOpenSidebar,
+  onOpenSearch,
 }: Props) {
   const { tr } = useI18n()
   const { connectionError, connectionNotice, isReady } = useConnectionSlice()
@@ -116,6 +119,15 @@ export function ChannelPanel({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            className="btn btn-ghost btn-sm btn-square"
+            onClick={onOpenSearch}
+            aria-label={tr('Search messages')}
+            title={tr('Search messages')}
+            data-testid="open-search"
+          >
+            <Icon name="search" />
+          </button>
           <button
             className={`btn btn-sm ${inCall || incomingCallPeerId ? 'btn-primary' : 'btn-ghost'}`}
             onClick={inCall ? endCall : startCall}

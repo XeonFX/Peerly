@@ -17,6 +17,8 @@ export type ConnectionSlice = {
 
 export type ChatSlice = {
   messages: Message[]
+  /** Every channel's messages, for workspace-wide search. */
+  messagesByChannel: Record<string, Message[]>
   sharedFiles: SharedFile[]
   transfers: FileTransfer[]
   fileError: string | null
