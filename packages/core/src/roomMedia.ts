@@ -1,4 +1,5 @@
 import type { Room } from './joinRoom.js'
+import { planTrackOps } from './mediaTracks.js'
 
 /**
  * Progressive media over a Trystero room: a client is in the conversation
@@ -7,10 +8,10 @@ import type { Room } from './joinRoom.js'
  * camera+mic up front. Text-first apps get "muted unless you choose otherwise";
  * call-first apps can simply call both enables at start.
  *
- * Derived from Peerly's battle-tested useVideoCall, generalized:
- * - Upgrades/downgrades swap the whole local stream (Peerly's switchDevices
- *   pattern) — remote sides key streams by peerId, so a swap replaces their
- *   tile seamlessly.
+ * Media path notes:
+ * - Prefer track-level replace/add/remove over removeStream+addStream so
+ *   mid-call upgrades do not always renegotiate every m-line (Chrome often
+ *   fails Chrome↔Firefox renegotiation with RTP extension ID collisions).
  * - `disableCamera` STOPS the video track (camera light off) instead of
  *   muting it; `setMicMuted` only flips track.enabled (instant, standard).
  * - Stream ids of media WE dropped go into a stale set: removing a stream
@@ -116,21 +117,70 @@ export function createRoomMedia(
     if (!disposed) onChange(snapshot())
   }
 
-  /** Swap the outgoing stream; peers replace by peerId, so this is seamless. */
+  /**
+   * Publish `next` as the local media. Prefer track-level ops when the room
+   * supports them (Trystero 0.25+) to reduce full SDP renegotiations.
+   */
   const swapLocalStream = (next: MediaStream | null) => {
     const previous = localStream
+    if (next) {
+      next.getAudioTracks().forEach(track => {
+        track.enabled = !micMuted
+      })
+    }
+
+    const canTrackOps =
+      typeof room.replaceTrack === 'function' &&
+      typeof room.addTrack === 'function' &&
+      typeof room.removeTrack === 'function'
+
+    if (canTrackOps && (previous || next)) {
+      const ops = planTrackOps(previous, next)
+      for (const op of ops) {
+        if (op.op === 'replace') {
+          room.replaceTrack(op.oldTrack, op.newTrack)
+          // Old track is no longer sent; stop capture so the device light drops.
+          try {
+            op.oldTrack.stop()
+          } catch {
+            // ignore
+          }
+        } else if (op.op === 'add') {
+          room.addTrack(op.track, op.stream)
+        } else {
+          room.removeTrack(op.track)
+          try {
+            op.track.stop()
+          } catch {
+            // ignore
+          }
+        }
+      }
+      if (previous) staleStreamIds.add(previous.id)
+      // Stop any previous tracks not already handled (safety).
+      if (previous) {
+        for (const track of previous.getTracks()) {
+          if (track.readyState !== 'ended') {
+            try {
+              track.stop()
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+      localStream = next
+      return
+    }
+
+    // Fallback: full stream swap (older room shapes / missing track APIs).
     if (previous) {
       staleStreamIds.add(previous.id)
       room.removeStream(previous)
       stopStream(previous)
     }
     localStream = next
-    if (next) {
-      next.getAudioTracks().forEach(track => {
-        track.enabled = !micMuted
-      })
-      room.addStream(next)
-    }
+    if (next) room.addStream(next)
   }
 
   const acquire = async (video: boolean): Promise<MediaStream | null> => {

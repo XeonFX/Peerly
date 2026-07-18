@@ -8,7 +8,12 @@ export function useLatest<T>(value: T) {
   return ref
 }
 import type { Env } from './env.js'
-import { classifyJoinError, joinRoomByCode, type Room } from './joinRoom.js'
+import {
+  classifyJoinError,
+  isRecoverableJoinError,
+  joinRoomByCode,
+  type Room,
+} from './joinRoom.js'
 import { getSupabaseRoomConfig, resolveRelayUrls } from './relays.js'
 import { resolveSignalingStrategy } from './signaling.js'
 import {
@@ -29,12 +34,19 @@ const DEFAULT_ERROR_TEXT: Record<RoomErrorKind, (raw: string) => string> = {
   'password-mismatch': () =>
     'A peer tried to join with a different room code. If you cannot connect, check that your code matches exactly.',
   'needs-turn': () =>
-    'Found the other peer but could not open a direct connection — one of you is on a network that blocks peer-to-peer (strict NAT or firewall). A TURN server is needed; see VITE_TURN_URLS.',
+    'Found the other peer but could not open a direct connection — one of you is on a network that blocks peer-to-peer (strict NAT or firewall). Check TURN reachability (UDP/TCP, external-ip, credentials).',
   'relay-failed': raw => `Connection failed: ${raw}. Ensure the local relay is running.`,
   'supabase-config': () =>
     'Supabase signaling is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
   generic: raw => `Connection failed: ${raw}. Check your network or try again.`,
 }
+
+/** Max automatic leave+rejoin cycles per room before surfacing the error. */
+const MAX_RECOVERY_ATTEMPTS = 3
+/** Ignore duplicate failure reports within this window (refresh thrash). */
+const RECOVERY_DEBOUNCE_MS = 2_000
+/** Backoff schedule for recovery attempts (ms). */
+const RECOVERY_BACKOFF_MS = [3_000, 8_000, 15_000] as const
 
 export type UseRoomOptions = {
   appId: string
@@ -83,17 +95,21 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
   reportRef.current = report
 
   /**
-   * Self-healing rejoin. A session can wedge so that every ICE attempt to a
-   * peer fails after the SDP exchange — seen after browser restarts, where a
-   * session-restored tab starts signaling before the network/WebRTC stack is
-   * actually ready. The failure then repeats within that join, while a manual
-   * refresh (a clean join) fixes it immediately. So when SDP-exchange failures
-   * repeat and we are connected to nobody, do what the refresh does: leave and
-   * join again. Bounded attempts with backoff; only after they are exhausted
-   * does the user see the TURN advice, which is then likely to be true.
+   * Self-healing rejoin for wedged PeerConnections (handshake timeout, Chrome
+   * RTP extmap collision, post-SDP ICE that never completes after a refresh).
+   *
+   * Important: do NOT rejoin on every single failure — that races the other
+   * peer's ICE and produces "User-Initiated Abort / Close called" storms.
+   * Debounce, require a second failure (except sdp-collision which is fatal to
+   * the current PC), cap attempts, and backoff.
    */
   const [rejoinNonce, setRejoinNonce] = useState(0)
-  const recoveryRef = useRef({ failures: 0, attempts: 0, timer: 0 })
+  const recoveryRef = useRef({
+    failures: 0,
+    attempts: 0,
+    timer: 0,
+    lastFailureAt: 0,
+  })
 
   useEffect(() => {
     if (strategy !== 'ws-relay') return
@@ -126,6 +142,33 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
 
     let cancelled = false
 
+    const scheduleRecovery = (kind: string) => {
+      const recovery = recoveryRef.current
+      const now = Date.now()
+      if (now - recovery.lastFailureAt < RECOVERY_DEBOUNCE_MS) return
+      recovery.lastFailureAt = now
+
+      const connectedPeers = Object.keys(instanceRef.current?.getPeers() ?? {}).length
+      if (connectedPeers > 0) return
+      if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS || recovery.timer !== 0) return
+
+      // sdp-collision: PC is already broken — rejoin after one report.
+      // needs-turn / handshake-timeout: wait for a second signal (blip filter).
+      recovery.failures++
+      const need = kind === 'sdp-collision' ? 1 : 2
+      if (recovery.failures < need) return
+
+      recovery.failures = 0
+      const attemptIndex = recovery.attempts
+      recovery.attempts++
+      const delay =
+        RECOVERY_BACKOFF_MS[Math.min(attemptIndex, RECOVERY_BACKOFF_MS.length - 1)] ?? 15_000
+      recovery.timer = window.setTimeout(() => {
+        recovery.timer = 0
+        setRejoinNonce(nonce => nonce + 1)
+      }, delay)
+    }
+
     const setup = async () => {
       // Wait for any previous room to finish leaving before joining again.
       await teardownRef.current
@@ -144,33 +187,20 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
           const msg = String(details.error ?? 'Connection failed')
           const kind = classifyJoinError(msg)
           if (kind === 'password-mismatch') {
-            // Already talking to someone? Then it's the other peer's password
-            // that's wrong, and this is none of our business.
             const connectedPeers = Object.keys(instanceRef.current?.getPeers() ?? {}).length
             if (connectedPeers === 0) reportRef.current('password-mismatch', msg)
-          } else if (kind === 'needs-turn') {
-            const connectedPeers = Object.keys(instanceRef.current?.getPeers() ?? {}).length
+            return
+          }
+          if (isRecoverableJoinError(kind)) {
+            scheduleRecovery(kind)
+            // Only surface TURN advice after recovery budget is exhausted.
             const recovery = recoveryRef.current
-            if (connectedPeers === 0 && recovery.attempts < 2) {
-              // Nobody reachable and repeated SDP failures: this join may be
-              // wedged — rejoin instead of telling the user to buy a TURN
-              // server. Threshold 2 skips one-off blips; backoff 5s then 15s.
-              recovery.failures++
-              if (recovery.failures >= 2 && recovery.timer === 0) {
-                recovery.failures = 0
-                recovery.attempts++
-                recovery.timer = window.setTimeout(() => {
-                  recovery.timer = 0
-                  setRejoinNonce(nonce => nonce + 1)
-                }, recovery.attempts === 1 ? 5_000 : 15_000)
-              }
-              return
+            if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS && kind === 'needs-turn') {
+              reportRef.current('needs-turn', msg)
             }
-            // Signaling worked and the direct connection still failed: one side
-            // is behind a NAT/firewall that needs a relay. Trystero's own text
-            // tells the *developer* to configure TURN, no help to an end user.
-            reportRef.current('needs-turn', msg)
-          } else if (strategy === 'ws-relay') {
+            return
+          }
+          if (strategy === 'ws-relay') {
             reportRef.current('relay-failed', msg)
           } else {
             reportRef.current('generic', msg)
@@ -184,6 +214,8 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
       }
 
       instanceRef.current = joined
+      // A successful join clears blip counters but keeps attempt budget for the room.
+      recoveryRef.current.failures = 0
       setRoom(joined)
     }
 
@@ -207,6 +239,7 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
     const recovery = recoveryRef.current
     recovery.failures = 0
     recovery.attempts = 0
+    recovery.lastFailureAt = 0
     return () => {
       if (recovery.timer) {
         window.clearTimeout(recovery.timer)
