@@ -192,7 +192,7 @@ Route → panel mapping:
 | Channels | List public channels; add / rename / delete / reorder |
 | Direct messages | List DMs; start DM from peer; close local DM thread |
 | Peers | Online peers with unread badges; start DM |
-| Invite | `InvitePeople` — copy link; creator can add/remove emails on allow-list |
+| Invite | `InvitePeople` — footer popover: copy link; creator can add/remove emails on allow-list |
 | You | Profile entry; leave workspace; theme; build stamp |
 
 Channel mutations (local store + P2P announce):
