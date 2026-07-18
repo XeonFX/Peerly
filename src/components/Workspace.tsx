@@ -33,6 +33,7 @@ import { ReauthBanner } from './ReauthBanner'
 import { StoragePressureBanner } from './BrowserStorageCard'
 import { Sidebar } from './Sidebar'
 import { ChannelPanel } from './workspace/ChannelPanel'
+import { MessageSearch } from './MessageSearch'
 import { ProfilePanel } from './workspace/ProfilePanel'
 import { WorkspaceSettingsPanel } from './workspace/WorkspaceSettingsPanel'
 import { useI18n } from '../i18n'
@@ -109,6 +110,7 @@ function WorkspaceShell({
     retryP2pCapability,
   } = useConnectionSlice()
   const {
+    messagesByChannel,
     sharedFiles,
     transfers,
     unreadByChannel,
@@ -126,8 +128,21 @@ function WorkspaceShell({
   } = useChatSlice()
   const browserStorage = useBrowserStorage(transfers.length > 0)
   const mainRef = useRef<HTMLElement>(null)
-  const { selfId, profile, peers } = useProfileSlice()
+  const { selfId, selfUserId, pastSelfIds, profile, peers } = useProfileSlice()
   const channel = getChannelById(channels, activeChannel)
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Cmd/Ctrl+K opens workspace-wide message search from anywhere.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -292,9 +307,26 @@ function WorkspaceShell({
             onToggleFiles={onToggleFiles}
             showFiles={showFiles}
             onOpenSidebar={() => onSidebarOpenChange(true)}
+            onOpenSearch={() => setSearchOpen(true)}
           />
         )}
       </main>
+
+      <MessageSearch
+        open={searchOpen}
+        channels={channels}
+        messagesByChannel={messagesByChannel}
+        peers={peers}
+        selfProfile={profile}
+        selfId={selfId}
+        selfUserId={selfUserId}
+        pastSelfIds={pastSelfIds}
+        onJump={channelId => {
+          setSearchOpen(false)
+          onChannelSelect(channelId)
+        }}
+        onClose={() => setSearchOpen(false)}
+      />
 
       {activeView === 'channel' && showFiles && (
         <FilesPanel
