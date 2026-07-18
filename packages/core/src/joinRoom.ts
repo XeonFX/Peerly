@@ -2,7 +2,7 @@ import type { PeerHandshake } from '@trystero-p2p/core'
 import type { joinRoom as joinNostrRoom } from '@trystero-p2p/nostr'
 import type { Env } from './env.js'
 import type { SignalingStrategy } from './signaling.js'
-import { getNostrRelayConfig, getSupabaseRoomConfig, getTurnConfig } from './relays.js'
+import { getIceServers, getNostrRelayConfig, getSupabaseRoomConfig } from './relays.js'
 
 export type Room = ReturnType<typeof joinNostrRoom>
 
@@ -65,15 +65,16 @@ export async function joinRoomByCode(options: JoinRoomOptions): Promise<Room> {
   const { strategy, appId, roomId, password, relayUrls, onPeerHandshake, onJoinError } = options
   const env = options.env ?? {}
 
-  const turnConfig = getTurnConfig(env)
+  const iceServers = getIceServers(env)
 
   const baseConfig = {
     ...(password ? { password } : {}),
-    // Passed via `turnConfig` rather than `rtcConfig.iceServers` so Trystero's
-    // default STUN servers are kept; iceServers would replace them.
-    ...(turnConfig ? { turnConfig } : {}),
     rtcConfig: {
       iceCandidatePoolSize: 10,
+      // A lean STUN + TURN list, deliberately replacing Trystero's four default
+      // STUN servers: five-plus ICE servers slow discovery (and Firefox warns).
+      // Left unset when no TURN is configured so Trystero keeps its defaults.
+      ...(iceServers ? { iceServers } : {}),
     },
   }
 
