@@ -13,11 +13,19 @@ function relayScheme(): 'ws' | 'wss' {
   return typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws'
 }
 
-export function buildRelayUrls(port: string): string[] {
-  const host = relayHost()
-  const scheme = relayScheme()
-  const urls = [`${scheme}://${host}:${port}`]
-  if (scheme === 'ws') urls.push(`ws://127.0.0.1:${port}`)
+/**
+ * `VITE_RELAY_HOST` points at a relay that isn't the app's own origin (e.g. a
+ * shared production relay) — it always requires wss and skips the same-machine
+ * `127.0.0.1` fallback, since that fallback only makes sense when the relay
+ * runs alongside the dev server. `VITE_RELAY_TOKEN`, if set, is appended as a
+ * query param for relays that gate connections on it.
+ */
+export function buildRelayUrls(port: string, env: Env = {}): string[] {
+  const host = env.VITE_RELAY_HOST || relayHost()
+  const scheme = env.VITE_RELAY_HOST ? 'wss' : relayScheme()
+  const query = env.VITE_RELAY_TOKEN ? `?token=${encodeURIComponent(env.VITE_RELAY_TOKEN)}` : ''
+  const urls = [`${scheme}://${host}:${port}${query}`]
+  if (!env.VITE_RELAY_HOST && scheme === 'ws') urls.push(`ws://127.0.0.1:${port}${query}`)
   return urls
 }
 
@@ -41,7 +49,7 @@ export async function resolveRelayPort(env: Env): Promise<string> {
 
 export async function resolveRelayUrls(env: Env): Promise<string[]> {
   const port = await resolveRelayPort(env)
-  return buildRelayUrls(port)
+  return buildRelayUrls(port, env)
 }
 
 /**
