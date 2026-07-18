@@ -20,11 +20,14 @@ export {
 } from './relays.js'
 export {
   classifyJoinError,
+  DEFAULT_HANDSHAKE_TIMEOUT_MS,
+  isRecoverableJoinError,
   joinRoomByCode,
   type JoinErrorKind,
   type JoinRoomOptions,
   type Room,
 } from './joinRoom.js'
+export { isReplaceOnlyUpgrade, planTrackOps, type TrackOp } from './mediaTracks.js'
 export { createRelayHealth, type RelayHealth } from './relayHealth.js'
 export { probeNostrRelay, probeNostrRelays, type RelayProbeResult } from './relayProbe.js'
 export { probeP2pCapability, type P2pCapability } from './p2pCapability.js'
