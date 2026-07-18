@@ -200,11 +200,40 @@ leaves the browser.
 | `signTextChat` / `verifyTextChat` / … | Simple text-room signed wires |
 | `createRoomMedia` / `useRoomMedia` | Progressive mic/camera over a room |
 | `primeAttentionAudio` / `playMatchChime` / `formatUnreadTitle` | Tab + sound attention |
+| `createPeopleAttestation` / `loadPeopleList` / `encodeSharedPeopleList` / … | Signed personal lists (`block` / `friend`) with optional email + share codes |
 
 Apps that also need remote OIDC photos (e.g. Google) should layer their own
 host allowlist on top of `isSafeAvatarUrl` — the core helper deliberately
 refuses remote `https://` avatars so a peer cannot force every client to
 phone home to an attacker-controlled URL.
+
+### Signed people lists (block / friend)
+
+```ts
+import {
+  createPeopleAttestation,
+  loadPeopleList,
+  savePeopleList,
+  encodeSharedPeopleList,
+  type DeviceSigner,
+} from '@peerly/core'
+
+// App-owned scheme keeps wire formats stable across products.
+const SCHEME = 'peerly-friend-v1'
+const list = loadPeopleList('my-friends-v1', 'my-friends-subs-v1')
+const entry = await createPeopleAttestation(signer, SCHEME, {
+  kind: 'friend',
+  ownerUserId: me,
+  subjectUserId: them,
+  subjectName: 'Ada',
+  subjectEmail: 'ada@example.com', // optional — Peerly captures this at handshake
+})
+```
+
+HeyHubs uses the same primitive for blocks (and friends without email).
+Invite-to-workspace needs a verified email, which only Peerly's handshake
+exposes — so cross-app “add friend on HeyHubs → invite on Peerly” works only
+when the friend later connects in Peerly and shares email via handshake.
 
 ## What this package is not
 

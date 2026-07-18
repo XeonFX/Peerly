@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import { useI18n } from '../i18n'
 
+type InviteableFriend = {
+  subjectUserId: string
+  subjectName: string
+  subjectEmail?: string
+}
+
 type Props = {
   /** Link granting access to the current allow-list. Anyone may share it. */
   inviteLink: string
@@ -22,6 +28,11 @@ type Props = {
   onRemove?: (email: string) => Promise<void>
   /** The signed-in member's own email — the creator cannot remove themselves. */
   selfEmail?: string
+  /**
+   * Friends with a verified email who are not already on the allow-list.
+   * Creator can invite them in one click (emails captured during handshake).
+   */
+  inviteableFriends?: InviteableFriend[]
 }
 
 /**
@@ -37,6 +48,7 @@ export function InvitePeople({
   onInvite,
   onRemove,
   selfEmail,
+  inviteableFriends = [],
 }: Props) {
   const { tr } = useI18n()
   const [open, setOpen] = useState(false)
@@ -201,6 +213,44 @@ export function InvitePeople({
 
           {canInvite && open && (
             <form className="flex flex-col gap-2" onSubmit={submit}>
+              {inviteableFriends.length > 0 && (
+                <div className="rounded-box border border-base-300/80 bg-base-200/50 px-2.5 py-2">
+                  <p className="mb-1.5 text-xs font-medium text-base-content/70">
+                    {tr('Invite from friends')}
+                  </p>
+                  <ul className="space-y-1" data-testid="invite-from-friends">
+                    {inviteableFriends.map(friend => {
+                      const email = friend.subjectEmail
+                      if (!email) return null
+                      return (
+                        <li key={friend.subjectUserId} className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate text-[0.7rem]">
+                            {friend.subjectName}
+                            <span className="text-base-content/50"> · {email}</span>
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs shrink-0"
+                            data-testid={`invite-friend-${email}`}
+                            disabled={busy}
+                            onClick={() => {
+                              setError(null)
+                              setBusy(true)
+                              void onInvite([email])
+                                .catch(err =>
+                                  setError(err instanceof Error ? err.message : String(err))
+                                )
+                                .finally(() => setBusy(false))
+                            }}
+                          >
+                            {tr('Add')}
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              )}
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-base-content/70">
                   {tr('Emails to invite')}
