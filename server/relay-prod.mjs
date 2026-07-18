@@ -12,25 +12,36 @@ import { createWsRelayServer } from '@trystero-p2p/ws-relay/server'
 // relays.ts, added in 1.2.1).
 //
 // Deploy: copy to /opt/relay/relay-server.mjs on the VPS, `npm install`, run
-// under the peerly-heyhubs-relay systemd unit with PEERLY_RELAY_TOKEN /
-// HEYHUBS_RELAY_TOKEN / RELAY_PORT in the environment.
+// under the peerly-heyhubs-relay systemd unit with RELAY_TOKENS / RELAY_PORT in
+// the environment.
 
-// Maps Host header -> required auth token. Populated from env so each app's
-// token can be rotated independently without touching this file.
-const tokensByHost = {
-  'relay.peerly.cc': process.env.PEERLY_RELAY_TOKEN,
-  'relay.heyhubs.app': process.env.HEYHUBS_RELAY_TOKEN,
+// Which hosts are served, and the token each requires, come entirely from the
+// environment so no deployment topology is baked into source. RELAY_TOKENS is a
+// comma-separated list of `host=token` pairs, e.g.
+//   RELAY_TOKENS="relay.example.com=s3cret,relay.other.app=hunter2"
+function parseTokens(raw) {
+  const map = new Map()
+  for (const entry of (raw || '').split(',')) {
+    const trimmed = entry.trim()
+    if (!trimmed) continue
+    const eq = trimmed.indexOf('=')
+    if (eq < 1) throw new Error(`RELAY_TOKENS entry is not host=token: "${trimmed}"`)
+    const host = trimmed.slice(0, eq).trim()
+    const token = trimmed.slice(eq + 1).trim()
+    if (!host || !token) throw new Error(`RELAY_TOKENS entry has empty host or token: "${trimmed}"`)
+    map.set(host, token)
+  }
+  if (map.size === 0) throw new Error('RELAY_TOKENS is empty — set host=token pairs')
+  return map
 }
 
-for (const [host, token] of Object.entries(tokensByHost)) {
-  if (!token) throw new Error(`missing token env for ${host}`)
-}
+const tokensByHost = parseTokens(process.env.RELAY_TOKENS)
 
 const port = Number(process.env.RELAY_PORT) || 8090
 
 const verifyClient = (info, cb) => {
   const host = (info.req.headers.host || '').split(':')[0]
-  const expected = tokensByHost[host]
+  const expected = tokensByHost.get(host)
   if (!expected) return cb(false, 404, 'unknown host')
 
   const url = new URL(info.req.url, `http://${host}`)
