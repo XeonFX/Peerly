@@ -1,7 +1,7 @@
 {
   "name": "peerly",
   "private": false,
-  "version": "1.4.0",
+  "version": "1.5.1",
   "description": "Serverless P2P team collaboration — verified identity, invite-only workspaces, chat, files, and video via Trystero",
   "license": "MIT",
   "repository": {
