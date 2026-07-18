@@ -1,6 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import { useI18n } from '../i18n'
+
+/**
+ * How the invite section is laid out in the sidebar footer:
+ * - `inline`    — the original always-expanded panel (default; e2e-covered).
+ * - `popover`   — a compact footer button that opens the panel above it.
+ * - `accordion` — a collapsed header row that expands the panel in place.
+ * The last two keep the footer small so the online-members list above keeps
+ * its vertical space on short/narrow windows.
+ */
+export type InviteVariant = 'inline' | 'popover' | 'accordion'
 
 type Props = {
   /** Link granting access to the current allow-list. Anyone may share it. */
@@ -22,15 +32,47 @@ type Props = {
   onRemove?: (email: string) => Promise<void>
   /** The signed-in member's own email — the creator cannot remove themselves. */
   selfEmail?: string
+  /** Footer layout. Defaults to the original inline panel. */
+  variant?: InviteVariant
 }
 
-export function InvitePeople({ inviteLink, invitedEmails, canInvite, onInvite, onRemove, selfEmail }: Props) {
+export function InvitePeople({
+  inviteLink,
+  invitedEmails,
+  canInvite,
+  onInvite,
+  onRemove,
+  selfEmail,
+  variant = 'inline',
+}: Props) {
   const { tr } = useI18n()
   const [open, setOpen] = useState(false)
   const [emails, setEmails] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  /** Popover/accordion expansion (separate from the add-people form's `open`). */
+  const [panelOpen, setPanelOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Popover: close on outside click or Escape.
+  useEffect(() => {
+    if (variant !== 'popover' || !panelOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPanelOpen(false)
+    }
+    const onClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setPanelOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onClick)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onClick)
+    }
+  }, [variant, panelOpen])
 
   const copyLink = async () => {
     try {
@@ -71,67 +113,67 @@ export function InvitePeople({ inviteLink, invitedEmails, canInvite, onInvite, o
     }
   }
 
-  return (
-    <div className="flex flex-col gap-2">
-      {invitedEmails.length > 0 && (
-        <div className="rounded-box border border-base-300/80 bg-base-200/60 px-2.5 py-2">
-          <p className="mb-1.5 text-xs font-medium text-base-content/70">
-            {tr('Invite people')} ({invitedEmails.length})
-          </p>
-          <ul
-            className="max-h-28 space-y-0.5 overflow-y-auto text-[0.7rem] leading-relaxed text-base-content/80"
-            data-testid="invited-members"
-          >
-            {invitedEmails.map(email => (
-              <li
-                key={email}
-                className="group/member flex items-center gap-1"
-                data-testid={`invited-${email}`}
-              >
-                <span className="min-w-0 flex-1 truncate font-mono">{email}</span>
-                {canInvite && onRemove && email.toLowerCase() !== selfEmail?.toLowerCase() && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-xs btn-square shrink-0 text-base-content/30 opacity-0 transition-opacity hover:text-error group-hover/member:opacity-100 focus-visible:opacity-100"
-                    title={tr('Remove from the invite list. Members who receive the update stop admitting them at their next connection.')}
-                    aria-label={tr('Remove {email}', { email })}
-                    data-testid={`remove-member-${email}`}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Remove ${email}? Members who receive the update will stop admitting them when they next connect. Anyone still holding the old list, including ${email}, may still pair until updated.`
-                        )
-                      ) {
-                        void onRemove(email).catch(err =>
-                          setError(err instanceof Error ? err.message : String(err))
-                        )
-                      }
-                    }}
-                  >
-                    ✕
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* This is the primary action in the footer — sharing the link is how
-          anyone else gets in. It previously rendered as unstyled text, which
-          read as disabled. */}
-      <button
-        type="button"
-        className={`btn btn-sm w-full ${copied ? 'btn-success' : 'btn-primary'}`}
-        data-testid="copy-invite"
-        onClick={() => void copyLink()}
-        title={tr('Copy the invite link for people already invited')}
+  const invitedList = invitedEmails.length > 0 && (
+    <div className="rounded-box border border-base-300/80 bg-base-200/60 px-2.5 py-2">
+      <p className="mb-1.5 text-xs font-medium text-base-content/70">
+        {tr('Invite people')} ({invitedEmails.length})
+      </p>
+      <ul
+        className="max-h-28 space-y-0.5 overflow-y-auto text-[0.7rem] leading-relaxed text-base-content/80"
+        data-testid="invited-members"
       >
-        {copied ? <><Icon name="check" size={16} /> {tr('Invite link copied')}</> : tr('Copy invite link')}
-      </button>
+        {invitedEmails.map(email => (
+          <li
+            key={email}
+            className="group/member flex items-center gap-1"
+            data-testid={`invited-${email}`}
+          >
+            <span className="min-w-0 flex-1 truncate font-mono">{email}</span>
+            {canInvite && onRemove && email.toLowerCase() !== selfEmail?.toLowerCase() && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs btn-square shrink-0 text-base-content/30 opacity-0 transition-opacity hover:text-error group-hover/member:opacity-100 focus-visible:opacity-100"
+                title={tr('Remove from the invite list. Members who receive the update stop admitting them at their next connection.')}
+                aria-label={tr('Remove {email}', { email })}
+                data-testid={`remove-member-${email}`}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Remove ${email}? Members who receive the update will stop admitting them when they next connect. Anyone still holding the old list, including ${email}, may still pair until updated.`
+                    )
+                  ) {
+                    void onRemove(email).catch(err =>
+                      setError(err instanceof Error ? err.message : String(err))
+                    )
+                  }
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 
-      {/* Sharing the link is open to everyone — it only admits people already on
-          the signed list. Adding someone new needs the creator's signing key. */}
+  // This is the primary action — sharing the link is how anyone else gets in.
+  const copyButton = (
+    <button
+      type="button"
+      className={`btn btn-sm w-full ${copied ? 'btn-success' : 'btn-primary'}`}
+      data-testid="copy-invite"
+      onClick={() => void copyLink()}
+      title={tr('Copy the invite link for people already invited')}
+    >
+      {copied ? <><Icon name="check" size={16} /> {tr('Invite link copied')}</> : tr('Copy invite link')}
+    </button>
+  )
+
+  // Sharing the link is open to everyone — it only admits people already on the
+  // signed list. Adding someone new needs the creator's signing key.
+  const addSection = (
+    <>
       {canInvite && !open && (
         <button
           type="button"
@@ -195,12 +237,90 @@ export function InvitePeople({ inviteLink, invitedEmails, canInvite, onInvite, o
           {tr('Only the creator can add people, from the device they created the workspace on. Share the link above with anyone already invited.')}
         </p>
       )}
+    </>
+  )
 
-      {error && (
-        <p className="text-[0.68rem] text-error" data-testid="invite-error">
-          {error}
-        </p>
-      )}
+  const errorBlock = error && (
+    <p className="text-[0.68rem] text-error" data-testid="invite-error">
+      {error}
+    </p>
+  )
+
+  if (variant === 'popover') {
+    return (
+      <div className="relative" ref={containerRef}>
+        <button
+          type="button"
+          className="btn btn-outline btn-sm w-full justify-between"
+          data-testid="invite-panel-toggle"
+          aria-expanded={panelOpen}
+          onClick={() => setPanelOpen(value => !value)}
+        >
+          <span className="flex items-center gap-2">
+            <Icon name="plus" size={15} />
+            {tr('Invite people')}
+            {invitedEmails.length > 0 && (
+              <span className="text-base-content/50">({invitedEmails.length})</span>
+            )}
+          </span>
+          <Icon
+            name="chevron-down"
+            size={14}
+            className={`transition-transform ${panelOpen ? '' : 'rotate-180'}`}
+          />
+        </button>
+        {panelOpen && (
+          <div className="absolute bottom-full left-0 right-0 z-50 mb-2 flex max-h-[70vh] flex-col gap-2 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-3 shadow-xl">
+            {invitedList}
+            {copyButton}
+            {addSection}
+            {errorBlock}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (variant === 'accordion') {
+    return (
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          className="flex items-center justify-between rounded-lg px-1 py-1 text-xs font-semibold uppercase tracking-wider text-base-content/60 transition-colors hover:bg-base-content/5"
+          data-testid="invite-panel-toggle"
+          aria-expanded={panelOpen}
+          onClick={() => setPanelOpen(value => !value)}
+        >
+          <span className="flex items-center gap-2">
+            {tr('Invite people')}
+            {invitedEmails.length > 0 && (
+              <span className="text-base-content/40">({invitedEmails.length})</span>
+            )}
+          </span>
+          <Icon
+            name="chevron-down"
+            size={14}
+            className={`transition-transform ${panelOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+        {copyButton}
+        {panelOpen && (
+          <>
+            {invitedList}
+            {addSection}
+          </>
+        )}
+        {errorBlock}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {invitedList}
+      {copyButton}
+      {addSection}
+      {errorBlock}
     </div>
   )
 }
