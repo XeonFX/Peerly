@@ -314,8 +314,9 @@ test.describe('Peerly P2P collaboration', () => {
       guests: 'bob@e2e.test',
     })
 
-    await expect(page.getByTestId('invite-people-toggle')).toBeVisible({ timeout: 15_000 })
-    await page.getByTestId('invite-people-toggle').click()
+    // Invite controls live in a footer popover — open it first.
+    await expect(page.getByTestId('invite-panel-toggle')).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('invite-panel-toggle').click()
     await expect(page.getByTestId('invited-bob@e2e.test')).toBeVisible({ timeout: 15_000 })
 
     // The creator's own row must not offer removal — removing yourself is a
@@ -338,7 +339,8 @@ test.describe('Peerly P2P collaboration', () => {
     })
 
     // This browser created the workspace, so it holds the signing key.
-    await expect(page.getByTestId('invite-people-toggle')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('invite-panel-toggle')).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('invite-panel-toggle').click()
     await page.getByTestId('invite-people-toggle').click()
     await page.getByTestId('invite-emails').fill('bob@e2e.test')
     await page.getByTestId('invite-submit').click()
@@ -353,6 +355,8 @@ test.describe('Peerly P2P collaboration', () => {
     // Joins via the fixed E2E invite, whose creator key no test device holds.
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
 
+    await expect(page.getByTestId('invite-panel-toggle')).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('invite-panel-toggle').click()
     await expect(page.getByTestId('invite-creator-only')).toBeVisible()
     await expect(page.getByTestId('invite-people-toggle')).not.toBeVisible()
     // Sharing the existing link is still open to everyone.

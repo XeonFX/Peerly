@@ -3,7 +3,7 @@ import { appBuildLabel, WORKSPACE_COLOR } from '../config'
 import type { Channel, ConnectionStatus, P2pCapability, Peer, UserProfile } from '../types'
 import { Avatar } from './Avatar'
 import { ConnectionStatus as ConnectionStatusLabel } from './ConnectionStatus'
-import { InvitePeople, type InviteVariant } from './InvitePeople'
+import { InvitePeople } from './InvitePeople'
 import { ThemeToggle } from './ThemeToggle'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
 import { Icon } from './Icon'
@@ -45,21 +45,6 @@ type Props = {
   onWorkspaceSettings: () => void
   onLeave: () => void
   unreadByChannel: Record<string, number>
-}
-
-const INVITE_VARIANTS: InviteVariant[] = ['inline', 'popover', 'accordion']
-
-/**
- * Temporary compare switch for the invite-footer layouts. Reads `?invite=` (so a
- * link can pin a variant) then a persisted choice, defaulting to the original
- * inline panel. Remove this and the switcher once a variant is chosen.
- */
-function readInviteVariant(): InviteVariant {
-  const fromUrl = new URLSearchParams(window.location.search).get('invite')
-  if (fromUrl && (INVITE_VARIANTS as string[]).includes(fromUrl)) return fromUrl as InviteVariant
-  const stored = localStorage.getItem('peerly-invite-ui')
-  if (stored && (INVITE_VARIANTS as string[]).includes(stored)) return stored as InviteVariant
-  return 'inline'
 }
 
 function ChannelButton({
@@ -147,16 +132,6 @@ export function Sidebar({
   const relayDiagnostics = useRelayDiagnostics()
   const [showAddChannel, setShowAddChannel] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
-  const [inviteVariant, setInviteVariant] = useState<InviteVariant>(readInviteVariant)
-
-  const chooseInviteVariant = (variant: InviteVariant) => {
-    setInviteVariant(variant)
-    try {
-      localStorage.setItem('peerly-invite-ui', variant)
-    } catch {
-      // private mode / storage disabled — the choice just won't persist
-    }
-  }
 
   const publicChannels = channels.filter(channel => channel.kind !== 'dm')
   const dmChannels = channels.filter(channel => channel.kind === 'dm')
@@ -402,27 +377,6 @@ export function Sidebar({
       </div>
 
       <div className="mt-auto shrink-0 space-y-2 border-t border-base-300/70 p-3">
-        {/* Temporary: compare the invite-footer layouts. Pick one, then remove
-            this switcher and the `variant` plumbing. */}
-        <div
-          className="flex items-center gap-1 text-[0.6rem] uppercase tracking-wider text-base-content/40"
-          data-testid="invite-variant-switch"
-        >
-          <span className="shrink-0">{tr('Invite UI')}</span>
-          <div className="join">
-            {INVITE_VARIANTS.map(variant => (
-              <button
-                key={variant}
-                type="button"
-                className={`btn btn-xs join-item ${inviteVariant === variant ? 'btn-active btn-primary' : 'btn-ghost'}`}
-                onClick={() => chooseInviteVariant(variant)}
-              >
-                {variant}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {inviteLink && (
           <InvitePeople
             inviteLink={inviteLink}
@@ -431,7 +385,6 @@ export function Sidebar({
             selfEmail={selfEmail}
             canInvite={canInvite}
             onInvite={onInvite}
-            variant={inviteVariant}
           />
         )}
 
