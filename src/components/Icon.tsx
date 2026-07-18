@@ -7,6 +7,7 @@ export type IconName =
   | 'arrow-up'
   | 'broom'
   | 'check'
+  | 'chevron-down'
   | 'download'
   | 'file'
   | 'file-text'
@@ -56,6 +57,8 @@ export function Icon({ name, size = 18, className = '', ...props }: Props) {
         return <><path d="m15 4 5 5"/><path d="M13.5 5.5 5 14l5 5 8.5-8.5"/><path d="M5 14 3 20l7-1"/></>
       case 'check':
         return <path d="m5 12 4 4L19 6"/>
+      case 'chevron-down':
+        return <path d="m6 9 6 6 6-6"/>
       case 'download':
         return <><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></>
       case 'file':

@@ -376,7 +376,7 @@ export function Sidebar({
         </ul>
       </div>
 
-      <div className="mt-auto space-y-2 border-t border-base-300/70 p-3">
+      <div className="mt-auto shrink-0 space-y-2 border-t border-base-300/70 p-3">
         {inviteLink && (
           <InvitePeople
             inviteLink={inviteLink}
