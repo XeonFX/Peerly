@@ -131,10 +131,8 @@ export type TurnServer = {
  * cases and the connection then fails after the SDP exchange, which looks like
  * "it just doesn't work" to the user.
  *
- * Trystero always includes its default STUN servers and concatenates `turnConfig`
- * onto them, so setting this doesn't lose STUN. There is no default here on
- * purpose: TURN relays real bandwidth, so it has to be infrastructure you chose.
- * Traffic through TURN stays end-to-end encrypted.
+ * There is no default here on purpose: TURN relays real bandwidth, so it has to
+ * be infrastructure you chose. Traffic through TURN stays end-to-end encrypted.
  */
 export function getTurnConfig(env: Env): TurnServer[] | undefined {
   const raw = env.VITE_TURN_URLS
@@ -153,6 +151,31 @@ export function getTurnConfig(env: Env): TurnServer[] | undefined {
       credential: env.VITE_TURN_CREDENTIAL || undefined,
     },
   ]
+}
+
+/**
+ * One reliable public STUN server kept alongside our own TURN. A TURN server
+ * answers STUN too, so this is really just a fallback for discovering the
+ * reflexive address if our server is unreachable — one is plenty.
+ */
+const FALLBACK_STUN_URL = 'stun:stun.l.google.com:19302'
+
+/**
+ * The full ICE server list to hand Trystero via `rtcConfig.iceServers`.
+ *
+ * Trystero otherwise ships four default STUN servers and appends `turnConfig`,
+ * which lands us at five servers — Firefox warns at five-plus and each extra
+ * server adds a gathering round-trip that slows connection setup. When we have
+ * our own TURN (which also serves STUN), we don't need four public STUN servers
+ * on top, so we replace the whole list with a lean STUN + TURN pair.
+ *
+ * Returns `undefined` when no TURN is configured, so Trystero keeps its own
+ * defaults rather than being left with a single public STUN.
+ */
+export function getIceServers(env: Env): TurnServer[] | undefined {
+  const turn = getTurnConfig(env)
+  if (!turn) return undefined
+  return [{ urls: [FALLBACK_STUN_URL] }, ...turn]
 }
 
 export function getSupabaseRoomConfig(env: Env):

@@ -10,6 +10,7 @@ export {
 export {
   buildRelayUrls,
   DEFAULT_NOSTR_RELAYS,
+  getIceServers,
   getNostrRelayConfig,
   getSupabaseRoomConfig,
   getTurnConfig,
