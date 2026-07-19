@@ -15,8 +15,8 @@ describe('identityExpiryPhase', () => {
     expect(identityExpiryPhase(T, T + 1)).toBe('expired')
   })
 
-  it('treats an unknown expiry as ok — no token, nothing to warn about', () => {
-    expect(identityExpiryPhase(null, T)).toBe('ok')
+  it('treats a missing token as expired — sessions outlive tokens now', () => {
+    expect(identityExpiryPhase(null, T)).toBe('expired')
   })
 })
 

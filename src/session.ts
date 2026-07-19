@@ -36,13 +36,33 @@ const PERSIST_KEY = 'peerly-session'
 /**
  * Who is signed in, kept independently of which workspace is open so that
  * leaving a workspace does not sign the user out — they land on the picker and
- * open another one. Session-scoped: the token is a credential, and a new tab
- * should re-authenticate.
+ * open another one.
+ *
+ * Split storage, deliberately:
+ * - The raw ID TOKEN stays session-scoped (sessionStorage): it is a bearer
+ *   credential, and a new tab / restart should not resurrect it.
+ * - The identity METADATA (email, provider, durable userId) is not a
+ *   credential — it only drives what the UI offers (your workspaces, whose
+ *   name, which provider to re-auth with). It lives in localStorage so a
+ *   restart still knows who you are; peers never trust it (they verify the
+ *   token itself in the handshake).
  */
 const ID_TOKEN_KEY = 'peerly-id-token'
 const ID_USER_ID_KEY = 'peerly-id-user-id'
 const ID_PROVIDER_KEY = 'peerly-id-provider'
 const ID_EMAIL_KEY = 'peerly-id-email'
+
+/** Read identity metadata from localStorage, migrating any pre-split value. */
+function readIdentityValue(key: string): string | null {
+  const durable = localStorage.getItem(key)
+  if (durable !== null) return durable
+  const legacy = sessionStorage.getItem(key)
+  if (legacy !== null) {
+    localStorage.setItem(key, legacy)
+    sessionStorage.removeItem(key)
+  }
+  return legacy
+}
 
 type StoredSession = Partial<PersistedSession> & {
   avatar?: string
@@ -104,10 +124,10 @@ export function idTokenExpiryMs(token: string): number | null {
 }
 
 /**
- * ID tokens live about an hour. Without this, reloading after a break shows a
- * signed-in UI, lets the user "join", and then every peer handshake fails on an
- * expired token — which reads as "the app is broken", not "sign in again".
- * Treat an expired token as no token so the UI asks for sign-in up front.
+ * ID tokens live about an hour. An expired token is treated as no token, but
+ * ONLY the token is dropped — the identity metadata (who you are) survives so
+ * the workspace stays open and the ReauthBanner can offer a one-click renewal
+ * with the same account, instead of dumping the user back to the join screen.
  */
 export function loadIdToken(): string | null {
   const token = sessionStorage.getItem(ID_TOKEN_KEY)
@@ -115,14 +135,19 @@ export function loadIdToken(): string | null {
 
   const expiresAt = idTokenExpiryMs(token)
   if (expiresAt !== null && expiresAt <= Date.now()) {
-    clearIdCredentials()
+    clearIdToken()
     return null
   }
   return token
 }
 
+/** Drop only the bearer token; identity metadata (email/provider/id) stays. */
+export function clearIdToken(): void {
+  sessionStorage.removeItem(ID_TOKEN_KEY)
+}
+
 export function loadIdentityProvider(): IdentityProviderId | null {
-  const stored = sessionStorage.getItem(ID_PROVIDER_KEY)
+  const stored = readIdentityValue(ID_PROVIDER_KEY)
   if (
     stored === 'google' ||
     stored === 'microsoft' ||
@@ -143,7 +168,7 @@ export function loadIdentityProvider(): IdentityProviderId | null {
  * here changes nothing except that the user gets rejected at the handshake.
  */
 export function loadIdentityEmail(): string | null {
-  return sessionStorage.getItem(ID_EMAIL_KEY)
+  return readIdentityValue(ID_EMAIL_KEY)
 }
 
 export function saveIdCredentials(
@@ -153,24 +178,26 @@ export function saveIdCredentials(
   userId?: string
 ): void {
   sessionStorage.setItem(ID_TOKEN_KEY, token)
-  sessionStorage.setItem(ID_PROVIDER_KEY, providerId)
-  sessionStorage.setItem(ID_EMAIL_KEY, email)
+  localStorage.setItem(ID_PROVIDER_KEY, providerId)
+  localStorage.setItem(ID_EMAIL_KEY, email)
   if (userId) {
-    sessionStorage.setItem(ID_USER_ID_KEY, userId)
+    localStorage.setItem(ID_USER_ID_KEY, userId)
   } else {
-    sessionStorage.removeItem(ID_USER_ID_KEY)
+    localStorage.removeItem(ID_USER_ID_KEY)
   }
 }
 
 export function loadIdentityUserId(): string | null {
-  return sessionStorage.getItem(ID_USER_ID_KEY)
+  return readIdentityValue(ID_USER_ID_KEY)
 }
 
+/** Full sign-out: token AND identity metadata, from both storages. */
 export function clearIdCredentials(): void {
   sessionStorage.removeItem(ID_TOKEN_KEY)
-  sessionStorage.removeItem(ID_USER_ID_KEY)
-  sessionStorage.removeItem(ID_PROVIDER_KEY)
-  sessionStorage.removeItem(ID_EMAIL_KEY)
+  for (const key of [ID_USER_ID_KEY, ID_PROVIDER_KEY, ID_EMAIL_KEY]) {
+    sessionStorage.removeItem(key)
+    localStorage.removeItem(key)
+  }
 }
 
 /**
@@ -181,11 +208,17 @@ export function clearActiveWorkspace(): void {
   localStorage.removeItem(PERSIST_KEY)
 }
 
+/**
+ * The open workspace, independent of ID-token freshness. Tokens live ~1h; the
+ * workspace session must not — everything needed to come back (workspace
+ * secret, allow-list, profile) is durable, message signing uses the device
+ * key, and only NEW peer handshakes need a live token. A reload past token
+ * expiry therefore lands back in the workspace with the ReauthBanner showing
+ * (missing token ⇒ 'expired' phase), instead of a full logout that read as
+ * "the app forgot me".
+ */
 export function loadSession(): Session | null {
-  const persisted = loadPersistedSession()
-  if (!persisted) return null
-  if (!loadIdToken()) return null
-  return persisted
+  return loadPersistedSession()
 }
 
 export function saveSession(session: Session): void {
@@ -193,9 +226,15 @@ export function saveSession(session: Session): void {
   localStorage.setItem(PERSIST_KEY, JSON.stringify(persisted))
 }
 
-/** Leave workspace but keep profile for next join. */
+/**
+ * Full logout: drop identity and the open workspace. (Display profile and the
+ * remembered-workspaces picker live in their own stores and survive.) Entry is
+ * no longer gated on credentials — loadSession returns any persisted workspace
+ * — so leaving must clear the workspace itself, not just the identity.
+ */
 export function leaveWorkspace(): void {
   clearIdCredentials()
+  clearActiveWorkspace()
 }
 
 /** Full reset — profile and workspace. */

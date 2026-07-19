@@ -11,8 +11,6 @@ import { rememberWorkspace, snapshotWorkspace } from './collab/workspaceStore'
 import {
   clearActiveWorkspace,
   hydrateSessionAvatar,
-  leaveWorkspace,
-  loadPersistedSession,
   loadIdToken,
   loadSession,
   migrateLegacySession,
@@ -46,25 +44,21 @@ function App() {
   useEffect(() => {
     void (async () => {
       await migrateLegacySession()
-      let loaded = loadSession()
-      if (!loaded) {
-        const persisted = loadPersistedSession()
-        if (persisted && !loadIdToken() && isE2eAuthBypass()) {
-          const manager = new WorkspaceAuthManager({
-            workspaceId: persisted.workspaceId,
-            creatorKeyId: persisted.creatorKeyId,
-            allowList: persisted.allowList,
-          })
-          await manager.signInWithE2eEmail(persisted.identityEmail)
-          const token = manager.getIdToken()
-          if (token) {
-            saveIdCredentials(token, persisted.identityProvider, persisted.identityEmail)
-            const next = { ...persisted }
-            saveSession(next)
-            loaded = next
-          }
-        } else if (persisted && !loadIdToken()) {
-          leaveWorkspace()
+      // A session without a live token is still a session: the user lands back
+      // in their workspace and the ReauthBanner ('expired' phase) handles
+      // getting a fresh token for new handshakes. E2E keeps its silent mint.
+      const loaded = loadSession()
+      if (loaded && !loadIdToken() && isE2eAuthBypass()) {
+        const manager = new WorkspaceAuthManager({
+          workspaceId: loaded.workspaceId,
+          creatorKeyId: loaded.creatorKeyId,
+          allowList: loaded.allowList,
+        })
+        await manager.signInWithE2eEmail(loaded.identityEmail)
+        const token = manager.getIdToken()
+        if (token) {
+          saveIdCredentials(token, loaded.identityProvider, loaded.identityEmail)
+          saveSession(loaded)
         }
       }
       if (loaded) {
