@@ -23,3 +23,20 @@ export function isSafeAvatarUrl(avatar: string | undefined): boolean {
 export function safeAvatarUrl(avatar: string | undefined): string | undefined {
   return isSafeAvatarUrl(avatar) ? avatar : undefined
 }
+
+/**
+ * OIDC Google profile photo hosts (https only). Used when importing a provider
+ * picture into the local avatar store — not for peer-supplied img src.
+ */
+export function isAllowedGoogleAvatarUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === 'https:' &&
+      (parsed.hostname === 'lh3.googleusercontent.com' ||
+        parsed.hostname.endsWith('.googleusercontent.com'))
+    )
+  } catch {
+    return false
+  }
+}

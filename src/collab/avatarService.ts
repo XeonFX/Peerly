@@ -1,19 +1,12 @@
-import { processAvatarBlob, processAvatarImage } from '@peerly/core'
+import {
+  isAllowedGoogleAvatarUrl,
+  processAvatarBlob,
+  processAvatarImage,
+} from '@peerly/core'
 import { loadStoredProfile, saveStoredProfile } from './profileStore'
 import { deleteAvatar, loadAvatarDataUrl, saveAvatar } from '../utils/avatarStore'
 
-function isAllowedOidcAvatarUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    return (
-      parsed.protocol === 'https:' &&
-      (parsed.hostname === 'lh3.googleusercontent.com' ||
-        parsed.hostname.endsWith('.googleusercontent.com'))
-    )
-  } catch {
-    return false
-  }
-}
+const isAllowedOidcAvatarUrl = isAllowedGoogleAvatarUrl
 
 export async function uploadAvatar(
   file: File,

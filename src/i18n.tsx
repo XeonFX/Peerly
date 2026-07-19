@@ -152,6 +152,7 @@ const plByEnglish: Record<string, string> = {
   Video: 'Wideo',
   Speakers: 'Głośniki',
   Default: 'Domyślne',
+  Speaking: 'Mówi',
   'Invite link copied': 'Skopiowano link zaproszenia',
   'Copy invite link': 'Kopiuj link zaproszenia',
   'Invite people': 'Zaproś osoby',

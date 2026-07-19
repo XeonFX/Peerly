@@ -23,6 +23,7 @@ import {
   type RoomMediaState,
 } from './roomMedia.js'
 import { probeP2pCapability, type P2pCapability } from './p2pCapability.js'
+import { createSpeakingDetector, type SpeakingDetector } from './speaking.js'
 
 export type RoomErrorKind =
   | 'password-mismatch'
@@ -360,4 +361,55 @@ export function useP2pCapability() {
   }, [attempt])
 
   return { capability, retry }
+}
+
+/**
+ * Track which of several live streams are currently speaking. Keyed by an
+ * app-chosen id (peerId, or 'self' for the local stream).
+ */
+export function useSpeakingStreams(
+  streams: Record<string, MediaStream | null | undefined>
+): Record<string, boolean> {
+  const [speaking, setSpeaking] = useState<Record<string, boolean>>({})
+  const detectorsRef = useRef(
+    new Map<string, { stream: MediaStream; detector: SpeakingDetector }>()
+  )
+
+  useEffect(() => {
+    const detectors = detectorsRef.current
+    const wanted = new Set<string>()
+
+    for (const [id, stream] of Object.entries(streams)) {
+      if (!stream) continue
+      wanted.add(id)
+      const existing = detectors.get(id)
+      if (existing && existing.stream === stream) continue
+      existing?.detector.stop()
+      const detector = createSpeakingDetector(stream, isSpeaking => {
+        setSpeaking(prev => (prev[id] === isSpeaking ? prev : { ...prev, [id]: isSpeaking }))
+      })
+      detectors.set(id, { stream, detector })
+    }
+
+    for (const [id, entry] of detectors) {
+      if (wanted.has(id)) continue
+      entry.detector.stop()
+      detectors.delete(id)
+      setSpeaking(prev => {
+        if (!(id in prev)) return prev
+        const { [id]: _gone, ...rest } = prev
+        return rest
+      })
+    }
+  }, [streams])
+
+  useEffect(
+    () => () => {
+      for (const entry of detectorsRef.current.values()) entry.detector.stop()
+      detectorsRef.current.clear()
+    },
+    []
+  )
+
+  return speaking
 }

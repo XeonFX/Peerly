@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSpeakingStreams } from '@peerly/core/react'
 import type { Peer } from '../types'
 import { getPeerColor } from '../config'
 import { safeColor } from '../utils/profileSanitize'
@@ -44,12 +45,14 @@ function VideoTile({
   muted = false,
   color,
   audioOutputId,
+  speaking = false,
 }: {
   stream: MediaStream
   label: string
   muted?: boolean
   color?: string
   audioOutputId: string
+  speaking?: boolean
 }) {
   const { tr } = useI18n()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -141,7 +144,12 @@ function VideoTile({
   const hidden = flagged && !revealed
 
   return (
-    <div className="relative aspect-video overflow-hidden rounded-lg bg-base-300">
+    <div
+      className={`relative aspect-video overflow-hidden rounded-lg bg-base-300 ring-2 transition ${
+        speaking ? 'ring-success' : 'ring-transparent'
+      }`}
+      data-speaking={speaking ? 'true' : 'false'}
+    >
       {hasVideo ? (
         <video
           ref={videoRef}
@@ -166,6 +174,7 @@ function VideoTile({
       <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[0.65rem] text-white">
         {label}
         {muted ? ` (${tr('you')})` : ''}
+        {speaking ? ` · ${tr('Speaking')}` : ''}
       </span>
       {hidden && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/55 p-3 text-center text-white">
@@ -217,6 +226,13 @@ export function VideoCall({
     (!isAudioOnly && videoInputs.length > 0) ||
     (outputSupported && audioOutputs.length > 0)
 
+  const speakingStreams = useMemo(() => {
+    const map: Record<string, MediaStream | null> = { self: localStream }
+    for (const [id, stream] of Object.entries(peerStreams)) map[id] = stream
+    return map
+  }, [localStream, peerStreams])
+  const speaking = useSpeakingStreams(speakingStreams)
+
   return (
     <div className="video-call-overlay shrink-0 border-b border-base-300/70 bg-base-200/60 p-3 backdrop-blur">
       <div className="mb-2 flex items-center justify-between">
@@ -236,6 +252,7 @@ export function VideoCall({
             muted
             color="#36c5f0"
             audioOutputId={selectedAudioOutput}
+            speaking={!!speaking.self}
           />
         )}
         {Object.entries(peerStreams).map(([peerId, stream]) => (
@@ -245,6 +262,7 @@ export function VideoCall({
             label={peerNames[peerId] || peerId.slice(0, 8)}
             color={getPeerColor(peerId)}
             audioOutputId={selectedAudioOutput}
+            speaking={!!speaking[peerId]}
           />
         ))}
       </div>
