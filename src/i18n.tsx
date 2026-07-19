@@ -385,6 +385,19 @@ const plByEnglish: Record<string, string> = {
   'Your friends': 'Twoi znajomi',
   'No friends yet.': 'Brak znajomych.',
   'Remove friend': 'Usuń znajomego',
+  // Global DMs (home)
+  Offline: 'Offline',
+  'In chat': 'Na czacie',
+  'Online on Peerly': 'Online w Peerly',
+  'Close chat': 'Zamknij czat',
+  'No messages yet. Say hello — they will get a ring if they are online.':
+    'Brak wiadomości. Przywitaj się — dostaną sygnał, jeśli są online.',
+  'Message…': 'Wiadomość…',
+  'sent you a message.': 'wysłał(-a) Ci wiadomość.',
+  'wants to chat.': 'chce porozmawiać.',
+  Open: 'Otwórz',
+  'Message a friend from the list. They need to be signed in to Peerly to get a ring and join the private chat.':
+    'Napisz do znajomego z listy. Muszą być zalogowani w Peerly, by dostać sygnał i dołączyć do prywatnego czatu.',
 }
 
 function interpolate(text: string, values?: Record<string, string | number>): string {
