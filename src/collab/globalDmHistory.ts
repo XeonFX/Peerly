@@ -1,12 +1,14 @@
-import type { TextChatWire } from '@peerly/core'
+import { DEFAULT_HISTORY_CAP, type TextChatWire } from '@peerly/core'
 
 /**
  * Device-local history for global friend DMs, keyed by dm room code.
  * No server queue — offline peers only get history from a peer who still holds it.
+ *
+ * Cap matches @peerly/core DEFAULT_HISTORY_CAP (same as HeyHubs DM history).
  */
 
 const STORAGE_PREFIX = 'peerly-gdm-hist-v1-'
-export const GLOBAL_DM_HISTORY_CAP = 500
+export const GLOBAL_DM_HISTORY_CAP = DEFAULT_HISTORY_CAP
 
 export type GlobalDmMessage = TextChatWire & {
   /** Durable OIDC user id of the author when known. */

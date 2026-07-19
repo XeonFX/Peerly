@@ -1,11 +1,9 @@
 /**
  * Local sensitive-media screen.
  *
- * TensorFlow, NSFWJS, and the MobileNetV2 weights are loaded only when visual
- * media first needs checking. A single promise queue prevents several file or
- * live-video tiles from running inference concurrently and fighting for the
- * main thread/GPU. Frames never leave the device and sampled video frames are
- * not persisted.
+ * TensorFlow, NSFWJS, and MobileNetV2 load lazily. Inference uses a small
+ * concurrency pool (aligned with HeyHubs) so multi-tile calls stay responsive
+ * without unbounded GPU load. Frames never leave the device.
  */
 
 type VisualSource = HTMLImageElement | HTMLCanvasElement | HTMLVideoElement
@@ -14,7 +12,11 @@ type Classifier = {
 }
 
 let classifierPromise: Promise<Classifier> | null = null
-let inferenceQueue: Promise<unknown> = Promise.resolve()
+
+/** Same pool limit as HeyHubs — serial was too slow for multi-tile calls. */
+const MAX_CONCURRENT_INFERENCES = 3
+let activeInferences = 0
+const inferenceWaiters: Array<() => void> = []
 
 function loadClassifier(): Promise<Classifier> {
   classifierPromise ??= (async () => {
@@ -36,22 +38,46 @@ export function shouldFlagNsfw(predictions: NsfwPrediction[]): boolean {
   return explicit >= 0.55 || suggestive >= 0.85
 }
 
-function enqueue<T>(job: () => Promise<T>): Promise<T> {
-  const next = inferenceQueue.then(job, job)
-  inferenceQueue = next.catch(() => undefined)
-  return next
+async function enqueue<T>(job: () => Promise<T>): Promise<T> {
+  if (activeInferences >= MAX_CONCURRENT_INFERENCES) {
+    await new Promise<void>(resolve => inferenceWaiters.push(resolve))
+  }
+  activeInferences++
+  try {
+    return await job()
+  } finally {
+    activeInferences--
+    inferenceWaiters.shift()?.()
+  }
 }
+
+/** One canvas per element, reused across scan ticks (HeyHubs). */
+const canvasCache = new WeakMap<VisualSource, HTMLCanvasElement>()
 
 function canvasFrom(source: VisualSource): HTMLCanvasElement | null {
   const width =
-    source instanceof HTMLVideoElement ? source.videoWidth : source instanceof HTMLImageElement ? source.naturalWidth : source.width
+    source instanceof HTMLVideoElement
+      ? source.videoWidth
+      : source instanceof HTMLImageElement
+        ? source.naturalWidth
+        : source.width
   const height =
-    source instanceof HTMLVideoElement ? source.videoHeight : source instanceof HTMLImageElement ? source.naturalHeight : source.height
+    source instanceof HTMLVideoElement
+      ? source.videoHeight
+      : source instanceof HTMLImageElement
+        ? source.naturalHeight
+        : source.height
   if (!width || !height) return null
   const scale = Math.min(1, 224 / Math.max(width, height))
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(width * scale))
-  canvas.height = Math.max(1, Math.round(height * scale))
+  const targetWidth = Math.max(1, Math.round(width * scale))
+  const targetHeight = Math.max(1, Math.round(height * scale))
+  let canvas = canvasCache.get(source)
+  if (!canvas) {
+    canvas = document.createElement('canvas')
+    canvasCache.set(source, canvas)
+  }
+  if (canvas.width !== targetWidth) canvas.width = targetWidth
+  if (canvas.height !== targetHeight) canvas.height = targetHeight
   const context = canvas.getContext('2d')
   if (!context) return null
   context.drawImage(source, 0, 0, canvas.width, canvas.height)

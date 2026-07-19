@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  createPresenceIndex,
+  PRESENCE_INTERVAL_MS,
+  type PresencePayload,
+} from '@peerly/core'
 import { useLatest, useRoom } from '@peerly/core/react'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
 import {
@@ -11,7 +16,6 @@ import {
   verifyFriendInviteResponse,
   type FriendInvitePayload,
   type FriendInviteResponsePayload,
-  type PresencePayload,
 } from '../collab/friendInvite'
 import {
   loadIncomingInvites,
@@ -33,9 +37,6 @@ import {
 import { LOBBY_APP_ID, LOBBY_ROOM_ID } from '../collab/mesh'
 import { addFriend, isFriend, loadFriends } from '../collab/friendsStore'
 
-/** Lobby presence cadence / TTL — same ballpark as HeyHubs. */
-const PRESENCE_INTERVAL_MS = 12_000
-const PRESENCE_TTL_MS = 35_000
 /** Re-send undelivered (or re-deliver) invites while the peer stays online. */
 const INVITE_RETRY_MS = 8_000
 
@@ -78,13 +79,7 @@ export function usePresenceLobby({
   const [lobbyError, setLobbyError] = useState<string | null>(null)
   const [presenceVersion, setPresenceVersion] = useState(0)
 
-  const presenceByPeerRef = useRef(
-    new Map<string, PresencePayload & { seenAt: number }>()
-  )
-  /** emailHash → peerId for directed invite delivery. */
-  const peerByEmailHashRef = useRef(new Map<string, string>())
-  /** userId → peerId for directed responses. */
-  const peerByUserIdRef = useRef(new Map<string, string>())
+  const presenceIndexRef = useRef(createPresenceIndex())
   const connectedPeersRef = useRef(0)
   const myEmailHashRef = useRef<string>('')
 
@@ -122,9 +117,7 @@ export function usePresenceLobby({
       return
     }
 
-    const presenceByPeer = presenceByPeerRef.current
-    const peerByEmailHash = peerByEmailHashRef.current
-    const peerByUserId = peerByUserIdRef.current
+    const presence = presenceIndexRef.current
 
     const presenceAction = room.makeAction<PresencePayload>('pres')
     const inviteAction = room.makeAction<FriendInvitePayload>('finv')
@@ -146,38 +139,23 @@ export function usePresenceLobby({
     const recordPresence = (peerId: string, parsed: PresencePayload) => {
       const me = profileRef.current
       if (me && parsed.userId === me.userId) return
-      const prev = peerByUserId.get(parsed.userId)
-      if (prev && prev !== peerId) {
-        presenceByPeer.delete(prev)
-      }
-      presenceByPeer.set(peerId, { ...parsed, seenAt: Date.now() })
-      peerByUserId.set(parsed.userId, peerId)
-      peerByEmailHash.set(parsed.emailHash, peerId)
+      if (!parsed.emailHash) return
+      presence.record(peerId, {
+        userId: parsed.userId,
+        name: parsed.name,
+        emailHash: parsed.emailHash,
+      })
       setPresenceVersion(v => v + 1)
     }
 
     const dropPeer = (peerId: string) => {
-      const entry = presenceByPeer.get(peerId)
-      if (!entry) return
-      presenceByPeer.delete(peerId)
-      if (peerByUserId.get(entry.userId) === peerId) {
-        peerByUserId.delete(entry.userId)
-      }
-      if (peerByEmailHash.get(entry.emailHash) === peerId) {
-        peerByEmailHash.delete(entry.emailHash)
-      }
+      if (!presence.get(peerId)) return
+      presence.drop(peerId)
       setPresenceVersion(v => v + 1)
     }
 
     const prunePresence = () => {
-      const now = Date.now()
-      let changed = false
-      for (const [peerId, entry] of presenceByPeer) {
-        if (now - entry.seenAt <= PRESENCE_TTL_MS) continue
-        dropPeer(peerId)
-        changed = true
-      }
-      if (changed) setPresenceVersion(v => v + 1)
+      if (presence.prune()) setPresenceVersion(v => v + 1)
     }
 
     const deliverPendingInvites = () => {
@@ -185,7 +163,7 @@ export function usePresenceLobby({
       setOutgoing(prev => {
         let changed = false
         const next = prev.map(item => {
-          const peerId = peerByEmailHash.get(item.toEmailHash)
+          const peerId = presence.peerIdForEmailHash(item.toEmailHash)
           if (!peerId) return item
           if (item.lastSentAt && now - item.lastSentAt < INVITE_RETRY_MS) return item
           void inviteAction.send(item.payload, { target: peerId })
@@ -340,9 +318,7 @@ export function usePresenceLobby({
       room.onPeerJoin = null
       room.onPeerLeave = null
       sendersRef.current = null
-      presenceByPeer.clear()
-      peerByEmailHash.clear()
-      peerByUserId.clear()
+      presence.clear()
       connectedPeersRef.current = 0
       setOnlineCount(0)
     }
@@ -390,9 +366,8 @@ export function usePresenceLobby({
         }
         setOutgoing(prev => upsertOutgoingInvite(prev, entry))
 
-        const peerId = peerByEmailHashRef.current.get(payload.toEmailHash)
+        const peerId = presenceIndexRef.current.peerIdForEmailHash(payload.toEmailHash)
         if (peerId && sendersRef.current) {
-          // peerByEmailHashRef is live; inviteByEmail runs outside the effect.
           sendersRef.current.invite(payload, peerId)
           setOutgoing(prev => {
             const next = prev.map(i =>
@@ -427,7 +402,7 @@ export function usePresenceLobby({
           fromEmail: me.email,
           toUserId: entry.fromUserId,
         })
-        const peerId = peerByUserIdRef.current.get(entry.fromUserId)
+        const peerId = presenceIndexRef.current.peerIdForUserId(entry.fromUserId)
         if (peerId && sendersRef.current) {
           sendersRef.current.inviteResp(resp, peerId)
         }
@@ -466,7 +441,7 @@ export function usePresenceLobby({
           fromEmail: me.email,
           toUserId: entry.fromUserId,
         })
-        const peerId = peerByUserIdRef.current.get(entry.fromUserId)
+        const peerId = presenceIndexRef.current.peerIdForUserId(entry.fromUserId)
         if (peerId && sendersRef.current) {
           sendersRef.current.inviteResp(resp, peerId)
         }
@@ -487,11 +462,7 @@ export function usePresenceLobby({
   const isUserOnline = useCallback(
     (userId: string | undefined) => {
       void presenceVersion
-      if (!userId) return false
-      const peerId = peerByUserIdRef.current.get(userId)
-      if (!peerId) return false
-      const entry = presenceByPeerRef.current.get(peerId)
-      return !!entry && Date.now() - entry.seenAt <= PRESENCE_TTL_MS
+      return presenceIndexRef.current.isUserOnline(userId)
     },
     [presenceVersion]
   )
@@ -506,7 +477,7 @@ export function usePresenceLobby({
       const senders = sendersRef.current
       if (!me || !senders || !toUserId || toUserId === me.userId) return false
       if (!isFriend(loadFriends(), toUserId)) return false
-      const peerId = peerByUserIdRef.current.get(toUserId)
+      const peerId = presenceIndexRef.current.peerIdForUserId(toUserId)
       if (!peerId) return false
       const payload: DmRingPayload = {
         toUserId,

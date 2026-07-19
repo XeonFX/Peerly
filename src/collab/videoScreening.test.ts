@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { videoScreeningDelay } from './videoScreening'
+import { VIDEO_SCREEN_INTERVAL_MS, videoScreeningDelay } from './videoScreening'
 
 describe('videoScreeningDelay', () => {
-  it('backs off from active screening to settled-call intervals', () => {
-    expect(videoScreeningDelay(0)).toBe(3_000)
-    expect(videoScreeningDelay(4)).toBe(3_000)
-    expect(videoScreeningDelay(5)).toBe(10_000)
-    expect(videoScreeningDelay(9)).toBe(10_000)
-    expect(videoScreeningDelay(10)).toBe(30_000)
-    expect(videoScreeningDelay(100)).toBe(30_000)
+  it('starts at HeyHubs-aligned base interval then backs off', () => {
+    expect(VIDEO_SCREEN_INTERVAL_MS).toBe(400)
+    expect(videoScreeningDelay(0)).toBe(400)
+    expect(videoScreeningDelay(4)).toBe(400)
+    expect(videoScreeningDelay(5)).toBe(2_000)
+    expect(videoScreeningDelay(14)).toBe(2_000)
+    expect(videoScreeningDelay(15)).toBe(8_000)
+    expect(videoScreeningDelay(30)).toBe(20_000)
   })
 })

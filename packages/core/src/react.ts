@@ -1,5 +1,5 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /** Keeps a ref synced with the latest value — avoids stale closures in long-lived subscriptions. */
 export function useLatest<T>(value: T) {
@@ -22,6 +22,7 @@ import {
   type RoomMediaDeviceIds,
   type RoomMediaState,
 } from './roomMedia.js'
+import { probeP2pCapability, type P2pCapability } from './p2pCapability.js'
 
 export type RoomErrorKind =
   | 'password-mismatch'
@@ -328,4 +329,35 @@ export function useRoomMedia(
   }).current
 
   return { ...state, ...call }
+}
+
+const CHECKING_CAPABILITY: P2pCapability = {
+  status: 'checking',
+  detail: 'Testing whether this browser allows WebRTC data channels…',
+}
+
+/**
+ * Browser WebRTC self-test (same probe both apps use). Retry bumps attempt
+ * so the effect re-runs.
+ */
+export function useP2pCapability() {
+  const [capability, setCapability] = useState<P2pCapability>(CHECKING_CAPABILITY)
+  const [attempt, setAttempt] = useState(0)
+
+  const retry = useCallback(() => {
+    setCapability(CHECKING_CAPABILITY)
+    setAttempt(value => value + 1)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void probeP2pCapability().then(result => {
+      if (!cancelled) setCapability(result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [attempt])
+
+  return { capability, retry }
 }
