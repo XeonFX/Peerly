@@ -103,12 +103,11 @@ export type CallMediaMode = 'audio' | 'video'
 
 /**
  * When joining an incoming stream, match the caller's media: if they have a
- * live video track join as video, otherwise as audio-only.
+ * non-ended video track join as video, otherwise as audio-only.
+ * (`MediaStreamTrack.readyState` is only `"live" | "ended"` in the lib.)
  */
 export function inferJoinMode(stream: MediaStream | null | undefined): CallMediaMode {
   if (!stream) return 'video'
-  const hasVideo = stream.getVideoTracks().some(
-    track => track.readyState === 'live' || track.readyState === 'new'
-  )
+  const hasVideo = stream.getVideoTracks().some(track => track.readyState !== 'ended')
   return hasVideo ? 'video' : 'audio'
 }

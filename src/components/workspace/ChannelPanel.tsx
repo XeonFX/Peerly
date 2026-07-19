@@ -76,9 +76,7 @@ export function ChannelPanel({
   const incomingIsAudio =
     !!incomingCallPeerId &&
     !!peerStreams[incomingCallPeerId] &&
-    !peerStreams[incomingCallPeerId]!.getVideoTracks().some(
-      track => track.readyState === 'live' || track.readyState === 'new'
-    )
+    !peerStreams[incomingCallPeerId]!.getVideoTracks().some(track => track.readyState !== 'ended')
 
   useEffect(() => {
     if (!soundsEnabled || !incomingCallPeerId || inCall) return

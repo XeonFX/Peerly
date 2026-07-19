@@ -76,6 +76,14 @@ describe('inferJoinMode', () => {
     expect(inferJoinMode(stream)).toBe('audio')
   })
 
+  it('returns audio when video tracks are already ended', () => {
+    const stream = {
+      getVideoTracks: () => [{ readyState: 'ended' }],
+      getAudioTracks: () => [{ readyState: 'live' }],
+    } as unknown as MediaStream
+    expect(inferJoinMode(stream)).toBe('audio')
+  })
+
   it('returns video when stream has a live video track', () => {
     const stream = {
       getVideoTracks: () => [{ readyState: 'live' }],
