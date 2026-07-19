@@ -358,6 +358,27 @@ const plByEnglish: Record<string, string> = {
   'We use only essential local storage — no tracking, no ads. By using Peerly you accept our':
     'Używamy wyłącznie niezbędnej pamięci lokalnej — bez śledzenia i reklam. Korzystając z Peerly, akceptujesz nasz',
   'By signing in you agree to our': 'Logując się, akceptujesz nasz',
+  // Friends + presence lobby
+  Friends: 'Znajomi',
+  '{count} online': '{count} online',
+  'People reachable on the friend lobby right now (including you)':
+    'Osoby dostępne na lobby znajomych w tej chwili (w tym Ty)',
+  'Invite by email. If they are signed in to Peerly with that address, they get the invite over the presence lobby — there is no email mailbox.':
+    'Zaproś e-mailem. Jeśli są zalogowani w Peerly na ten adres, dostaną zaproszenie przez lobby obecności — nie ma skrzynki e-mail.',
+  'friend@example.com': 'znajomy@example.com',
+  'Sending…': 'Wysyłanie…',
+  Invite: 'Zaproś',
+  'Invite queued — they will see it when they are online on Peerly.':
+    'Zaproszenie w kolejce — zobaczą je, gdy będą online w Peerly.',
+  'Incoming invites': 'Przychodzące zaproszenia',
+  Decline: 'Odrzuć',
+  'Pending invites': 'Oczekujące zaproszenia',
+  Delivered: 'Dostarczono',
+  'Waiting online…': 'Czeka na online…',
+  'Cancel invite': 'Anuluj zaproszenie',
+  'Your friends': 'Twoi znajomi',
+  'No friends yet.': 'Brak znajomych.',
+  'Remove friend': 'Usuń znajomego',
 }
 
 function interpolate(text: string, values?: Record<string, string | number>): string {

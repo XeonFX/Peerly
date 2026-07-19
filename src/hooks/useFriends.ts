@@ -59,7 +59,13 @@ export function useFriends(identity: DeviceIdentity | null, ownerUserId: string 
     [version]
   )
 
-  return { friends, add, remove, has, inviteable }
+  /** Re-read localStorage (e.g. after a presence-lobby accept on another code path). */
+  const reload = useCallback(() => {
+    listRef.current = loadFriends()
+    setVersion(v => v + 1)
+  }, [])
+
+  return { friends, add, remove, has, inviteable, reload }
 }
 
 export type { Friend }
