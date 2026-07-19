@@ -10,7 +10,10 @@ export type WorkspaceRoute =
   | { screen: 'workspace'; view: 'profile' }
   | { screen: 'workspace'; view: 'settings' }
 
-export type AppRoute = PickerRoute | WorkspaceRoute
+/** Public legal pages, reachable regardless of session/workspace state. */
+export type LegalRoute = { screen: 'legal'; doc: 'privacy' | 'terms' }
+
+export type AppRoute = PickerRoute | WorkspaceRoute | LegalRoute
 
 const PARSE_BASE = 'http://peerly.local'
 
@@ -24,6 +27,9 @@ export function defaultWorkspaceRoute(): WorkspaceRoute {
 }
 
 export function pathForRoute(route: AppRoute): string {
+  if (route.screen === 'legal') {
+    return `/${route.doc}`
+  }
   if (route.screen === 'picker') {
     return route.tab === 'create' ? '/create' : '/join'
   }
@@ -43,6 +49,12 @@ export function pathForRoute(route: AppRoute): string {
 function parsePathRoute(pathname: string, search: string): AppRoute | null {
   const path = pathname.replace(/\/+$/, '') || '/'
 
+  if (path === '/privacy') {
+    return { screen: 'legal', doc: 'privacy' }
+  }
+  if (path === '/terms') {
+    return { screen: 'legal', doc: 'terms' }
+  }
   if (path === '/' || path === '/create') {
     return { screen: 'picker', tab: 'create' }
   }
@@ -100,6 +112,9 @@ export function hasInviteHash(hash = typeof window !== 'undefined' ? window.loca
 export function resolveInitialRoute(hasWorkspaceSession: boolean): AppRoute {
   const fromUrl = typeof window !== 'undefined' ? routeFromLocation(window.location) : null
   const inviteInHash = typeof window !== 'undefined' && hasInviteHash(window.location.hash)
+  if (fromUrl?.screen === 'legal') {
+    return fromUrl
+  }
   if (fromUrl?.screen === 'workspace') {
     return fromUrl
   }
