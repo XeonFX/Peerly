@@ -346,6 +346,17 @@ const plByEnglish: Record<string, string> = {
   'Enter at least one email address': 'Wpisz co najmniej jeden adres e-mail',
   'Not an email address: {email}': 'To nie jest adres e-mail: {email}',
   'Test P2P again': 'Sprawdź P2P ponownie',
+  // Legal / consent
+  Back: 'Wróć',
+  Privacy: 'Prywatność',
+  Terms: 'Regulamin',
+  'Privacy Policy': 'Polityka prywatności',
+  'Report abuse': 'Zgłoś nadużycie',
+  Accept: 'Akceptuję',
+  and: 'oraz',
+  'We use only essential local storage — no tracking, no ads. By using Peerly you accept our':
+    'Używamy wyłącznie niezbędnej pamięci lokalnej — bez śledzenia i reklam. Korzystając z Peerly, akceptujesz nasz',
+  'By signing in you agree to our': 'Logując się, akceptujesz nasz',
 }
 
 function interpolate(text: string, values?: Record<string, string | number>): string {

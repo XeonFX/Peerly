@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { isE2eAuthBypass } from './collab/e2eAuth'
 import { DeviceIdentity } from './collab/deviceIdentity'
 import { WorkspaceAuthManager } from './collab/workspaceAuth'
+import { ConsentBanner } from './components/ConsentBanner'
 import { JoinScreen } from './components/JoinScreen'
+import { LegalPage } from './legal/LegalPage'
 import { Workspace } from './components/Workspace'
+import { acceptCurrentLegal, hasAcceptedCurrentLegal } from './consent'
+import { defaultWorkspaceRoute } from './routing'
 import { useAppRouting } from './hooks/useAppRouting'
 import { useFriends } from './hooks/useFriends'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
@@ -22,8 +26,13 @@ import {
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [ready, setReady] = useState(false)
-  const { pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
+  const { route, navigate, pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
     useAppRouting(Boolean(session), ready)
+  const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedCurrentLegal())
+  const acceptLegal = () => {
+    acceptCurrentLegal()
+    setLegalAccepted(true)
+  }
 
   const deviceIdentity = useMemo(() => new DeviceIdentity(), [])
   const friendsApi = useFriends(deviceIdentity, session?.identityUserId)
@@ -77,24 +86,40 @@ function App() {
     })
   }
 
-  if (!ready) {
-    return null
-  }
-
-  if (!session) {
+  // Public legal pages render regardless of session/hydration state.
+  if (route.screen === 'legal') {
     return (
-      <JoinScreen
-        pickerTab={pickerTab}
-        onPickerTabChange={setPickerTab}
-        onJoined={async next => {
-          setSession(await hydrateSessionAvatar(next))
-          enterWorkspace()
-        }}
+      <LegalPage
+        doc={route.doc}
+        onBack={() => navigate(session ? defaultWorkspaceRoute() : { screen: 'picker', tab: 'create' })}
       />
     )
   }
 
+  if (!ready) {
+    return null
+  }
+
+  const consentBanner = legalAccepted ? null : <ConsentBanner onAccept={acceptLegal} />
+
+  if (!session) {
+    return (
+      <>
+        <JoinScreen
+          pickerTab={pickerTab}
+          onPickerTabChange={setPickerTab}
+          onJoined={async next => {
+            setSession(await hydrateSessionAvatar(next))
+            enterWorkspace()
+          }}
+        />
+        {consentBanner}
+      </>
+    )
+  }
+
   return (
+    <>
     <Workspace
       session={session}
       workspaceRoute={workspaceRoute}
@@ -120,6 +145,8 @@ function App() {
         leaveToPicker()
       }}
     />
+    {consentBanner}
+    </>
   )
 }
 
