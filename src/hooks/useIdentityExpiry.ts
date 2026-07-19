@@ -16,17 +16,21 @@ export function useIdentityExpiry(): {
   expiresAtMs: number | null
   refresh: () => void
 } {
-  const [expiresAtMs, setExpiresAtMs] = useState<number | null>(() => {
+  // null = NO token (⇒ 'expired': sessions outlive tokens, re-auth needed).
+  // Infinity = token present but exp unreadable (opaque issuer) — never nag;
+  // the peer handshake still enforces the real expiry.
+  const readExpiry = () => {
     const token = loadIdToken()
-    return token ? idTokenExpiryMs(token) : null
-  })
+    if (!token) return null
+    return idTokenExpiryMs(token) ?? Infinity
+  }
+  const [expiresAtMs, setExpiresAtMs] = useState<number | null>(readExpiry)
   const [phase, setPhase] = useState<IdentityExpiryPhase>(() =>
     identityExpiryPhase(expiresAtMs, Date.now())
   )
 
   const refresh = useCallback(() => {
-    const token = loadIdToken()
-    setExpiresAtMs(token ? idTokenExpiryMs(token) : null)
+    setExpiresAtMs(readExpiry())
   }, [])
 
   useEffect(() => {

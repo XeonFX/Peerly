@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createSessionFromInvite,
   leaveWorkspace,
+  loadIdentityEmail,
   loadIdentityProvider,
   loadIdToken,
   loadPersistedSession,
@@ -56,27 +57,20 @@ afterEach(() => {
 })
 
 describe('session persistence', () => {
-  it('leaveWorkspace keeps profile but clears id credentials', () => {
+  it('leaveWorkspace is a full logout: identity and open workspace both drop', () => {
     const session = createSessionFromInvite(TEST_INVITE, 'alice@example.com', 'google')
     saveSession(session)
     saveIdCredentials('token-1', 'google', 'alice@example.com')
 
     leaveWorkspace()
 
+    // Sessions no longer gate on credentials, so leaving must clear the
+    // workspace itself — otherwise loadSession would walk right back in.
     expect(loadSession()).toBeNull()
-    expect(loadPersistedSession()).toEqual({
-      workspaceId: TEST_INVITE.workspaceId,
-      workspaceName: TEST_INVITE.workspaceName,
-      creatorKeyId: TEST_INVITE.creatorKeyId,
-      allowList: TEST_INVITE.allowList,
-      identityEmail: 'alice@example.com',
-      identityProvider: 'google',
-      userName: 'alice',
-      color: expect.any(String),
-      avatarId: undefined,
-    })
+    expect(loadPersistedSession()).toBeNull()
     expect(sessionStorage.getItem(ID_TOKEN_KEY)).toBeNull()
-    expect(localStorage.getItem(PERSIST_KEY)).not.toBeNull()
+    expect(loadIdentityEmail()).toBeNull()
+    expect(localStorage.getItem(PERSIST_KEY)).toBeNull()
   })
 
   it('createSessionFromInvite reuses saved profile on rejoin', () => {
@@ -131,12 +125,14 @@ describe('stored ID token expiry', () => {
   // ID tokens last ~1h. A stale one made the UI claim "signed in", then every
   // peer rejected the handshake on an expired token — which reads as a broken
   // app rather than "sign in again".
-  it('treats an expired token as no token, and clears it', () => {
+  it('treats an expired token as no token, but keeps identity metadata', () => {
     saveIdCredentials(tokenExpiringAt(nowSec() - 60), 'google', 'alice@example.com')
 
     expect(loadIdToken()).toBeNull()
-    // Cleared, so the stale provider does not linger either.
-    expect(loadIdentityProvider()).toBeNull()
+    // Metadata survives: the ReauthBanner needs the provider/email to offer a
+    // one-click renewal with the same account.
+    expect(loadIdentityProvider()).toBe('google')
+    expect(loadIdentityEmail()).toBe('alice@example.com')
   })
 
   it('keeps a token that is still valid', () => {
@@ -146,11 +142,15 @@ describe('stored ID token expiry', () => {
     expect(loadIdToken()).toBe(token)
   })
 
-  it('does not restore a session when the token has expired', () => {
+  it('restores the session even when the token has expired', () => {
+    // The workspace outlives the ~1h token: the user lands back inside and the
+    // ReauthBanner ('expired' phase) handles getting a fresh token — instead
+    // of a reload past expiry reading as a full logout.
     saveSession(createSessionFromInvite(TEST_INVITE, 'alice@example.com', 'google'))
     saveIdCredentials(tokenExpiringAt(nowSec() - 1), 'google', 'alice@example.com')
 
-    expect(loadSession()).toBeNull()
+    expect(loadSession()?.workspaceId).toBe(TEST_INVITE.workspaceId)
+    expect(loadIdToken()).toBeNull()
   })
 
   it('keeps an opaque token without an exp rather than locking the user out', () => {

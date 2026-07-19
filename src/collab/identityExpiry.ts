@@ -17,7 +17,9 @@ export function identityExpiryPhase(
   expiresAtMs: number | null,
   nowMs: number
 ): IdentityExpiryPhase {
-  if (expiresAtMs === null) return 'ok'
+  // No token at all (fresh tab / reload after expiry): sessions now outlive
+  // tokens, so inside a workspace "no token" means "needs re-auth", not "ok".
+  if (expiresAtMs === null) return 'expired'
   if (nowMs >= expiresAtMs) return 'expired'
   if (nowMs >= expiresAtMs - EXPIRY_WARN_MS) return 'expiring'
   return 'ok'
@@ -25,7 +27,8 @@ export function identityExpiryPhase(
 
 /** Delay until the phase can next change, or null when it never will. */
 export function msUntilPhaseChange(expiresAtMs: number | null, nowMs: number): number | null {
-  if (expiresAtMs === null) return null
+  // null (no token) and Infinity (unreadable exp) never change phase on time.
+  if (expiresAtMs === null || !Number.isFinite(expiresAtMs)) return null
   const boundary = nowMs < expiresAtMs - EXPIRY_WARN_MS ? expiresAtMs - EXPIRY_WARN_MS : expiresAtMs
   if (nowMs >= expiresAtMs) return null
   // Never fire early on timer drift: clamp to at least a second.
