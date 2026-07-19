@@ -190,3 +190,22 @@ export {
   type SpeakingDetector,
   type SpeakingDetectorOptions,
 } from './speaking.js'
+export {
+  applyNsfwScanResult,
+  canvasFromVisualSource,
+  CONSECUTIVE_CLEAN_TO_CLEAR,
+  CONSECUTIVE_FLAGS_REQUIRED,
+  createInferencePool,
+  INITIAL_NSFW_SCAN_STATE,
+  NSFW_CANVAS_MAX_EDGE,
+  NSFW_EXPLICIT_THRESHOLD,
+  NSFW_MAX_CONCURRENT_INFERENCES,
+  NSFW_SUGGESTIVE_THRESHOLD,
+  shouldFlagNsfw,
+  VIDEO_SCREEN_INTERVAL_MS,
+  videoScreeningDelay,
+  type InferencePool,
+  type NsfwPrediction,
+  type NsfwScreenScanState,
+  type VisualSource,
+} from './nsfwPolicy.js'
