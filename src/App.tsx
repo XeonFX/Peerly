@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isE2eAuthBypass } from './collab/e2eAuth'
 import { DeviceIdentity } from './collab/deviceIdentity'
+import { loadStoredProfile } from './collab/profileStore'
 import { WorkspaceAuthManager } from './collab/workspaceAuth'
 import { ConsentBanner } from './components/ConsentBanner'
+import { FriendsPanel } from './components/FriendsPanel'
 import { JoinScreen } from './components/JoinScreen'
 import { LegalPage } from './legal/LegalPage'
 import { Workspace } from './components/Workspace'
@@ -11,6 +13,7 @@ import { acceptCurrentLegal, hasAcceptedCurrentLegal } from './consent'
 import { defaultWorkspaceRoute } from './routing'
 import { useAppRouting } from './hooks/useAppRouting'
 import { useFriends } from './hooks/useFriends'
+import { usePresenceLobby } from './hooks/usePresenceLobby'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
 import { enterStoredWorkspace } from './collab/enterWorkspace'
 import {
@@ -23,6 +26,7 @@ import {
   clearActiveWorkspace,
   hydrateSessionAvatar,
   loadIdentityEmail,
+  loadIdentityUserId,
   loadIdToken,
   loadSession,
   loadSignedInIdentity,
@@ -44,7 +48,28 @@ function App() {
   }
 
   const deviceIdentity = useMemo(() => new DeviceIdentity(), [])
-  const friendsApi = useFriends(deviceIdentity, session?.identityUserId)
+  // Friends outlive the open workspace — use durable identity userId on home too.
+  const ownerUserId = session?.identityUserId ?? loadIdentityUserId() ?? undefined
+  const friendsApi = useFriends(deviceIdentity, ownerUserId)
+
+  const lobbyProfile = useMemo(() => {
+    const email = session?.identityEmail ?? loadIdentityEmail()
+    const userId = session?.identityUserId ?? loadIdentityUserId()
+    if (!email || !userId) return null
+    const stored = loadStoredProfile()
+    const name =
+      session?.userName ??
+      stored.userName ??
+      email.split('@')[0] ??
+      userId.slice(0, 12)
+    return { userId, name, email }
+  }, [session?.identityEmail, session?.identityUserId, session?.userName])
+
+  const presence = usePresenceLobby({
+    identity: lobbyProfile ? deviceIdentity : null,
+    profile: lobbyProfile,
+    onFriendsChanged: friendsApi.reload,
+  })
 
   const { manager, peerHandshake, resolvePeerUserId, resolvePeerContact, signMessage, signReaction, getBoundUserId } =
     useWorkspaceAuth(session, allowList => {
@@ -182,6 +207,21 @@ function App() {
         setSession(await hydrateSessionAvatar(next))
         enterWorkspace()
       }}
+      friendsPanel={
+        lobbyProfile ? (
+          <FriendsPanel
+            friends={friendsApi.friends}
+            outgoing={presence.outgoing}
+            incoming={presence.incoming}
+            onlineCount={presence.onlineCount}
+            onInvite={presence.inviteByEmail}
+            onAccept={presence.acceptInvite}
+            onDecline={presence.declineInvite}
+            onCancelOutgoing={presence.cancelOutgoing}
+            onRemoveFriend={friendsApi.remove}
+          />
+        ) : undefined
+      }
     />
   )
 

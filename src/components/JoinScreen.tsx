@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { isEmailAllowed } from '../collab/allowList'
 import { APP_NAME, appBuildLabel } from '../config'
 import {
@@ -59,6 +59,8 @@ type Props = {
   pickerTab: 'create' | 'join'
   onPickerTabChange: (tab: 'create' | 'join') => void
   onJoined: (session: Session) => void
+  /** Friends + email-invite panel (wired from App presence lobby). */
+  friendsPanel?: ReactNode
 }
 
 type Mode = 'create' | 'join'
@@ -77,7 +79,7 @@ function restoreSignedInIdentity(): SignedInIdentity | null {
   return { email, token, providerId, userId: loadIdentityUserId() ?? undefined }
 }
 
-export function JoinScreen({ pickerTab, onPickerTabChange, onJoined }: Props) {
+export function JoinScreen({ pickerTab, onPickerTabChange, onJoined, friendsPanel }: Props) {
   const { tr } = useI18n()
   const browserStorage = useBrowserStorage()
   const { capability: p2pCapability } = useP2pCapability()
@@ -389,6 +391,8 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined }: Props) {
 
         {/* Who you are, first — it decides which workspaces appear below. */}
         {identitySection}
+
+        {friendsPanel}
 
         <BrowserStorageCard
           estimate={browserStorage.estimate}
