@@ -38,6 +38,7 @@ export function ChannelPanel({
   const { messages, transfers, sendMessage, editMessage, deleteMessage, toggleReaction, sendFiles, requestFile, markFileNsfw, syncProgress, fileError, soundsEnabled } = useChatSlice()
   const {
     inCall,
+    callMode,
     incomingCallPeerId,
     localStream,
     peerStreams,
@@ -46,17 +47,22 @@ export function ChannelPanel({
     screenSharing,
     audioInputs,
     videoInputs,
+    audioOutputs,
     selectedAudioInput,
     selectedVideoInput,
+    selectedAudioOutput,
     mediaError,
     startCall,
+    joinCall,
     declineCall,
     endCall,
     toggleVideo,
     toggleAudio,
+    enableCamera,
     startScreenShare,
     stopScreenShare,
     switchDevices,
+    setAudioOutput,
   } = useMediaSlice()
   const { selfId, selfUserId, pastSelfIds, profile, peers } = useProfileSlice()
   const dmPeer = channel.kind === 'dm' ? peers.find(peer => peer.id === channel.peerId) : undefined
@@ -67,6 +73,10 @@ export function ChannelPanel({
   // the conversation banner for errors that add specific recovery context
   // (TURN, password mismatch, local relay configuration, etc.).
   const visibleConnectionError = connectionError === RELAY_OFFLINE_ERROR ? null : connectionError
+  const incomingIsAudio =
+    !!incomingCallPeerId &&
+    !!peerStreams[incomingCallPeerId] &&
+    !peerStreams[incomingCallPeerId]!.getVideoTracks().some(track => track.readyState !== 'ended')
 
   useEffect(() => {
     if (!soundsEnabled || !incomingCallPeerId || inCall) return
@@ -128,15 +138,49 @@ export function ChannelPanel({
           >
             <Icon name="search" />
           </button>
+          {!inCall && (
+            <button
+              className={`btn btn-sm btn-square ${incomingCallPeerId && incomingIsAudio ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => void (incomingCallPeerId ? joinCall() : startCall('audio'))}
+              data-testid="audio-call-button"
+              title={tr(
+                incomingCallPeerId
+                  ? 'Join incoming call'
+                  : 'Start audio call'
+              )}
+              aria-label={tr(
+                incomingCallPeerId
+                  ? 'Join incoming call'
+                  : 'Start audio call'
+              )}
+            >
+              <Icon name="mic" />
+            </button>
+          )}
           <button
-            className={`btn btn-sm ${inCall || incomingCallPeerId ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={inCall ? endCall : startCall}
+            className={`btn btn-sm ${inCall || (incomingCallPeerId && !incomingIsAudio) ? 'btn-primary' : 'btn-ghost'} ${inCall ? '' : 'btn-square sm:btn-sm'}`}
+            onClick={() =>
+              inCall ? endCall() : void (incomingCallPeerId ? joinCall() : startCall('video'))
+            }
             data-testid="video-call-button"
-            aria-label={tr(inCall ? 'End call' : incomingCallPeerId ? 'Join incoming call' : 'Start video call')}
+            title={tr(
+              inCall
+                ? 'End call'
+                : incomingCallPeerId
+                  ? 'Join incoming call'
+                  : 'Start video call'
+            )}
+            aria-label={tr(
+              inCall
+                ? 'End call'
+                : incomingCallPeerId
+                  ? 'Join incoming call'
+                  : 'Start video call'
+            )}
           >
             <Icon name={inCall ? 'phone-off' : 'video'} />
             <span className="hidden sm:inline">
-              {tr(inCall ? 'In call' : incomingCallPeerId ? 'Join call' : 'Start video call')}
+              {tr(inCall ? 'In call' : incomingCallPeerId ? 'Join call' : 'Video')}
             </span>
           </button>
           <button
@@ -194,11 +238,12 @@ export function ChannelPanel({
           aria-live="assertive"
           data-testid="incoming-call-banner"
         >
-          <Icon name="video" className="text-primary" />
+          <Icon name={incomingIsAudio ? 'mic' : 'video'} className="text-primary" />
           <span className="min-w-0 flex-1">
-            <strong>{incomingPeer?.name ?? tr('A teammate')}</strong> {tr('started a video call.')}
+            <strong>{incomingPeer?.name ?? tr('A teammate')}</strong>{' '}
+            {tr(incomingIsAudio ? 'started an audio call.' : 'started a video call.')}
           </span>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => void startCall()}>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => void joinCall()}>
             {tr('Join')}
           </button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={declineCall}>
@@ -209,6 +254,7 @@ export function ChannelPanel({
 
       {inCall && (
         <VideoCall
+          callMode={callMode}
           localStream={localStream}
           peerStreams={peerStreams}
           peers={peers}
@@ -218,13 +264,17 @@ export function ChannelPanel({
           screenSharing={screenSharing}
           audioInputs={audioInputs}
           videoInputs={videoInputs}
+          audioOutputs={audioOutputs}
           selectedAudioInput={selectedAudioInput}
           selectedVideoInput={selectedVideoInput}
+          selectedAudioOutput={selectedAudioOutput}
           onToggleVideo={toggleVideo}
           onToggleAudio={toggleAudio}
+          onEnableCamera={enableCamera}
           onStartScreenShare={startScreenShare}
           onStopScreenShare={stopScreenShare}
           onSwitchDevices={switchDevices}
+          onSetAudioOutput={setAudioOutput}
           onEnd={endCall}
         />
       )}
