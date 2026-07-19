@@ -30,7 +30,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('audio output preference', () => {
+describe('audio output preference (Peerly keys)', () => {
   it('persists preferred sink id', () => {
     savePreferredAudioOutput('sink-1')
     expect(loadPreferredAudioOutput()).toBe('sink-1')
@@ -38,11 +38,7 @@ describe('audio output preference', () => {
     expect(loadPreferredAudioOutput()).toBe('')
   })
 
-  it('detects setSinkId support as a boolean', () => {
-    expect(typeof audioOutputSelectionSupported()).toBe('boolean')
-  })
-
-  it('applies setSinkId when available', async () => {
+  it('applies preferred sink via core helper', async () => {
     const setSinkId = vi.fn(async () => {})
     vi.stubGlobal('HTMLMediaElement', {
       prototype: { setSinkId: async () => {} },
@@ -51,44 +47,16 @@ describe('audio output preference', () => {
     savePreferredAudioOutput('headphones')
     await applyAudioOutput(el)
     expect(setSinkId).toHaveBeenCalledWith('headphones')
-  })
-
-  it('no-ops when setSinkId is missing', async () => {
-    vi.stubGlobal('HTMLMediaElement', { prototype: {} })
-    const setSinkId = vi.fn(async () => {})
-    const el = { setSinkId } as unknown as HTMLMediaElement
-    await applyAudioOutput(el, 'sink-x')
-    expect(setSinkId).not.toHaveBeenCalled()
+    expect(typeof audioOutputSelectionSupported()).toBe('boolean')
   })
 })
 
-describe('inferJoinMode', () => {
-  it('defaults to video when no stream', () => {
-    expect(inferJoinMode(null)).toBe('video')
-    expect(inferJoinMode(undefined)).toBe('video')
-  })
-
-  it('returns audio when stream has only audio tracks', () => {
-    const stream = {
-      getVideoTracks: () => [],
-      getAudioTracks: () => [{ readyState: 'live' }],
-    } as unknown as MediaStream
-    expect(inferJoinMode(stream)).toBe('audio')
-  })
-
-  it('returns audio when video tracks are already ended', () => {
+describe('inferJoinMode re-export', () => {
+  it('returns audio for ended-only video', () => {
     const stream = {
       getVideoTracks: () => [{ readyState: 'ended' }],
       getAudioTracks: () => [{ readyState: 'live' }],
     } as unknown as MediaStream
     expect(inferJoinMode(stream)).toBe('audio')
-  })
-
-  it('returns video when stream has a live video track', () => {
-    const stream = {
-      getVideoTracks: () => [{ readyState: 'live' }],
-      getAudioTracks: () => [{ readyState: 'live' }],
-    } as unknown as MediaStream
-    expect(inferJoinMode(stream)).toBe('video')
   })
 })

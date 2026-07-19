@@ -130,3 +130,18 @@ export {
   type PeopleSubscription,
   type SharedPeopleList,
 } from './peopleList.js'
+export { dmRoomCode } from './dmRoomCode.js'
+export {
+  isValidDmRoomCode,
+  parseDmRingPayload,
+  type DmRingPayload,
+  type DmRingReason,
+} from './dmRing.js'
+export {
+  applyAudioOutput,
+  audioOutputSelectionSupported,
+  inferJoinMode,
+  listMediaDevices,
+  type CallMediaMode,
+  type MediaDeviceLists,
+} from './mediaDevices.js'
