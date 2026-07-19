@@ -48,8 +48,11 @@ export type ChatSlice = {
   disableSounds: () => void
 }
 
+export type CallMediaMode = 'audio' | 'video'
+
 export type MediaSlice = {
   inCall: boolean
+  callMode: CallMediaMode
   incomingCallPeerId: string | null
   localStream: MediaStream | null
   peerStreams: Record<string, MediaStream>
@@ -58,17 +61,22 @@ export type MediaSlice = {
   screenSharing: boolean
   audioInputs: MediaDeviceInfo[]
   videoInputs: MediaDeviceInfo[]
+  audioOutputs: MediaDeviceInfo[]
   selectedAudioInput: string
   selectedVideoInput: string
+  selectedAudioOutput: string
   mediaError: string | null
-  startCall: () => Promise<void>
+  startCall: (mode?: CallMediaMode) => Promise<void>
+  joinCall: () => Promise<void>
   declineCall: () => void
   endCall: () => void
   toggleVideo: () => void
   toggleAudio: () => void
+  enableCamera: () => Promise<void>
   startScreenShare: () => Promise<void>
   stopScreenShare: () => void
   switchDevices: (audioId: string, videoId: string) => Promise<void>
+  setAudioOutput: (deviceId: string) => void
 }
 
 export type ProfileSlice = {

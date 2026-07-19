@@ -1,5 +1,16 @@
 import type { joinRoom } from '@trystero-p2p/nostr'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  inferJoinMode,
+  listMediaDevices,
+  loadPreferredAudioInput,
+  loadPreferredAudioOutput,
+  loadPreferredVideoInput,
+  savePreferredAudioInput,
+  savePreferredAudioOutput,
+  savePreferredVideoInput,
+  type CallMediaMode,
+} from '../../collab/deviceSelection'
 
 type Room = ReturnType<typeof joinRoom>
 
@@ -17,6 +28,7 @@ const INCOMING_CALL_TIMEOUT_MS = 30_000
 
 export function useVideoCall(room: Room | null) {
   const [inCall, setInCall] = useState(false)
+  const [callMode, setCallMode] = useState<CallMediaMode>('video')
   const [incomingCallPeerId, setIncomingCallPeerId] = useState<string | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [peerStreams, setPeerStreams] = useState<Record<string, MediaStream>>({})
@@ -25,8 +37,10 @@ export function useVideoCall(room: Room | null) {
   const [screenSharing, setScreenSharing] = useState(false)
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([])
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([])
-  const [selectedAudioInput, setSelectedAudioInput] = useState('')
-  const [selectedVideoInput, setSelectedVideoInput] = useState('')
+  const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([])
+  const [selectedAudioInput, setSelectedAudioInput] = useState(() => loadPreferredAudioInput())
+  const [selectedVideoInput, setSelectedVideoInput] = useState(() => loadPreferredVideoInput())
+  const [selectedAudioOutput, setSelectedAudioOutput] = useState(() => loadPreferredAudioOutput())
   const [mediaError, setMediaError] = useState<string | null>(null)
 
   const localStreamRef = useRef<MediaStream | null>(null)
@@ -34,6 +48,8 @@ export function useVideoCall(room: Room | null) {
   const cameraStreamRef = useRef<MediaStream | null>(null)
   const displayStreamRef = useRef<MediaStream | null>(null)
   const screenSharingRef = useRef(false)
+  const callModeRef = useRef<CallMediaMode>('video')
+  callModeRef.current = callMode
   const roomRef = useRef(room)
   roomRef.current = room
 
@@ -50,10 +66,10 @@ export function useVideoCall(room: Room | null) {
   const staleStreamIdsRef = useRef(new Set<string>())
 
   const refreshDevices = useCallback(async () => {
-    if (!navigator.mediaDevices?.enumerateDevices) return
-    const devices = await navigator.mediaDevices.enumerateDevices()
-    setAudioInputs(devices.filter(device => device.kind === 'audioinput'))
-    setVideoInputs(devices.filter(device => device.kind === 'videoinput'))
+    const lists = await listMediaDevices()
+    setAudioInputs(lists.audioInputs)
+    setVideoInputs(lists.videoInputs)
+    setAudioOutputs(lists.audioOutputs)
   }, [])
 
   const removeAndStopLocalStreams = useCallback(() => {
@@ -72,6 +88,7 @@ export function useVideoCall(room: Room | null) {
     removeAndStopLocalStreams()
     setLocalStream(null)
     setInCall(false)
+    setCallMode('video')
     setIncomingCallPeerId(null)
     setPeerStreams({})
     setVideoEnabled(true)
@@ -126,43 +143,76 @@ export function useVideoCall(room: Room | null) {
     }
   }, [])
 
-  const acquireCameraStream = useCallback(
-    (audioId = selectedAudioInput, videoId = selectedVideoInput) =>
-      navigator.mediaDevices.getUserMedia({
-        audio: audioId ? { deviceId: { exact: audioId } } : true,
+  const acquireLocalStream = useCallback(
+    (mode: CallMediaMode, audioId = selectedAudioInput, videoId = selectedVideoInput) => {
+      const audioConstraint: MediaTrackConstraints | boolean = audioId
+        ? { deviceId: { exact: audioId } }
+        : true
+      if (mode === 'audio') {
+        return navigator.mediaDevices.getUserMedia({
+          audio: audioConstraint,
+          video: false,
+        })
+      }
+      return navigator.mediaDevices.getUserMedia({
+        audio: audioConstraint,
         video: videoId ? { deviceId: { exact: videoId } } : true,
-      }),
+      })
+    },
     [selectedAudioInput, selectedVideoInput]
   )
 
-  const startCall = useCallback(async () => {
-    const activeRoom = roomRef.current
-    if (!activeRoom || localStreamRef.current) {
-      if (localStreamRef.current) {
+  const startCall = useCallback(
+    async (mode: CallMediaMode = 'video') => {
+      const activeRoom = roomRef.current
+      if (!activeRoom || localStreamRef.current) {
+        if (localStreamRef.current) {
+          setInCall(true)
+          setIncomingCallPeerId(null)
+        }
+        return
+      }
+      setMediaError(null)
+      try {
+        const stream = await acquireLocalStream(mode)
+        cameraStreamRef.current = stream
+        localStreamRef.current = stream
+        setLocalStream(stream)
+        setCallMode(mode)
         setInCall(true)
         setIncomingCallPeerId(null)
+        setVideoEnabled(stream.getVideoTracks().some(track => track.enabled))
+        setAudioEnabled(stream.getAudioTracks().some(track => track.enabled))
+        activeRoom.addStream(stream)
+        await refreshDevices()
+        const audioId = stream.getAudioTracks()[0]?.getSettings().deviceId ?? ''
+        const videoId = stream.getVideoTracks()[0]?.getSettings().deviceId ?? ''
+        if (audioId) {
+          setSelectedAudioInput(audioId)
+          savePreferredAudioInput(audioId)
+        }
+        if (videoId) {
+          setSelectedVideoInput(videoId)
+          savePreferredVideoInput(videoId)
+        }
+      } catch (err) {
+        console.error('Failed to start call:', err)
+        setMediaError(
+          mode === 'audio'
+            ? 'Could not access microphone. Please check permissions.'
+            : 'Could not access camera/microphone. Please check permissions.'
+        )
       }
-      return
-    }
-    setMediaError(null)
-    try {
-      const stream = await acquireCameraStream()
-      cameraStreamRef.current = stream
-      localStreamRef.current = stream
-      setLocalStream(stream)
-      setInCall(true)
-      setIncomingCallPeerId(null)
-      setVideoEnabled(stream.getVideoTracks().some(track => track.enabled))
-      setAudioEnabled(stream.getAudioTracks().some(track => track.enabled))
-      activeRoom.addStream(stream)
-      await refreshDevices()
-      setSelectedAudioInput(stream.getAudioTracks()[0]?.getSettings().deviceId ?? '')
-      setSelectedVideoInput(stream.getVideoTracks()[0]?.getSettings().deviceId ?? '')
-    } catch (err) {
-      console.error('Failed to start call:', err)
-      setMediaError('Could not access camera/microphone. Please check permissions.')
-    }
-  }, [acquireCameraStream, refreshDevices])
+    },
+    [acquireLocalStream, refreshDevices]
+  )
+
+  /** Join an incoming call, matching the caller's audio vs video tracks. */
+  const joinCall = useCallback(async () => {
+    const peerId = incomingCallPeerId
+    const peerStream = peerId ? peerStreams[peerId] : null
+    await startCall(inferJoinMode(peerStream))
+  }, [incomingCallPeerId, peerStreams, startCall])
 
   const declineCall = useCallback(() => {
     setIncomingCallPeerId(null)
@@ -182,6 +232,7 @@ export function useVideoCall(room: Room | null) {
     removeAndStopLocalStreams()
     setLocalStream(null)
     setInCall(false)
+    setCallMode('video')
     setIncomingCallPeerId(null)
     setPeerStreams(prev => {
       for (const stream of Object.values(prev)) staleStreamIdsRef.current.add(stream.id)
@@ -224,6 +275,7 @@ export function useVideoCall(room: Room | null) {
     const activeRoom = roomRef.current
     const camera = cameraStreamRef.current
     if (!activeRoom || !camera || !navigator.mediaDevices.getDisplayMedia) return
+    if (callModeRef.current === 'audio') return
     setMediaError(null)
     try {
       const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
@@ -251,28 +303,70 @@ export function useVideoCall(room: Room | null) {
       setMediaError(null)
       setSelectedAudioInput(audioId)
       setSelectedVideoInput(videoId)
+      savePreferredAudioInput(audioId)
+      if (videoId) savePreferredVideoInput(videoId)
       if (!localStreamRef.current) return
       try {
-        const next = await acquireCameraStream(audioId, videoId)
+        const next = await acquireLocalStream(callModeRef.current, audioId, videoId)
         const activeRoom = roomRef.current
         if (activeRoom && localStreamRef.current) activeRoom.removeStream(localStreamRef.current)
         stopStream(localStreamRef.current)
         cameraStreamRef.current = next
         localStreamRef.current = next
         setLocalStream(next)
+        setVideoEnabled(next.getVideoTracks().some(track => track.enabled))
+        setAudioEnabled(next.getAudioTracks().some(track => track.enabled))
         if (activeRoom) activeRoom.addStream(next)
       } catch (err) {
         console.error('Failed to switch media device:', err)
         setMediaError('Could not switch camera or microphone.')
       }
     },
-    [acquireCameraStream, screenSharing]
+    [acquireLocalStream, screenSharing]
   )
+
+  const setAudioOutput = useCallback((deviceId: string) => {
+    setSelectedAudioOutput(deviceId)
+    savePreferredAudioOutput(deviceId)
+  }, [])
+
+  /** Upgrade an audio-only call to include a camera (or re-open camera). */
+  const enableCamera = useCallback(async () => {
+    if (screenSharingRef.current || !localStreamRef.current) return
+    if (callModeRef.current === 'video' && cameraStreamRef.current?.getVideoTracks().length) {
+      toggleVideo()
+      return
+    }
+    setMediaError(null)
+    try {
+      const next = await acquireLocalStream('video')
+      const activeRoom = roomRef.current
+      if (activeRoom && localStreamRef.current) activeRoom.removeStream(localStreamRef.current)
+      stopStream(localStreamRef.current)
+      cameraStreamRef.current = next
+      localStreamRef.current = next
+      setLocalStream(next)
+      setCallMode('video')
+      setVideoEnabled(true)
+      setAudioEnabled(next.getAudioTracks().some(track => track.enabled))
+      if (activeRoom) activeRoom.addStream(next)
+      const videoId = next.getVideoTracks()[0]?.getSettings().deviceId ?? ''
+      if (videoId) {
+        setSelectedVideoInput(videoId)
+        savePreferredVideoInput(videoId)
+      }
+      await refreshDevices()
+    } catch (err) {
+      console.error('Failed to enable camera:', err)
+      setMediaError('Could not access camera. Please check permissions.')
+    }
+  }, [acquireLocalStream, refreshDevices, toggleVideo])
 
   useEffect(() => () => removeAndStopLocalStreams(), [removeAndStopLocalStreams])
 
   return {
     inCall,
+    callMode,
     incomingCallPeerId,
     localStream,
     peerStreams,
@@ -281,8 +375,10 @@ export function useVideoCall(room: Room | null) {
     screenSharing,
     audioInputs,
     videoInputs,
+    audioOutputs,
     selectedAudioInput,
     selectedVideoInput,
+    selectedAudioOutput,
     mediaError,
     reset,
     onPeerStream,
@@ -290,12 +386,15 @@ export function useVideoCall(room: Room | null) {
     onPeerLeave,
     onPeerJoin,
     startCall,
+    joinCall,
     declineCall,
     endCall,
     toggleVideo,
     toggleAudio,
+    enableCamera,
     startScreenShare,
     stopScreenShare,
     switchDevices,
+    setAudioOutput,
   }
 }
