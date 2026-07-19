@@ -91,10 +91,9 @@ function App() {
   // rail stays populated on the home view too. loadIdentityEmail() reads even
   // when the token has expired — listing is a UX filter, not authorization.
   const identityEmail = session?.identityEmail ?? loadIdentityEmail() ?? undefined
-  const railWorkspaces = useMemo(
-    () => (identityEmail ? workspacesForEmail(identityEmail) : []),
-    [identityEmail, session?.workspaceId]
-  )
+  // Reads localStorage each render (cheap: a small JSON parse + filter), so it
+  // reflects joins/switches immediately without a reactive store.
+  const railWorkspaces = identityEmail ? workspacesForEmail(identityEmail) : []
 
   /** Close the active workspace, stay signed in, land on the home/DM view. */
   const goHome = () => {
@@ -153,7 +152,6 @@ function App() {
       onAddFriend={friendsApi.add}
       onRemoveFriend={friendsApi.remove}
       inviteableFriends={emails => friendsApi.inviteable(emails)}
-      onLeave={goHome}
     />
   ) : (
     <JoinScreen

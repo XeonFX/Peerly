@@ -162,7 +162,9 @@ export async function createWorkspace(
 }
 
 export async function leaveToPicker(page: Page) {
-  await page.getByTestId('leave-workspace').click()
+  // The old in-sidebar "switch workspace" button is gone; the workspace rail's
+  // Direct Messages / Home button is the way back to the picker now.
+  await page.getByTestId('rail-home').click()
   await expect(page.getByTestId('workspace-picker')).toBeVisible({ timeout: 15_000 })
 }
 

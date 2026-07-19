@@ -48,28 +48,22 @@ export function persistWorkspaceSession(
 /** Why entering a stored workspace failed — callers map to localized copy. */
 export type WorkspaceEntryFailure = 'invalid-signature' | 'not-allowed'
 
-export class WorkspaceEntryError extends Error {
-  constructor(public readonly reason: WorkspaceEntryFailure) {
-    super(reason)
-    this.name = 'WorkspaceEntryError'
-  }
-}
-
 /**
  * Verify a remembered workspace, then enter it in place (rail switch). Re-runs
  * the same signature + membership checks the invite path does rather than
  * trusting localStorage; peers re-verify regardless, but failing here yields a
- * comprehensible error instead of a silent handshake denial.
+ * comprehensible error instead of a silent handshake denial. Throws the failure
+ * reason as an Error message so callers can branch or surface it.
  */
 export async function enterStoredWorkspace(
   workspace: StoredWorkspace,
   identity: StoredIdentity
 ): Promise<Session> {
   if (!(await verifyInviteAllowList(workspace))) {
-    throw new WorkspaceEntryError('invalid-signature')
+    throw new Error('invalid-signature' satisfies WorkspaceEntryFailure)
   }
   if (!isEmailAllowed(workspace.allowList, identity.email)) {
-    throw new WorkspaceEntryError('not-allowed')
+    throw new Error('not-allowed' satisfies WorkspaceEntryFailure)
   }
   return persistWorkspaceSession(workspace, identity)
 }

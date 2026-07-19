@@ -66,7 +66,6 @@ type Props = {
   onAddFriend: (subject: { userId: string; name: string; email: string }) => Promise<void>
   onRemoveFriend: (userId: string) => void
   inviteableFriends: (alreadyInvited: readonly string[]) => FriendRow[]
-  onLeave: () => void
 }
 
 function WorkspaceShell({
@@ -84,7 +83,6 @@ function WorkspaceShell({
   onChannelsUpdated,
   onProfileSelect,
   onWorkspaceSettings,
-  onLeave,
   onToggleFiles,
   banner,
   onWorkspaceNameChange,
@@ -109,7 +107,6 @@ function WorkspaceShell({
   onChannelsUpdated: () => void
   onProfileSelect: () => void
   onWorkspaceSettings: () => void
-  onLeave: () => void
   onToggleFiles: () => void
   banner?: React.ReactNode
   onWorkspaceNameChange: (name: string) => void
@@ -383,7 +380,6 @@ export function Workspace({
   onAddFriend,
   onRemoveFriend: _onRemoveFriend,
   inviteableFriends,
-  onLeave,
 }: Props) {
   void _friends
   void _onRemoveFriend
@@ -530,7 +526,6 @@ export function Workspace({
         onChannelsUpdated={refreshChannels}
         onProfileSelect={() => onWorkspaceRouteChange({ screen: 'workspace', view: 'profile' })}
         onWorkspaceSettings={() => onWorkspaceRouteChange({ screen: 'workspace', view: 'settings' })}
-        onLeave={onLeave}
         onToggleFiles={() =>
           onWorkspaceRouteChange({
             screen: 'workspace',

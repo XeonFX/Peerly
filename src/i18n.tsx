@@ -185,6 +185,7 @@ const plByEnglish: Record<string, string> = {
   'Remove from this list (does not affect the workspace)':
     'Usuń z tej listy (bez wpływu na przestrzeń)',
   'Create workspace': 'Utwórz przestrzeń',
+  Workspaces: 'Przestrzenie',
   'Join with invite': 'Dołącz z zaproszeniem',
   'Workspace name': 'Nazwa przestrzeni',
   'My team': 'Mój zespół',
