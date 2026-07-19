@@ -4,15 +4,24 @@ import { DeviceIdentity } from './collab/deviceIdentity'
 import { WorkspaceAuthManager } from './collab/workspaceAuth'
 import { JoinScreen } from './components/JoinScreen'
 import { Workspace } from './components/Workspace'
+import { WorkspaceRail } from './components/WorkspaceRail'
 import { useAppRouting } from './hooks/useAppRouting'
 import { useFriends } from './hooks/useFriends'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
-import { rememberWorkspace, snapshotWorkspace } from './collab/workspaceStore'
+import { enterStoredWorkspace } from './collab/enterWorkspace'
+import {
+  rememberWorkspace,
+  snapshotWorkspace,
+  workspacesForEmail,
+  type StoredWorkspace,
+} from './collab/workspaceStore'
 import {
   clearActiveWorkspace,
   hydrateSessionAvatar,
+  loadIdentityEmail,
   loadIdToken,
   loadSession,
+  loadSignedInIdentity,
   migrateLegacySession,
   saveIdCredentials,
   saveSession,
@@ -77,25 +86,57 @@ function App() {
     })
   }
 
+  // Rail data: the signed-in email drives which workspaces to offer, and it
+  // survives leaving a workspace (identity outlives the active session), so the
+  // rail stays populated on the home view too. loadIdentityEmail() reads even
+  // when the token has expired — listing is a UX filter, not authorization.
+  const identityEmail = session?.identityEmail ?? loadIdentityEmail() ?? undefined
+  const railWorkspaces = useMemo(
+    () => (identityEmail ? workspacesForEmail(identityEmail) : []),
+    [identityEmail, session?.workspaceId]
+  )
+
+  /** Close the active workspace, stay signed in, land on the home/DM view. */
+  const goHome = () => {
+    clearActiveWorkspace()
+    setSession(null)
+    leaveToPicker()
+  }
+
+  /** Switch to another remembered workspace in place — no sign-out round trip. */
+  const switchWorkspace = async (workspace: StoredWorkspace) => {
+    if (workspace.workspaceId === session?.workspaceId) return
+    const identity = loadSignedInIdentity()
+    // Token expired (ReauthBanner territory) — send them home to re-authenticate
+    // rather than persist a workspace we cannot hand a live token.
+    if (!identity) {
+      goHome()
+      return
+    }
+    try {
+      const next = await enterStoredWorkspace(workspace, identity)
+      setSession(await hydrateSessionAvatar(next))
+      enterWorkspace()
+    } catch {
+      // Invalid signature / no longer on the allow-list — bounce home to re-pick.
+      goHome()
+    }
+  }
+
+  const createWorkspace = () => {
+    goHome()
+    setPickerTab('create')
+  }
+
   if (!ready) {
     return null
   }
 
-  if (!session) {
-    return (
-      <JoinScreen
-        pickerTab={pickerTab}
-        onPickerTabChange={setPickerTab}
-        onJoined={async next => {
-          setSession(await hydrateSessionAvatar(next))
-          enterWorkspace()
-        }}
-      />
-    )
-  }
-
-  return (
+  const content = session ? (
     <Workspace
+      // Remount on workspace switch so the collab room tears down and rejoins
+      // cleanly for the new workspace instead of mutating a live one.
+      key={session.workspaceId}
       session={session}
       workspaceRoute={workspaceRoute}
       onWorkspaceRouteChange={setWorkspaceRoute}
@@ -112,14 +153,35 @@ function App() {
       onAddFriend={friendsApi.add}
       onRemoveFriend={friendsApi.remove}
       inviteableFriends={emails => friendsApi.inviteable(emails)}
-      onLeave={() => {
-        // Close the workspace, keep the sign-in: the user lands on the picker
-        // and can open another workspace without authenticating again.
-        clearActiveWorkspace()
-        setSession(null)
-        leaveToPicker()
+      onLeave={goHome}
+    />
+  ) : (
+    <JoinScreen
+      pickerTab={pickerTab}
+      onPickerTabChange={setPickerTab}
+      onJoined={async next => {
+        setSession(await hydrateSessionAvatar(next))
+        enterWorkspace()
       }}
     />
+  )
+
+  // Before sign-in there are no workspaces and nowhere to switch — show the bare
+  // join screen without the rail. Once an identity exists, the rail is persistent.
+  if (!identityEmail) return content
+
+  return (
+    <div className="flex h-dvh min-h-0">
+      <WorkspaceRail
+        workspaces={railWorkspaces}
+        activeWorkspaceId={session?.workspaceId}
+        onHome={!session}
+        onSelectWorkspace={switchWorkspace}
+        onHomeSelect={goHome}
+        onCreateWorkspace={createWorkspace}
+      />
+      <div className="min-w-0 flex-1 overflow-hidden">{content}</div>
+    </div>
   )
 }
 

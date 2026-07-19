@@ -280,7 +280,6 @@ function WorkspaceShell({
           onWorkspaceSettings()
           onSidebarOpenChange(false)
         }}
-        onLeave={onLeave}
         unreadByChannel={unreadByChannel}
       />
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { isEmailAllowed } from '../collab/allowList'
-import { APP_NAME, appBuildLabel, WORKSPACE_COLOR } from '../config'
+import { APP_NAME, appBuildLabel } from '../config'
 import {
   decodeInviteFromHash,
   encodeInviteLink,
@@ -8,25 +8,20 @@ import {
   type WorkspaceInvite,
 } from '../collab/inviteLink'
 import { verifyInviteAllowList, WorkspaceAuthManager } from '../collab/workspaceAuth'
-import { resolveAvatarPreview } from '../collab/avatarService'
+import { persistWorkspaceSession } from '../collab/enterWorkspace'
 import { applyWorkspaceBackup, MAX_BACKUP_BYTES } from '../utils/workspaceBackup'
 import {
   forgetWorkspace,
-  rememberWorkspace,
-  snapshotWorkspace,
   workspacesForEmail,
   type StoredWorkspace,
 } from '../collab/workspaceStore'
 import {
-  createSessionFromInvite,
   loadIdToken,
   loadIdentityEmail,
   loadIdentityUserId,
   loadIdentityProvider,
   loadPersistedSession,
   clearIdCredentials,
-  saveIdCredentials,
-  saveSession,
   type Session,
 } from '../session'
 import {
@@ -35,7 +30,7 @@ import {
   formatUsage,
   type WorkspaceUsage,
 } from '../utils/workspaceUsage'
-import { Avatar } from './Avatar'
+import { WorkspaceAvatar } from './WorkspaceAvatar'
 import { IdentityLoginButtons, type SignedInIdentity } from './IdentityLoginButtons'
 import peerlyBrand from '../assets/peerly-brand.webp'
 import { useBrowserStorage } from '../hooks/useBrowserStorage'
@@ -56,28 +51,6 @@ function WorkspaceUsageBadge({ usage }: { usage: WorkspaceUsage | undefined }) {
     >
       {formatUsage(usage.totalBytes)} {tr('on device')} · {formatUsage(usage.sharedFilesBytes)} {tr('shared')}
     </span>
-  )
-}
-
-function WorkspacePickerAvatar({ workspace }: { workspace: StoredWorkspace }) {
-  const [preview, setPreview] = useState<string>()
-  useEffect(() => {
-    let cancelled = false
-    void resolveAvatarPreview(workspace.workspaceAvatarId).then(url => {
-      if (!cancelled && url) setPreview(url)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [workspace.workspaceAvatarId])
-
-  return (
-    <Avatar
-      name={workspace.workspaceName}
-      color={WORKSPACE_COLOR}
-      avatar={preview}
-      size="md"
-    />
   )
 }
 
@@ -221,24 +194,10 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined }: Props) {
       throw new Error(tr('{email} is not on this workspace\'s invite list', { email: identity.email }))
     }
 
-    saveIdCredentials(identity.token, identity.providerId, identity.email, identity.userId)
-    const session = createSessionFromInvite(
+    const session = persistWorkspaceSession(
       { ...nextInvite, workspaceAvatarId },
-      identity.email,
-      identity.providerId,
-      name ?? identity.name,
-      identity.userId
-    )
-    saveSession(session)
-    // Remember it so the next sign-in offers it without the invite link.
-    rememberWorkspace(
-      snapshotWorkspace({
-        workspaceId: nextInvite.workspaceId,
-        workspaceName: nextInvite.workspaceName,
-        creatorKeyId: nextInvite.creatorKeyId,
-        allowList: nextInvite.allowList,
-        workspaceAvatarId,
-      })
+      identity,
+      name ?? identity.name
     )
     onJoined(session)
   }
@@ -479,7 +438,11 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined }: Props) {
                     onClick={() => void handleOpenStored(workspace)}
                   >
                     <span className="flex min-w-0 items-center gap-2.5">
-                      <WorkspacePickerAvatar workspace={workspace} />
+                      <WorkspaceAvatar
+                        name={workspace.workspaceName}
+                        avatarId={workspace.workspaceAvatarId}
+                        size="md"
+                      />
                       <span className="truncate text-sm font-medium">{workspace.workspaceName}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
