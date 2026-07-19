@@ -43,6 +43,17 @@ async function joinAlice(browser: Browser) {
 // wiped per test) and each worker has its own workspace/room (e2eWorkspaceId),
 // so they parallelize safely — serial mode was pinning the suite to 1 worker.
 test.describe('Peerly P2P collaboration', () => {
+  test('first visit shows legal consent banner; Accept dismisses it', async ({ page }) => {
+    await installFreshSession(page, { acceptLegal: false })
+    await page.goto('/')
+    await expect(page.getByTestId('consent-banner')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('consent-accept').click()
+    await expect(page.getByTestId('consent-banner')).toHaveCount(0)
+    // Persisted acceptance survives reload.
+    await page.reload()
+    await expect(page.getByTestId('consent-banner')).toHaveCount(0)
+  })
+
   test('theme preference persists and P2P readiness stays visible', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
 
@@ -268,7 +279,7 @@ test.describe('Peerly P2P collaboration', () => {
   test('an expired sign-in leaves the room until re-auth restores it', async ({ page }) => {
     // Real time must pass for the token to lapse in place — but only ~15s of
     // it: the ok→expired transition is identical wherever exp sits.
-    test.setTimeout(120_000)
+    test.setTimeout(60_000)
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await waitForRelay(page)
 

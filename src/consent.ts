@@ -6,7 +6,10 @@
  */
 export const LEGAL_VERSION = 1
 
-const STORAGE_KEY = 'peerly-legal-consent-v1'
+/** localStorage key — shared with e2e so tests can seed acceptance. */
+export const LEGAL_CONSENT_STORAGE_KEY = 'peerly-legal-consent-v1'
+
+const STORAGE_KEY = LEGAL_CONSENT_STORAGE_KEY
 
 type StoredConsent = { version: number; acceptedAt: number }
 
