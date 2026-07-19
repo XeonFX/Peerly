@@ -68,7 +68,11 @@ export {
 export { createKvStore, type KvStore } from './kvStore.js'
 export { createBlobStore } from './blobStore.js'
 export { openIndexedDb } from './idb.js'
-export { isSafeAvatarUrl, safeAvatarUrl } from './avatarSafety.js'
+export {
+  isAllowedGoogleAvatarUrl,
+  isSafeAvatarUrl,
+  safeAvatarUrl,
+} from './avatarSafety.js'
 export { processAvatarBlob, processAvatarImage } from './avatarImage.js'
 export {
   base64UrlToBytes,
@@ -171,3 +175,18 @@ export {
   type PresenceIndex,
   type PresencePayload,
 } from './presence.js'
+export {
+  createTextChatHistoryStore,
+  mergeTextChatWires,
+  mergeTextReactionWires,
+  parseTextChatHistoryEnvelope,
+  type StoredTextChatHistory,
+  type TextChatHistoryConfig,
+  type TextChatHistoryEnvelope,
+  type TextChatHistoryStore,
+} from './textChatHistory.js'
+export {
+  createSpeakingDetector,
+  type SpeakingDetector,
+  type SpeakingDetectorOptions,
+} from './speaking.js'

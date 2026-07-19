@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isSafeAvatarUrl, safeAvatarUrl } from './avatarSafety.js'
+import {
+  isAllowedGoogleAvatarUrl,
+  isSafeAvatarUrl,
+  safeAvatarUrl,
+} from './avatarSafety.js'
 
 describe('isSafeAvatarUrl', () => {
   it('allows common raster data URLs', () => {
@@ -19,5 +23,17 @@ describe('isSafeAvatarUrl', () => {
   it('safeAvatarUrl returns undefined when unsafe', () => {
     expect(safeAvatarUrl('https://x')).toBeUndefined()
     expect(safeAvatarUrl('data:image/png;base64,x')).toBe('data:image/png;base64,x')
+  })
+})
+
+describe('isAllowedGoogleAvatarUrl', () => {
+  it('allows https googleusercontent hosts', () => {
+    expect(isAllowedGoogleAvatarUrl('https://lh3.googleusercontent.com/a/abc')).toBe(true)
+    expect(isAllowedGoogleAvatarUrl('https://cdn.googleusercontent.com/x')).toBe(true)
+  })
+
+  it('rejects non-https and other hosts', () => {
+    expect(isAllowedGoogleAvatarUrl('http://lh3.googleusercontent.com/a')).toBe(false)
+    expect(isAllowedGoogleAvatarUrl('https://evil.example/a.png')).toBe(false)
   })
 })
