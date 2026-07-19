@@ -4,8 +4,9 @@ import { DeviceIdentity } from './collab/deviceIdentity'
 import { loadStoredProfile } from './collab/profileStore'
 import { WorkspaceAuthManager } from './collab/workspaceAuth'
 import { ConsentBanner } from './components/ConsentBanner'
-import { FriendsPanel } from './components/FriendsPanel'
+import { HomeView } from './components/HomeView'
 import { JoinScreen } from './components/JoinScreen'
+import type { DmRingPayload } from './collab/dmRing'
 import { LegalPage } from './legal/LegalPage'
 import { Workspace } from './components/Workspace'
 import { WorkspaceRail } from './components/WorkspaceRail'
@@ -65,10 +66,13 @@ function App() {
     return { userId, name, email }
   }, [session?.identityEmail, session?.identityUserId, session?.userName])
 
+  const [pendingDmRing, setPendingDmRing] = useState<DmRingPayload | null>(null)
+
   const presence = usePresenceLobby({
     identity: lobbyProfile ? deviceIdentity : null,
     profile: lobbyProfile,
     onFriendsChanged: friendsApi.reload,
+    onDmRing: ring => setPendingDmRing(ring),
   })
 
   const { manager, peerHandshake, resolvePeerUserId, resolvePeerContact, signMessage, signReaction, getBoundUserId } =
@@ -209,16 +213,22 @@ function App() {
       }}
       friendsPanel={
         lobbyProfile ? (
-          <FriendsPanel
+          <HomeView
+            profile={lobbyProfile}
+            identity={deviceIdentity}
             friends={friendsApi.friends}
             outgoing={presence.outgoing}
             incoming={presence.incoming}
             onlineCount={presence.onlineCount}
+            isUserOnline={presence.isUserOnline}
+            ringDm={presence.ringDm}
             onInvite={presence.inviteByEmail}
             onAccept={presence.acceptInvite}
             onDecline={presence.declineInvite}
             onCancelOutgoing={presence.cancelOutgoing}
             onRemoveFriend={friendsApi.remove}
+            pendingRing={pendingDmRing}
+            onConsumeRing={() => setPendingDmRing(null)}
           />
         ) : undefined
       }

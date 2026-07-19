@@ -25,6 +25,11 @@ import {
   type OutgoingFriendInvite,
 } from '../collab/friendInviteStore'
 import { hashEmail, isPlausibleEmail, normalizeEmail } from '../collab/emailHash'
+import {
+  parseDmRingPayload,
+  type DmRingPayload,
+  type DmRingReason,
+} from '../collab/dmRing'
 import { LOBBY_APP_ID, LOBBY_ROOM_ID } from '../collab/mesh'
 import { addFriend, isFriend, loadFriends } from '../collab/friendsStore'
 
@@ -45,6 +50,8 @@ export type PresenceLobbyOptions = {
   profile: LobbyProfile | null
   /** Bump friends UI when an accept lands. */
   onFriendsChanged?: () => void
+  /** Friend rang this device to open a global DM room. */
+  onDmRing?: (ring: DmRingPayload) => void
 }
 
 /**
@@ -54,15 +61,22 @@ export type PresenceLobbyOptions = {
  * and delivered directed when a matching peer is online. Offline targets stay
  * in the local outgoing queue until they show up (no server mailbox).
  */
-export function usePresenceLobby({ identity, profile, onFriendsChanged }: PresenceLobbyOptions) {
+export function usePresenceLobby({
+  identity,
+  profile,
+  onFriendsChanged,
+  onDmRing,
+}: PresenceLobbyOptions) {
   const profileRef = useLatest(profile)
   const identityRef = useLatest(identity)
   const onFriendsChangedRef = useLatest(onFriendsChanged)
+  const onDmRingRef = useLatest(onDmRing)
 
   const [outgoing, setOutgoing] = useState<OutgoingFriendInvite[]>(() => loadOutgoingInvites())
   const [incoming, setIncoming] = useState<IncomingFriendInvite[]>(() => loadIncomingInvites())
   const [onlineCount, setOnlineCount] = useState(0)
   const [lobbyError, setLobbyError] = useState<string | null>(null)
+  const [presenceVersion, setPresenceVersion] = useState(0)
 
   const presenceByPeerRef = useRef(
     new Map<string, PresencePayload & { seenAt: number }>()
@@ -78,6 +92,7 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
     presence: (msg: PresencePayload, to?: string) => void
     invite: (msg: FriendInvitePayload, to: string) => void
     inviteResp: (msg: FriendInviteResponsePayload, to: string) => void
+    dmRing: (msg: DmRingPayload, to: string) => void
   } | null>(null)
 
   const roomEnabled = Boolean(profile?.userId && profile.email && identity)
@@ -114,6 +129,7 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
     const presenceAction = room.makeAction<PresencePayload>('pres')
     const inviteAction = room.makeAction<FriendInvitePayload>('finv')
     const inviteRespAction = room.makeAction<FriendInviteResponsePayload>('finvr')
+    const dmRingAction = room.makeAction<DmRingPayload>('dmring')
 
     const announcePresence = (to?: string) => {
       const me = profileRef.current
@@ -137,6 +153,7 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
       presenceByPeer.set(peerId, { ...parsed, seenAt: Date.now() })
       peerByUserId.set(parsed.userId, peerId)
       peerByEmailHash.set(parsed.emailHash, peerId)
+      setPresenceVersion(v => v + 1)
     }
 
     const dropPeer = (peerId: string) => {
@@ -149,14 +166,18 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
       if (peerByEmailHash.get(entry.emailHash) === peerId) {
         peerByEmailHash.delete(entry.emailHash)
       }
+      setPresenceVersion(v => v + 1)
     }
 
     const prunePresence = () => {
       const now = Date.now()
+      let changed = false
       for (const [peerId, entry] of presenceByPeer) {
         if (now - entry.seenAt <= PRESENCE_TTL_MS) continue
         dropPeer(peerId)
+        changed = true
       }
+      if (changed) setPresenceVersion(v => v + 1)
     }
 
     const deliverPendingInvites = () => {
@@ -180,6 +201,7 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
       presence: (msg, to) => void presenceAction.send(msg, to ? { target: to } : undefined),
       invite: (msg, to) => void inviteAction.send(msg, { target: to }),
       inviteResp: (msg, to) => void inviteRespAction.send(msg, { target: to }),
+      dmRing: (msg, to) => void dmRingAction.send(msg, { target: to }),
     }
 
     const refreshCounts = () => {
@@ -195,6 +217,17 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
       recordPresence(peerId, parsed)
       // New peer might match a pending invite.
       deliverPendingInvites()
+    }
+
+    dmRingAction.onMessage = msg => {
+      const parsed = parseDmRingPayload(msg)
+      if (!parsed) return
+      const me = profileRef.current
+      if (!me || parsed.toUserId !== me.userId) return
+      if (parsed.fromUserId === me.userId) return
+      // Only accept rings from people we already friended (mutual intent).
+      if (!isFriend(loadFriends(), parsed.fromUserId)) return
+      onDmRingRef.current?.(parsed)
     }
 
     inviteAction.onMessage = (msg, { peerId }) => {
@@ -303,6 +336,7 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
       presenceAction.onMessage = null
       inviteAction.onMessage = null
       inviteRespAction.onMessage = null
+      dmRingAction.onMessage = null
       room.onPeerJoin = null
       room.onPeerLeave = null
       sendersRef.current = null
@@ -312,7 +346,7 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
       connectedPeersRef.current = 0
       setOnlineCount(0)
     }
-  }, [room, roomEnabled, profileRef, identityRef, onFriendsChangedRef])
+  }, [room, roomEnabled, profileRef, identityRef, onFriendsChangedRef, onDmRingRef])
 
   const inviteByEmail = useCallback(
     async (toEmail: string): Promise<{ ok: true } | { ok: false; error: string }> => {
@@ -449,6 +483,45 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
     setOutgoing(prev => removeOutgoingInvite(prev, inviteId))
   }, [])
 
+  /** True when this durable userId announced presence on the lobby recently. */
+  const isUserOnline = useCallback(
+    (userId: string | undefined) => {
+      void presenceVersion
+      if (!userId) return false
+      const peerId = peerByUserIdRef.current.get(userId)
+      if (!peerId) return false
+      const entry = presenceByPeerRef.current.get(peerId)
+      return !!entry && Date.now() - entry.seenAt <= PRESENCE_TTL_MS
+    },
+    [presenceVersion]
+  )
+
+  /**
+   * Ping a friend over the lobby to open (or re-open) the global DM room.
+   * Returns false when they are not currently present on the mesh.
+   */
+  const ringDm = useCallback(
+    (toUserId: string, code: string, reason: DmRingReason, preview?: string): boolean => {
+      const me = profileRef.current
+      const senders = sendersRef.current
+      if (!me || !senders || !toUserId || toUserId === me.userId) return false
+      if (!isFriend(loadFriends(), toUserId)) return false
+      const peerId = peerByUserIdRef.current.get(toUserId)
+      if (!peerId) return false
+      const payload: DmRingPayload = {
+        toUserId,
+        fromUserId: me.userId,
+        fromName: me.name,
+        code: code.toLowerCase(),
+        reason,
+        preview: preview?.trim().slice(0, 120) || undefined,
+      }
+      senders.dmRing(payload, peerId)
+      return true
+    },
+    [profileRef]
+  )
+
   return {
     onlineCount,
     lobbyError,
@@ -458,5 +531,7 @@ export function usePresenceLobby({ identity, profile, onFriendsChanged }: Presen
     acceptInvite,
     declineInvite,
     cancelOutgoing,
+    isUserOnline,
+    ringDm,
   }
 }

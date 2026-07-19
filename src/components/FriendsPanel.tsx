@@ -9,6 +9,9 @@ type Props = {
   outgoing: OutgoingFriendInvite[]
   incoming: IncomingFriendInvite[]
   onlineCount: number
+  isUserOnline?: (userId: string) => boolean
+  activeDmUserId?: string | null
+  onMessageFriend?: (friend: Friend) => void
   onInvite: (email: string) => Promise<{ ok: true } | { ok: false; error: string }>
   onAccept: (inviteId: string) => Promise<boolean>
   onDecline: (inviteId: string) => Promise<boolean>
@@ -26,6 +29,9 @@ export function FriendsPanel({
   outgoing,
   incoming,
   onlineCount,
+  isUserOnline,
+  activeDmUserId,
+  onMessageFriend,
   onInvite,
   onAccept,
   onDecline,
@@ -191,30 +197,55 @@ export function FriendsPanel({
           <p className="text-xs text-base-content/50">{tr('No friends yet.')}</p>
         ) : (
           <ul className="space-y-1">
-            {friends.map(friend => (
-              <li
-                key={friend.subjectUserId}
-                className="flex items-center gap-2 px-1 py-1 text-sm"
-                data-testid={`friend-row-${friend.subjectEmail ?? friend.subjectUserId}`}
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  <span className="font-medium">{friend.subjectName}</span>
-                  {friend.subjectEmail && (
-                    <span className="text-base-content/55"> · {friend.subjectEmail}</span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs btn-square shrink-0"
-                  title={tr('Remove friend')}
-                  aria-label={tr('Remove friend')}
-                  data-testid={`friend-remove-${friend.subjectUserId}`}
-                  onClick={() => onRemoveFriend(friend.subjectUserId)}
+            {friends.map(friend => {
+              const online = isUserOnline?.(friend.subjectUserId) ?? false
+              const active = activeDmUserId === friend.subjectUserId
+              return (
+                <li
+                  key={friend.subjectUserId}
+                  className={`flex items-center gap-2 rounded-lg px-1 py-1 text-sm ${
+                    active ? 'bg-primary/10' : ''
+                  }`}
+                  data-testid={`friend-row-${friend.subjectEmail ?? friend.subjectUserId}`}
                 >
-                  <Icon name="x" size={14} />
-                </button>
-              </li>
-            ))}
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      online ? 'bg-success' : 'bg-base-content/25'
+                    }`}
+                    title={online ? tr('Online') : tr('Offline')}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{friend.subjectName}</span>
+                    {friend.subjectEmail && (
+                      <span className="text-base-content/55"> · {friend.subjectEmail}</span>
+                    )}
+                  </span>
+                  {onMessageFriend && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs btn-square shrink-0"
+                      title={tr('Message {name}', { name: friend.subjectName })}
+                      aria-label={tr('Message {name}', { name: friend.subjectName })}
+                      data-testid={`friend-message-${friend.subjectUserId}`}
+                      onClick={() => onMessageFriend(friend)}
+                    >
+                      <Icon name="message-circle" size={14} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs btn-square shrink-0"
+                    title={tr('Remove friend')}
+                    aria-label={tr('Remove friend')}
+                    data-testid={`friend-remove-${friend.subjectUserId}`}
+                    onClick={() => onRemoveFriend(friend.subjectUserId)}
+                  >
+                    <Icon name="x" size={14} />
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
