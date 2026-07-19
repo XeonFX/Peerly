@@ -3,7 +3,13 @@ import { useSpeakingStreams } from '@peerly/core/react'
 import type { Peer } from '../types'
 import { getPeerColor } from '../config'
 import { safeColor } from '../utils/profileSanitize'
-import { isProbablyNsfwElement } from '../collab/nsfwGate'
+import {
+  applyNsfwScanResult,
+  INITIAL_NSFW_SCAN_STATE,
+  isProbablyNsfwElement,
+  type NsfwScreenScanState,
+  videoScreeningDelay,
+} from '../collab/nsfwGate'
 import {
   applyAudioOutput,
   audioOutputSelectionSupported,
@@ -11,7 +17,6 @@ import {
 } from '../collab/deviceSelection'
 import type { CallMediaMode } from '../context/collabTypes'
 import { Icon } from './Icon'
-import { videoScreeningDelay } from '../collab/videoScreening'
 import { useI18n } from '../i18n'
 
 type Props = {
@@ -100,18 +105,17 @@ function VideoTile({
     let cancelled = false
     let running = false
     let timer: number | undefined
-    // Back off after repeatedly-clean frames: a feed that has been fine for a
-    // while rarely flips, and per-tile inference every 3s for a whole call was
-    // the app's largest sustained main-thread cost. Any flag stops the loop
-    // (flags are sticky until the user reveals).
+    // Same streak policy as HeyHubs: flag on first NSFW hit, auto-clear after
+    // consecutive clean frames; back off while long-clean.
+    let scan: NsfwScreenScanState = INITIAL_NSFW_SCAN_STATE
     let cleanRuns = 0
     const schedule = (delay: number) => {
-      if (cancelled || flaggedRef.current) return
+      if (cancelled) return
       timer = window.setTimeout(() => void check(), delay)
     }
     const check = async () => {
       const video = videoRef.current
-      if (cancelled || flaggedRef.current) return
+      if (cancelled) return
       if (
         running ||
         !video ||
@@ -124,17 +128,17 @@ function VideoTile({
       }
       running = true
       try {
-        if (await isProbablyNsfwElement(video)) {
-          setFlagged(true)
-          return
-        }
-        cleanRuns++
+        const isNsfw = await isProbablyNsfwElement(video)
+        scan = applyNsfwScanResult(scan, isNsfw)
+        setFlagged(scan.flagged)
+        if (!scan.flagged) cleanRuns = isNsfw ? 0 : cleanRuns + 1
+        else cleanRuns = 0
       } finally {
         running = false
       }
       schedule(videoScreeningDelay(cleanRuns))
     }
-    schedule(1_000)
+    schedule(400)
     return () => {
       cancelled = true
       if (timer !== undefined) window.clearTimeout(timer)

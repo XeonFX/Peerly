@@ -1,22 +1,35 @@
 /**
- * Local sensitive-media screen.
- *
- * TensorFlow, NSFWJS, and MobileNetV2 load lazily. Inference uses a small
- * concurrency pool (aligned with HeyHubs) so multi-tile calls stay responsive
- * without unbounded GPU load. Frames never leave the device.
+ * Peerly NSFW screen: loads NSFWJS locally; pure policy/pool/canvas live in
+ * @peerly/core. Frames never leave the device. Fails open (returns false).
  */
 
-type VisualSource = HTMLImageElement | HTMLCanvasElement | HTMLVideoElement
+import {
+  canvasFromVisualSource,
+  createInferencePool,
+  shouldFlagNsfw,
+  type NsfwPrediction,
+  type VisualSource,
+} from '@peerly/core'
+
+export type { NsfwPrediction }
+export {
+  applyNsfwScanResult,
+  CONSECUTIVE_CLEAN_TO_CLEAR,
+  CONSECUTIVE_FLAGS_REQUIRED,
+  INITIAL_NSFW_SCAN_STATE,
+  shouldFlagNsfw,
+  VIDEO_SCREEN_INTERVAL_MS,
+  videoScreeningDelay,
+  type NsfwScreenScanState,
+} from '@peerly/core'
+
 type Classifier = {
   classify: (source: VisualSource) => Promise<NsfwPrediction[]>
 }
 
 let classifierPromise: Promise<Classifier> | null = null
-
-/** Same pool limit as HeyHubs — serial was too slow for multi-tile calls. */
-const MAX_CONCURRENT_INFERENCES = 3
-let activeInferences = 0
-const inferenceWaiters: Array<() => void> = []
+const pool = createInferencePool()
+const canvasCache = new WeakMap<VisualSource, HTMLCanvasElement>()
 
 function loadClassifier(): Promise<Classifier> {
   classifierPromise ??= (async () => {
@@ -29,65 +42,10 @@ function loadClassifier(): Promise<Classifier> {
   return classifierPromise
 }
 
-export type NsfwPrediction = { className: string; probability: number }
-
-export function shouldFlagNsfw(predictions: NsfwPrediction[]): boolean {
-  const byClass = new Map(predictions.map(prediction => [prediction.className, prediction.probability]))
-  const explicit = (byClass.get('Porn') ?? 0) + (byClass.get('Hentai') ?? 0)
-  const suggestive = byClass.get('Sexy') ?? 0
-  return explicit >= 0.55 || suggestive >= 0.85
-}
-
-async function enqueue<T>(job: () => Promise<T>): Promise<T> {
-  if (activeInferences >= MAX_CONCURRENT_INFERENCES) {
-    await new Promise<void>(resolve => inferenceWaiters.push(resolve))
-  }
-  activeInferences++
-  try {
-    return await job()
-  } finally {
-    activeInferences--
-    inferenceWaiters.shift()?.()
-  }
-}
-
-/** One canvas per element, reused across scan ticks (HeyHubs). */
-const canvasCache = new WeakMap<VisualSource, HTMLCanvasElement>()
-
-function canvasFrom(source: VisualSource): HTMLCanvasElement | null {
-  const width =
-    source instanceof HTMLVideoElement
-      ? source.videoWidth
-      : source instanceof HTMLImageElement
-        ? source.naturalWidth
-        : source.width
-  const height =
-    source instanceof HTMLVideoElement
-      ? source.videoHeight
-      : source instanceof HTMLImageElement
-        ? source.naturalHeight
-        : source.height
-  if (!width || !height) return null
-  const scale = Math.min(1, 224 / Math.max(width, height))
-  const targetWidth = Math.max(1, Math.round(width * scale))
-  const targetHeight = Math.max(1, Math.round(height * scale))
-  let canvas = canvasCache.get(source)
-  if (!canvas) {
-    canvas = document.createElement('canvas')
-    canvasCache.set(source, canvas)
-  }
-  if (canvas.width !== targetWidth) canvas.width = targetWidth
-  if (canvas.height !== targetHeight) canvas.height = targetHeight
-  const context = canvas.getContext('2d')
-  if (!context) return null
-  context.drawImage(source, 0, 0, canvas.width, canvas.height)
-  return canvas
-}
-
 export async function isProbablyNsfwElement(source: VisualSource): Promise<boolean> {
   try {
-    return await enqueue(async () => {
-      const canvas = canvasFrom(source)
+    return await pool.enqueue(async () => {
+      const canvas = canvasFromVisualSource(source, canvasCache)
       if (!canvas) return false
       return shouldFlagNsfw(await (await loadClassifier()).classify(canvas))
     })
@@ -155,13 +113,6 @@ export async function isProbablyNsfwMedia(buffer: ArrayBuffer, mimeType: string)
   }
 }
 
-/**
- * One verdict per file id, ever, per page. File ids are content hashes, so a
- * verdict can never go stale; without this every channel switch re-ran
- * inference over every visible image (50 images = 50 inferences per visit).
- * Callers should also persist the verdict onto the message so future sessions
- * skip the model entirely.
- */
 const verdictByFileId = new Map<string, Promise<boolean>>()
 
 export function isProbablyNsfwUrlCached(fileId: string, url: string): Promise<boolean> {
@@ -169,7 +120,6 @@ export function isProbablyNsfwUrlCached(fileId: string, url: string): Promise<bo
   if (!pending) {
     pending = isProbablyNsfwUrl(url)
     verdictByFileId.set(fileId, pending)
-    // A transient failure (decode error mid-load) must not pin false forever.
     pending.catch(() => verdictByFileId.delete(fileId))
   }
   return pending
