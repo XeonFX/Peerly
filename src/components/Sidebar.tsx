@@ -52,7 +52,6 @@ type Props = {
   onStartDirectMessage: (peer: Peer) => void
   onProfileSelect: () => void
   onWorkspaceSettings: () => void
-  onLeave: () => void
   unreadByChannel: Record<string, number>
 }
 
@@ -134,7 +133,6 @@ export function Sidebar({
   onStartDirectMessage,
   onProfileSelect,
   onWorkspaceSettings,
-  onLeave,
   unreadByChannel,
   resolvePeerContact,
   isFriend,
@@ -178,15 +176,6 @@ export function Sidebar({
         </button>
         <div className="flex shrink-0 items-center">
           <ThemeToggle compact />
-          <button
-            className="btn btn-ghost btn-square btn-sm shrink-0"
-            onClick={onLeave}
-            title={tr('Switch workspace')}
-            aria-label={tr('Switch workspace')}
-            data-testid="leave-workspace"
-          >
-            <Icon name="log-out" />
-          </button>
         </div>
       </div>
 

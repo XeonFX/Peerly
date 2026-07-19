@@ -208,6 +208,28 @@ export function clearActiveWorkspace(): void {
   localStorage.removeItem(PERSIST_KEY)
 }
 
+/** The signed-in identity, independent of any active workspace. */
+export type StoredIdentity = {
+  email: string
+  token: string
+  providerId: IdentityProviderId
+  userId?: string
+}
+
+/**
+ * Restore the signed-in identity from stored credentials, independent of any
+ * workspace — so switching workspaces in place from the rail works while on the
+ * home view with no active session. Returns null unless a full, still-valid
+ * credential set is present (an expired token reads as signed-out here).
+ */
+export function loadSignedInIdentity(): StoredIdentity | null {
+  const token = loadIdToken()
+  const providerId = loadIdentityProvider()
+  const email = loadIdentityEmail()
+  if (!token || !providerId || !email) return null
+  return { email, token, providerId, userId: loadIdentityUserId() ?? undefined }
+}
+
 /**
  * The open workspace, independent of ID-token freshness. Tokens live ~1h; the
  * workspace session must not — everything needed to come back (workspace

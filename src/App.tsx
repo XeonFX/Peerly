@@ -6,17 +6,26 @@ import { ConsentBanner } from './components/ConsentBanner'
 import { JoinScreen } from './components/JoinScreen'
 import { LegalPage } from './legal/LegalPage'
 import { Workspace } from './components/Workspace'
+import { WorkspaceRail } from './components/WorkspaceRail'
 import { acceptCurrentLegal, hasAcceptedCurrentLegal } from './consent'
 import { defaultWorkspaceRoute } from './routing'
 import { useAppRouting } from './hooks/useAppRouting'
 import { useFriends } from './hooks/useFriends'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
-import { rememberWorkspace, snapshotWorkspace } from './collab/workspaceStore'
+import { enterStoredWorkspace } from './collab/enterWorkspace'
+import {
+  rememberWorkspace,
+  snapshotWorkspace,
+  workspacesForEmail,
+  type StoredWorkspace,
+} from './collab/workspaceStore'
 import {
   clearActiveWorkspace,
   hydrateSessionAvatar,
+  loadIdentityEmail,
   loadIdToken,
   loadSession,
+  loadSignedInIdentity,
   migrateLegacySession,
   saveIdCredentials,
   saveSession,
@@ -86,6 +95,47 @@ function App() {
     })
   }
 
+  // Rail data: the signed-in email drives which workspaces to offer, and it
+  // survives leaving a workspace (identity outlives the active session), so the
+  // rail stays populated on the home view too. loadIdentityEmail() reads even
+  // when the token has expired — listing is a UX filter, not authorization.
+  const identityEmail = session?.identityEmail ?? loadIdentityEmail() ?? undefined
+  // Reads localStorage each render (cheap: a small JSON parse + filter), so it
+  // reflects joins/switches immediately without a reactive store.
+  const railWorkspaces = identityEmail ? workspacesForEmail(identityEmail) : []
+
+  /** Close the active workspace, stay signed in, land on the home/DM view. */
+  const goHome = () => {
+    clearActiveWorkspace()
+    setSession(null)
+    leaveToPicker()
+  }
+
+  /** Switch to another remembered workspace in place — no sign-out round trip. */
+  const switchWorkspace = async (workspace: StoredWorkspace) => {
+    if (workspace.workspaceId === session?.workspaceId) return
+    const identity = loadSignedInIdentity()
+    // Token expired (ReauthBanner territory) — send them home to re-authenticate
+    // rather than persist a workspace we cannot hand a live token.
+    if (!identity) {
+      goHome()
+      return
+    }
+    try {
+      const next = await enterStoredWorkspace(workspace, identity)
+      setSession(await hydrateSessionAvatar(next))
+      enterWorkspace()
+    } catch {
+      // Invalid signature / no longer on the allow-list — bounce home to re-pick.
+      goHome()
+    }
+  }
+
+  const createWorkspace = () => {
+    goHome()
+    setPickerTab('create')
+  }
+
   // Public legal pages render regardless of session/hydration state.
   if (route.screen === 'legal') {
     return (
@@ -102,25 +152,11 @@ function App() {
 
   const consentBanner = legalAccepted ? null : <ConsentBanner onAccept={acceptLegal} />
 
-  if (!session) {
-    return (
-      <>
-        <JoinScreen
-          pickerTab={pickerTab}
-          onPickerTabChange={setPickerTab}
-          onJoined={async next => {
-            setSession(await hydrateSessionAvatar(next))
-            enterWorkspace()
-          }}
-        />
-        {consentBanner}
-      </>
-    )
-  }
-
-  return (
-    <>
+  const content = session ? (
     <Workspace
+      // Remount on workspace switch so the collab room tears down and rejoins
+      // cleanly for the new workspace instead of mutating a live one.
+      key={session.workspaceId}
       session={session}
       workspaceRoute={workspaceRoute}
       onWorkspaceRouteChange={setWorkspaceRoute}
@@ -137,15 +173,43 @@ function App() {
       onAddFriend={friendsApi.add}
       onRemoveFriend={friendsApi.remove}
       inviteableFriends={emails => friendsApi.inviteable(emails)}
-      onLeave={() => {
-        // Close the workspace, keep the sign-in: the user lands on the picker
-        // and can open another workspace without authenticating again.
-        clearActiveWorkspace()
-        setSession(null)
-        leaveToPicker()
+    />
+  ) : (
+    <JoinScreen
+      pickerTab={pickerTab}
+      onPickerTabChange={setPickerTab}
+      onJoined={async next => {
+        setSession(await hydrateSessionAvatar(next))
+        enterWorkspace()
       }}
     />
-    {consentBanner}
+  )
+
+  // Before sign-in there are no workspaces and nowhere to switch — show the bare
+  // join screen without the rail. Once an identity exists, the rail is persistent.
+  if (!identityEmail) {
+    return (
+      <>
+        {content}
+        {consentBanner}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div className="flex h-dvh min-h-0">
+        <WorkspaceRail
+          workspaces={railWorkspaces}
+          activeWorkspaceId={session?.workspaceId}
+          onHome={!session}
+          onSelectWorkspace={switchWorkspace}
+          onHomeSelect={goHome}
+          onCreateWorkspace={createWorkspace}
+        />
+        <div className="min-w-0 flex-1 overflow-hidden">{content}</div>
+      </div>
+      {consentBanner}
     </>
   )
 }
