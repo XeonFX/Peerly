@@ -1,21 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { dmRoomCode } from './dmCode'
+import { dmRoomCode, PEERLY_DM_SCHEME } from './dmCode'
+import { dmRoomCode as coreDmRoomCode } from '@peerly/core'
 
-describe('dmRoomCode', () => {
-  it('is commutative for the same pair', async () => {
-    const ab = await dmRoomCode('user-a', 'user-b')
-    const ba = await dmRoomCode('user-b', 'user-a')
-    expect(ab).toBe(ba)
-    expect(ab).toMatch(/^[0-9a-f]{32}$/)
+describe('peerly dmRoomCode wrapper', () => {
+  it('matches core with the Peerly scheme', async () => {
+    const wrapped = await dmRoomCode('user-a', 'user-b')
+    const core = await coreDmRoomCode('user-a', 'user-b', PEERLY_DM_SCHEME)
+    expect(wrapped).toBe(core)
   })
 
-  it('differs for different partners', async () => {
-    const ab = await dmRoomCode('user-a', 'user-b')
-    const ac = await dmRoomCode('user-a', 'user-c')
-    expect(ab).not.toBe(ac)
-  })
-
-  it('rejects identical ids', async () => {
-    await expect(dmRoomCode('me', 'me')).rejects.toThrow()
+  it('stays commutative', async () => {
+    expect(await dmRoomCode('a', 'b')).toBe(await dmRoomCode('b', 'a'))
   })
 })
