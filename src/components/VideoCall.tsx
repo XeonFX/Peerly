@@ -64,8 +64,6 @@ function VideoTile({
   const audioRef = useRef<HTMLAudioElement>(null)
   const [flagged, setFlagged] = useState(false)
   const [revealed, setRevealed] = useState(false)
-  const flaggedRef = useRef(false)
-  flaggedRef.current = flagged
 
   const hasVideo = stream.getVideoTracks().some(t => t.enabled)
   const hasAudio = stream.getAudioTracks().length > 0
