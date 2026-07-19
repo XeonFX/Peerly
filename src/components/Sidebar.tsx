@@ -7,6 +7,7 @@ import { InvitePeople } from './InvitePeople'
 import { ThemeToggle } from './ThemeToggle'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
 import { Icon } from './Icon'
+import { LegalLinks } from './LegalLinks'
 import { useI18n } from '../i18n'
 import { useRelayDiagnostics } from '../hooks/useRelayDiagnostics'
 
@@ -458,6 +459,7 @@ export function Sidebar({
           >
             {appBuildLabel()}
           </span>
+          <LegalLinks />
         </div>
       </div>
     </aside>

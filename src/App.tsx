@@ -2,9 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { isE2eAuthBypass } from './collab/e2eAuth'
 import { DeviceIdentity } from './collab/deviceIdentity'
 import { WorkspaceAuthManager } from './collab/workspaceAuth'
+import { ConsentBanner } from './components/ConsentBanner'
 import { JoinScreen } from './components/JoinScreen'
+import { LegalPage } from './legal/LegalPage'
 import { Workspace } from './components/Workspace'
 import { WorkspaceRail } from './components/WorkspaceRail'
+import { acceptCurrentLegal, hasAcceptedCurrentLegal } from './consent'
+import { defaultWorkspaceRoute } from './routing'
 import { useAppRouting } from './hooks/useAppRouting'
 import { useFriends } from './hooks/useFriends'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
@@ -31,8 +35,13 @@ import {
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [ready, setReady] = useState(false)
-  const { pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
+  const { route, navigate, pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
     useAppRouting(Boolean(session), ready)
+  const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedCurrentLegal())
+  const acceptLegal = () => {
+    acceptCurrentLegal()
+    setLegalAccepted(true)
+  }
 
   const deviceIdentity = useMemo(() => new DeviceIdentity(), [])
   const friendsApi = useFriends(deviceIdentity, session?.identityUserId)
@@ -127,9 +136,21 @@ function App() {
     setPickerTab('create')
   }
 
+  // Public legal pages render regardless of session/hydration state.
+  if (route.screen === 'legal') {
+    return (
+      <LegalPage
+        doc={route.doc}
+        onBack={() => navigate(session ? defaultWorkspaceRoute() : { screen: 'picker', tab: 'create' })}
+      />
+    )
+  }
+
   if (!ready) {
     return null
   }
+
+  const consentBanner = legalAccepted ? null : <ConsentBanner onAccept={acceptLegal} />
 
   const content = session ? (
     <Workspace
@@ -166,20 +187,30 @@ function App() {
 
   // Before sign-in there are no workspaces and nowhere to switch — show the bare
   // join screen without the rail. Once an identity exists, the rail is persistent.
-  if (!identityEmail) return content
+  if (!identityEmail) {
+    return (
+      <>
+        {content}
+        {consentBanner}
+      </>
+    )
+  }
 
   return (
-    <div className="flex h-dvh min-h-0">
-      <WorkspaceRail
-        workspaces={railWorkspaces}
-        activeWorkspaceId={session?.workspaceId}
-        onHome={!session}
-        onSelectWorkspace={switchWorkspace}
-        onHomeSelect={goHome}
-        onCreateWorkspace={createWorkspace}
-      />
-      <div className="min-w-0 flex-1 overflow-hidden">{content}</div>
-    </div>
+    <>
+      <div className="flex h-dvh min-h-0">
+        <WorkspaceRail
+          workspaces={railWorkspaces}
+          activeWorkspaceId={session?.workspaceId}
+          onHome={!session}
+          onSelectWorkspace={switchWorkspace}
+          onHomeSelect={goHome}
+          onCreateWorkspace={createWorkspace}
+        />
+        <div className="min-w-0 flex-1 overflow-hidden">{content}</div>
+      </div>
+      {consentBanner}
+    </>
   )
 }
 

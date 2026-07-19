@@ -4,6 +4,7 @@ import {
   E2E_CREATOR_KEY_ID,
   E2E_WORKSPACE_NAME,
 } from '../src/collab/e2eConstants'
+import { LEGAL_CONSENT_STORAGE_KEY, LEGAL_VERSION } from '../src/consent'
 
 export type JoinOptions = {
   name?: string
@@ -43,6 +44,16 @@ function emailFor(opts: JoinOptions): string {
 
 const E2E_SESSION_INIT_FLAG = 'peerly-e2e-session-init'
 
+type FreshSessionOptions = {
+  /**
+   * Seed current Terms/Privacy acceptance after wipe (default true).
+   * Most tests are not about first-run legal UX; without this the fixed
+   * consent banner intercepts clicks on the composer (Send) for 90s+.
+   * Pass false only when testing the banner itself.
+   */
+  acceptLegal?: boolean
+}
+
 /**
  * Clear persisted session before the app's first load in this tab.
  *
@@ -50,21 +61,60 @@ const E2E_SESSION_INIT_FLAG = 'peerly-e2e-session-init'
  * sessionStorage flag. Reload keeps the flag (and the workspace session);
  * explicit clears in rejoinWorkspace/clearSession remove the flag first.
  */
-export async function installFreshSession(page: Page) {
-  await page.addInitScript(flag => {
-    if (sessionStorage.getItem(flag)) return
-    localStorage.clear()
-    sessionStorage.clear()
-    sessionStorage.setItem(flag, '1')
-  }, E2E_SESSION_INIT_FLAG)
+export async function installFreshSession(page: Page, options: FreshSessionOptions = {}) {
+  const acceptLegal = options.acceptLegal !== false
+  await page.addInitScript(
+    ({ flag, legalKey, legalVersion, acceptLegal: seedLegal }) => {
+      if (sessionStorage.getItem(flag)) return
+      localStorage.clear()
+      sessionStorage.clear()
+      sessionStorage.setItem(flag, '1')
+      if (seedLegal) {
+        localStorage.setItem(
+          legalKey,
+          JSON.stringify({ version: legalVersion, acceptedAt: Date.now() })
+        )
+      }
+    },
+    {
+      flag: E2E_SESSION_INIT_FLAG,
+      legalKey: LEGAL_CONSENT_STORAGE_KEY,
+      legalVersion: LEGAL_VERSION,
+      acceptLegal,
+    }
+  )
 }
 
-async function clearBrowserSession(page: Page) {
-  await page.evaluate(flag => {
-    localStorage.clear()
-    sessionStorage.clear()
-    sessionStorage.removeItem(flag)
-  }, E2E_SESSION_INIT_FLAG)
+async function clearBrowserSession(page: Page, options: FreshSessionOptions = {}) {
+  const acceptLegal = options.acceptLegal !== false
+  await page.evaluate(
+    ({ flag, legalKey, legalVersion, acceptLegal: seedLegal }) => {
+      localStorage.clear()
+      sessionStorage.clear()
+      sessionStorage.removeItem(flag)
+      if (seedLegal) {
+        localStorage.setItem(
+          legalKey,
+          JSON.stringify({ version: legalVersion, acceptedAt: Date.now() })
+        )
+      }
+    },
+    {
+      flag: E2E_SESSION_INIT_FLAG,
+      legalKey: LEGAL_CONSENT_STORAGE_KEY,
+      legalVersion: LEGAL_VERSION,
+      acceptLegal,
+    }
+  )
+}
+
+/** Click Accept if the first-run legal banner is showing (no-op if already accepted). */
+export async function acceptLegalConsentIfVisible(page: Page) {
+  const accept = page.getByTestId('consent-accept')
+  if (await accept.isVisible().catch(() => false)) {
+    await accept.click()
+    await expect(page.getByTestId('consent-banner')).toHaveCount(0, { timeout: 5_000 })
+  }
 }
 
 export async function clearSession(page: Page) {
@@ -170,13 +220,14 @@ export async function leaveToPicker(page: Page) {
 
 export async function waitForSignaling(page: Page) {
   const status = page.getByTestId('connection-status')
-  await expect(status).not.toContainText('Signaling offline', { timeout: 45_000 })
+  // Fail faster than the old 45s wall when signaling never comes up.
+  await expect(status).not.toContainText('Signaling offline', { timeout: 25_000 })
 }
 
 /** @deprecated Use waitForSignaling */
 export const waitForRelay = waitForSignaling
 
-export async function waitForPeerConnection(page: Page, timeout = 45_000) {
+export async function waitForPeerConnection(page: Page, timeout = 30_000) {
   await waitForRelay(page)
   const status = page.getByTestId('connection-status')
   await expect(status).toContainText('Connected', { timeout })
@@ -240,13 +291,15 @@ export async function expectChannel(page: Page, name: string, timeout = 15_000) 
 }
 
 export async function sendMessage(page: Page, text: string) {
+  await acceptLegalConsentIfVisible(page)
   const input = page.getByTestId('message-input')
-  await expect(input).toBeEnabled({ timeout: 15_000 })
+  await expect(input).toBeEnabled({ timeout: 10_000 })
   await input.fill(text)
-  await page.getByTestId('send-button').click()
+  // Fail fast if the consent banner (or anything else) still intercepts clicks.
+  await page.getByTestId('send-button').click({ timeout: 10_000 })
 }
 
-export async function expectMessage(page: Page, text: string, timeout = 30_000) {
+export async function expectMessage(page: Page, text: string, timeout = 20_000) {
   await expect(page.locator('.message-list')).toContainText(text, { timeout })
 }
 
@@ -268,8 +321,8 @@ export async function withTwoUsers(
   try {
     await run(alice, bob)
   } finally {
-    await aliceCtx.close()
-    await bobCtx.close()
+    // After a hard timeout the context may already be closed — don't hang cleanup.
+    await Promise.allSettled([aliceCtx.close(), bobCtx.close()])
   }
 }
 

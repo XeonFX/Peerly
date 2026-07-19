@@ -377,6 +377,24 @@ GitHub Actions on push/PR to `main` / `master` (see [.github/workflows/ci.yml](.
 
 `package.json` `devEngines`, `.npmrc`, `.nvmrc`, and CI all enforce the same toolchain. A mismatched Node or npm exits before it can rewrite `package-lock.json`.
 
+## Legal
+
+A Privacy Policy and Terms of Service ship with the app (EN/PL), reachable at
+`/privacy` and `/terms` and linked from the join screen and workspace sidebar. A
+first-run consent banner records agreement (versioned in
+[`src/consent.ts`](src/consent.ts)), and the sign-in card shows an agreement
+notice.
+
+- English reference copies: [docs/legal/PRIVACY.md](docs/legal/PRIVACY.md),
+  [docs/legal/TERMS.md](docs/legal/TERMS.md).
+- In-app localized source of truth: [`src/legal/legalContent.ts`](src/legal/legalContent.ts).
+- Controller name, contact addresses, jurisdiction, and minimum age live in
+  [`src/legal/legalMeta.ts`](src/legal/legalMeta.ts). Edit there.
+
+The invite allow-list distributes invited email addresses to workspace peers —
+the Privacy Policy discloses this. These texts are a good-faith starting point,
+not a substitute for review by a lawyer before a public/commercial launch.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

@@ -39,6 +39,7 @@ import { ThemeToggle } from './ThemeToggle'
 import { useP2pCapability } from '../hooks/useP2pCapability'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
 import { Icon } from './Icon'
+import { LegalLinks } from './LegalLinks'
 import { useI18n } from '../i18n'
 
 function WorkspaceUsageBadge({ usage }: { usage: WorkspaceUsage | undefined }) {
@@ -339,6 +340,17 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined }: Props) {
                 {tr('Sign in to continue')}
               </p>
               {identitySection}
+              <p className="text-center text-xs text-base-content/50">
+                {tr('By signing in you agree to our')}{' '}
+                <a href="/terms" className="link link-primary">
+                  {tr('Terms')}
+                </a>{' '}
+                {tr('and')}{' '}
+                <a href="/privacy" className="link link-primary">
+                  {tr('Privacy Policy')}
+                </a>
+                .
+              </p>
               {error && (
                 <div role="alert" className="alert alert-error" data-testid="error-banner">
                   <span className="text-sm">{error}</span>
@@ -357,6 +369,7 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined }: Props) {
           >
             {appBuildLabel()}
           </p>
+          <LegalLinks />
           </div>
         </div>
       </div>
@@ -624,6 +637,7 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined }: Props) {
         >
           {appBuildLabel()}
         </p>
+        <LegalLinks />
       </div>
     </div>
   )

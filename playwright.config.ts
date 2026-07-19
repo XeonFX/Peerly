@@ -10,15 +10,14 @@ const nostr = process.env.E2E_SIGNALING === 'nostr'
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 90_000,
-  expect: { timeout: 45_000 },
+  // Keep wall-clock failure budget tight: a blocked UI (e.g. consent banner
+  // over Send) should fail in ~30–45s, not 90s × 2 retries × many tests.
+  timeout: 45_000,
+  expect: { timeout: 15_000 },
   fullyParallel: !nostr,
   workers: nostr ? 1 : process.env.CI ? 2 : 4,
-  // One retry: with 4 workers this machine runs up to 8 Chromium pages doing
-  // real WebRTC at once, and a file transfer occasionally misses its window
-  // under that contention. A genuine regression still fails twice and reds the
-  // run; a timing flake costs one extra test instead of the whole suite.
-  retries: 1,
+  // One retry on CI only: genuine regressions fail twice; local runs fail once.
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://127.0.0.1:17273',
