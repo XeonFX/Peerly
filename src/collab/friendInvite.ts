@@ -1,7 +1,13 @@
-import { encodeCanonicalLines } from '@peerly/core'
-import type { DeviceSigner } from '@peerly/core'
+import {
+  encodeCanonicalLines,
+  parsePresencePayload as coreParsePresence,
+  type DeviceSigner,
+  type PresencePayload,
+} from '@peerly/core'
 import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity'
 import { hashEmail, isPlausibleEmail, normalizeEmail } from './emailHash'
+
+export type { PresencePayload }
 
 /**
  * Friend invite wire protocol for the Peerly presence lobby.
@@ -50,12 +56,6 @@ export type FriendInviteResponsePayload = {
   ts: number
   deviceKeyId: DeviceKeyId
   sig: string
-}
-
-export type PresencePayload = {
-  userId: string
-  name: string
-  emailHash: string
 }
 
 export function friendInviteBytes(
@@ -227,21 +227,9 @@ export async function verifyFriendInviteResponse(
   )
 }
 
-/** Validate an untrusted wire presence blob; null if unusable. */
+/** Peerly lobby presence requires email hash for invite matching. */
 export function parsePresencePayload(raw: unknown): PresencePayload | null {
-  if (typeof raw !== 'object' || raw === null) return null
-  const msg = raw as Partial<PresencePayload>
-  if (typeof msg.userId !== 'string' || !msg.userId.trim()) return null
-  if (typeof msg.emailHash !== 'string' || !HEX64.test(msg.emailHash)) return null
-  const name =
-    typeof msg.name === 'string' && msg.name.trim()
-      ? msg.name.trim().slice(0, MAX_NAME)
-      : msg.userId.slice(0, 12)
-  return {
-    userId: msg.userId.trim(),
-    name,
-    emailHash: msg.emailHash.toLowerCase(),
-  }
+  return coreParsePresence(raw, { requireEmailHash: true })
 }
 
 /** Validate an untrusted invite wire blob (shape only — verify signature separately). */

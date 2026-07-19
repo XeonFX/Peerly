@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { signTextChat, verifyTextChat, type TextChatWire } from '@peerly/core'
+import {
+  DEFAULT_HISTORY_CAP,
+  PRESENCE_INTERVAL_MS,
+  signTextChat,
+  verifyTextChat,
+  type TextChatWire,
+} from '@peerly/core'
 import { useLatest, useRoom } from '@peerly/core/react'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
 import { LOBBY_APP_ID } from '../collab/mesh'
@@ -111,7 +117,7 @@ export function useGlobalDmChat({
     }
 
     histReqAction.onMessage = (_msg, { peerId }) => {
-      const snapshot = messagesRef.current.slice(-100)
+      const snapshot = messagesRef.current.slice(-DEFAULT_HISTORY_CAP)
       if (snapshot.length) void histAction.send(snapshot, { target: peerId })
     }
 
@@ -122,17 +128,17 @@ export function useGlobalDmChat({
     room.onPeerJoin = (peerId: string) => {
       refresh()
       // Offer our history to late joiners.
-      const snapshot = messagesRef.current.slice(-100)
+      const snapshot = messagesRef.current.slice(-DEFAULT_HISTORY_CAP)
       if (snapshot.length) void histAction.send(snapshot, { target: peerId })
     }
     room.onPeerLeave = () => refresh()
     refresh()
 
-    // Ring until they join.
+    // Ring until they join (same cadence as lobby presence).
     const ringTimer = window.setInterval(() => {
       if (Object.keys(room.getPeers()).length > 0) return
       ringFriendRef.current?.('open')
-    }, 12_000)
+    }, PRESENCE_INTERVAL_MS)
     ringFriendRef.current?.('open')
 
     return () => {

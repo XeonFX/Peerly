@@ -49,3 +49,28 @@ export function parseDmRingPayload(raw: unknown): DmRingPayload | null {
     preview,
   }
 }
+
+/**
+ * The caller often re-rings every few seconds until the friend joins, so one
+ * "open chat" produces a stream of identical ring payloads. Showing a toast
+ * per payload floods the recipient. Pure decision for one toast per DM:
+ *
+ * - toast still visible → 'skip' for open-rings, 'replace' for message-rings
+ * - toast gone → open-rings wait out the cooldown; message-rings always show
+ */
+export type DmRingToastDecision = 'show' | 'replace' | 'skip'
+
+/** How long after a dismissed/expired ring toast the same DM may toast again. */
+export const DM_RING_TOAST_COOLDOWN_MS = 60_000
+
+export function decideDmRingToast(
+  reason: DmRingReason,
+  entry: { toastVisible: boolean; shownAt: number } | undefined,
+  nowMs: number,
+  cooldownMs: number = DM_RING_TOAST_COOLDOWN_MS
+): DmRingToastDecision {
+  if (!entry) return 'show'
+  if (entry.toastVisible) return reason === 'message' ? 'replace' : 'skip'
+  if (reason === 'message') return 'show'
+  return nowMs - entry.shownAt < cooldownMs ? 'skip' : 'show'
+}

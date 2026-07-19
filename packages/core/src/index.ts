@@ -132,10 +132,13 @@ export {
 } from './peopleList.js'
 export { dmRoomCode } from './dmRoomCode.js'
 export {
+  decideDmRingToast,
+  DM_RING_TOAST_COOLDOWN_MS,
   isValidDmRoomCode,
   parseDmRingPayload,
   type DmRingPayload,
   type DmRingReason,
+  type DmRingToastDecision,
 } from './dmRing.js'
 export {
   applyAudioOutput,
@@ -145,3 +148,26 @@ export {
   type CallMediaMode,
   type MediaDeviceLists,
 } from './mediaDevices.js'
+export {
+  createMediaDevicePrefs,
+  type MediaDevicePrefs,
+  type MediaDevicePrefsConfig,
+} from './mediaDevicePrefs.js'
+export {
+  createMeshIsolation,
+  isProductionHost,
+  meshId,
+  sanitizeMeshHost,
+  type MeshIsolation,
+  type MeshIsolationConfig,
+} from './meshIsolation.js'
+export {
+  createPresenceIndex,
+  parsePresencePayload,
+  PRESENCE_INTERVAL_MS,
+  PRESENCE_TTL_MS,
+  type ParsePresenceOptions,
+  type PresenceEntry,
+  type PresenceIndex,
+  type PresencePayload,
+} from './presence.js'
