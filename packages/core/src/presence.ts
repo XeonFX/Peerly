@@ -22,7 +22,9 @@ export type PresenceIndex = {
   prune: (now?: number) => boolean
   isUserOnline: (userId: string | undefined, now?: number) => boolean
   peerIdForUserId: (userId: string) => string | undefined
+  peerIdsForUserId: (userId: string) => string[]
   peerIdForEmailHash: (emailHash: string) => string | undefined
+  peerIdsForEmailHash: (emailHash: string) => string[]
   get: (peerId: string) => PresenceEntry | undefined
   clear: () => void
   /** For tests / diagnostics. */
@@ -35,17 +37,29 @@ export type PresenceIndex = {
  */
 export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIndex {
   const byPeer = new Map<string, PresenceEntry>()
-  const peerByUserId = new Map<string, string>()
-  const peerByEmailHash = new Map<string, string>()
+  const peersByUserId = new Map<string, Set<string>>()
+  const peersByEmailHash = new Map<string, Set<string>>()
+
+  const removeFromIndex = (index: Map<string, Set<string>>, key: string, peerId: string) => {
+    const peers = index.get(key)
+    if (!peers) return
+    peers.delete(peerId)
+    if (peers.size === 0) index.delete(key)
+  }
+
+  const addToIndex = (index: Map<string, Set<string>>, key: string, peerId: string) => {
+    const peers = index.get(key) ?? new Set<string>()
+    peers.delete(peerId)
+    peers.add(peerId)
+    index.set(key, peers)
+  }
 
   const drop = (peerId: string) => {
     const entry = byPeer.get(peerId)
     if (!entry) return
     byPeer.delete(peerId)
-    if (peerByUserId.get(entry.userId) === peerId) peerByUserId.delete(entry.userId)
-    if (entry.emailHash && peerByEmailHash.get(entry.emailHash) === peerId) {
-      peerByEmailHash.delete(entry.emailHash)
-    }
+    removeFromIndex(peersByUserId, entry.userId, peerId)
+    if (entry.emailHash) removeFromIndex(peersByEmailHash, entry.emailHash, peerId)
   }
 
   return {
@@ -64,8 +78,6 @@ export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIn
         typeof raw.emailHash === 'string' && raw.emailHash
           ? raw.emailHash.toLowerCase()
           : undefined
-      const prev = peerByUserId.get(userId)
-      if (prev && prev !== peerId) drop(prev)
       const entry: PresenceEntry = {
         userId,
         name,
@@ -73,8 +85,8 @@ export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIn
         seenAt: Number.isFinite(raw.seenAt) ? raw.seenAt! : Date.now(),
       }
       byPeer.set(peerId, entry)
-      peerByUserId.set(userId, peerId)
-      if (emailHash) peerByEmailHash.set(emailHash, peerId)
+      addToIndex(peersByUserId, userId, peerId)
+      if (emailHash) addToIndex(peersByEmailHash, emailHash, peerId)
     },
     drop,
     prune: (now = Date.now()) => {
@@ -88,18 +100,20 @@ export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIn
     },
     isUserOnline: (userId, now = Date.now()) => {
       if (!userId) return false
-      const peerId = peerByUserId.get(userId)
-      if (!peerId) return false
-      const entry = byPeer.get(peerId)
-      return !!entry && now - entry.seenAt <= ttlMs
+      return [...(peersByUserId.get(userId) ?? [])].some(peerId => {
+        const entry = byPeer.get(peerId)
+        return !!entry && now - entry.seenAt <= ttlMs
+      })
     },
-    peerIdForUserId: userId => peerByUserId.get(userId),
-    peerIdForEmailHash: emailHash => peerByEmailHash.get(emailHash.toLowerCase()),
+    peerIdForUserId: userId => [...(peersByUserId.get(userId) ?? [])].at(-1),
+    peerIdsForUserId: userId => [...(peersByUserId.get(userId) ?? [])],
+    peerIdForEmailHash: emailHash => [...(peersByEmailHash.get(emailHash.toLowerCase()) ?? [])].at(-1),
+    peerIdsForEmailHash: emailHash => [...(peersByEmailHash.get(emailHash.toLowerCase()) ?? [])],
     get: peerId => byPeer.get(peerId),
     clear: () => {
       byPeer.clear()
-      peerByUserId.clear()
-      peerByEmailHash.clear()
+      peersByUserId.clear()
+      peersByEmailHash.clear()
     },
     size: () => byPeer.size,
   }

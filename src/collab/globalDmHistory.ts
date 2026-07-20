@@ -7,6 +7,7 @@ import {
   createTextChatHistoryStore,
   DEFAULT_HISTORY_CAP,
   type TextChatWire,
+  type TextReactionWire,
 } from '@peerly/core'
 
 const store = createTextChatHistoryStore({
@@ -23,12 +24,31 @@ export type GlobalDmMessage = TextChatWire & {
   deviceGrant?: import('./deviceAuthorization').DeviceGrant
 }
 
+export type GlobalDmReaction = TextReactionWire & {
+  deviceGrant?: import('./deviceAuthorization').DeviceGrant
+}
+
 export function loadGlobalDmHistory(roomCode: string): GlobalDmMessage[] {
   return store.load(roomCode).wires as GlobalDmMessage[]
 }
 
-export function saveGlobalDmHistory(roomCode: string, messages: GlobalDmMessage[]): void {
-  store.save(roomCode, messages)
+export function loadGlobalDmReactions(roomCode: string): GlobalDmReaction[] {
+  return store.load(roomCode).reactions as GlobalDmReaction[]
+}
+
+export function saveGlobalDmHistory(
+  roomCode: string,
+  messages: GlobalDmMessage[],
+  reactions: GlobalDmReaction[] = []
+): void {
+  store.save(roomCode, messages, reactions)
+}
+
+export function mergeGlobalDmReactions(
+  current: GlobalDmReaction[],
+  incoming: GlobalDmReaction[]
+): GlobalDmReaction[] {
+  return store.mergeReactions(current, incoming) as GlobalDmReaction[]
 }
 
 export function upsertGlobalDmMessage(

@@ -32,11 +32,36 @@ export async function probeP2pCapability(
 
     const left = offerer
     const right = answerer
+    const pendingForLeft: RTCIceCandidate[] = []
+    const pendingForRight: RTCIceCandidate[] = []
+    const forwardCandidate = (
+      target: RTCPeerConnection,
+      pending: RTCIceCandidate[],
+      candidate: RTCIceCandidate
+    ) => {
+      // Safari can emit host candidates synchronously from
+      // setLocalDescription(). addIceCandidate() is invalid until the target
+      // has a remote description, so retain those early candidates instead of
+      // silently dropping the only viable path for this local self-test.
+      if (!target.remoteDescription) {
+        pending.push(candidate)
+        return
+      }
+      void target.addIceCandidate(candidate).catch(() => {})
+    }
+    const flushCandidates = async (
+      target: RTCPeerConnection,
+      pending: RTCIceCandidate[]
+    ) => {
+      for (const candidate of pending.splice(0)) {
+        await target.addIceCandidate(candidate)
+      }
+    }
     left.onicecandidate = event => {
-      if (event.candidate) void right.addIceCandidate(event.candidate).catch(() => {})
+      if (event.candidate) forwardCandidate(right, pendingForRight, event.candidate)
     }
     right.onicecandidate = event => {
-      if (event.candidate) void left.addIceCandidate(event.candidate).catch(() => {})
+      if (event.candidate) forwardCandidate(left, pendingForLeft, event.candidate)
     }
 
     const channel = left.createDataChannel('peerly-capability-check')
@@ -49,9 +74,11 @@ export async function probeP2pCapability(
     const offer = await left.createOffer()
     await left.setLocalDescription(offer)
     await right.setRemoteDescription(offer)
+    await flushCandidates(right, pendingForRight)
     const answer = await right.createAnswer()
     await right.setLocalDescription(answer)
     await left.setRemoteDescription(answer)
+    await flushCandidates(left, pendingForLeft)
     await opened
 
     return {

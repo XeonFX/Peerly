@@ -13,6 +13,7 @@ describe('createPresenceIndex', () => {
     expect(idx.isUserOnline('u1')).toBe(true)
     expect(idx.peerIdForUserId('u1')).toBe('peer-1')
     expect(idx.peerIdForEmailHash(hash)).toBe('peer-1')
+    expect(idx.peerIdsForEmailHash(hash)).toEqual(['peer-1'])
   })
 
   it('prunes stale entries', () => {
@@ -22,12 +23,15 @@ describe('createPresenceIndex', () => {
     expect(idx.isUserOnline('u')).toBe(false)
   })
 
-  it('rebinds userId when peerId changes', () => {
+  it('keeps every online device for the same user', () => {
     const idx = createPresenceIndex()
     idx.record('old', { userId: 'u', name: 'A' })
     idx.record('new', { userId: 'u', name: 'A' })
     expect(idx.peerIdForUserId('u')).toBe('new')
-    expect(idx.get('old')).toBeUndefined()
+    expect(idx.peerIdsForUserId('u')).toEqual(['old', 'new'])
+    expect(idx.get('old')).toBeDefined()
+    idx.drop('new')
+    expect(idx.peerIdForUserId('u')).toBe('old')
   })
 
   it('removes stale reverse indexes when one peer changes identity', () => {

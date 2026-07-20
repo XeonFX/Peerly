@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { isEmailAllowed } from '../collab/allowList'
 import { APP_NAME, appBuildLabel } from '../config'
 import {
@@ -33,8 +33,6 @@ import {
 import { WorkspaceAvatar } from './WorkspaceAvatar'
 import { IdentityLoginButtons, type SignedInIdentity } from './IdentityLoginButtons'
 import peerlyBrand from '../assets/peerly-brand.webp'
-import { useBrowserStorage } from '../hooks/useBrowserStorage'
-import { BrowserStorageCard } from './BrowserStorageCard'
 import { ThemeToggle } from './ThemeToggle'
 import { useP2pCapability } from '../hooks/useP2pCapability'
 import { P2pCapabilityIndicator } from './P2pCapabilityIndicator'
@@ -56,13 +54,11 @@ function WorkspaceUsageBadge({ usage }: { usage: WorkspaceUsage | undefined }) {
 }
 
 type Props = {
-  view: 'login' | 'home' | 'create' | 'join'
+  view: 'login' | 'create' | 'join'
   pickerTab: 'create' | 'join'
   onPickerTabChange: (tab: 'create' | 'join') => void
   onJoined: (session: Session) => void
   onIdentityChange?: (signedIn: boolean) => void
-  /** Friends + email-invite panel, rendered only on the signed-in home view. */
-  friendsPanel?: ReactNode
 }
 
 type Mode = 'create' | 'join'
@@ -81,9 +77,8 @@ function restoreSignedInIdentity(): SignedInIdentity | null {
   return { email, token, providerId, userId: loadIdentityUserId() ?? undefined }
 }
 
-export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIdentityChange, friendsPanel }: Props) {
+export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIdentityChange }: Props) {
   const { tr } = useI18n()
-  const browserStorage = useBrowserStorage()
   const { capability: p2pCapability } = useP2pCapability()
   const saved = loadPersistedSession()
   const [workspaceName, setWorkspaceName] = useState(saved?.workspaceName ?? tr('My team'))
@@ -387,7 +382,7 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
   return (
     <div className="join-screen h-full overflow-y-auto p-4">
       <div className="fixed right-4 top-4 z-20"><ThemeToggle compact /></div>
-      <div className={`join-card mx-auto w-full space-y-5 py-2 ${view === 'home' ? 'max-w-6xl' : 'max-w-2xl'}`}>
+      <div className="join-card mx-auto w-full max-w-2xl space-y-5 py-2">
         <header className="space-y-2 text-center">
           <div className="join-logo flex items-center justify-center gap-2">
             <span className="brand-mark brand-mark-sm" aria-hidden="true"><img src={peerlyBrand} alt="" /></span>
@@ -395,24 +390,9 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
           </div>
         </header>
 
-        {view === 'home' ? friendsPanel : null}
-
-        {view === 'home' && (
-          <>
-            <BrowserStorageCard
-              estimate={browserStorage.estimate}
-              pressure={browserStorage.pressure}
-              onRefresh={() => void browserStorage.refresh(true)}
-              onRequestPersistence={browserStorage.requestPersistence}
-              requestingPersistence={browserStorage.requestingPersistence}
-            />
-            <P2pCapabilityIndicator capability={p2pCapability} rtcPeerCount={0} compact />
-          </>
-        )}
-
         {inviteBanner}
 
-        {view === 'home' && <section className="space-y-2" data-testid="workspace-picker">
+        {view === 'create' && <section className="space-y-2" data-testid="workspace-picker">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-medium uppercase tracking-wider text-base-content/50">
               {tr('Your workspaces')}
@@ -515,7 +495,7 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
           </ul>
         </section>}
 
-        {(view === 'create' || view === 'join') && <div className="card border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
+        <div className="card border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
           <div className="card-body gap-4 p-5">
             <div role="tablist" className="tabs tabs-boxed join-tabs bg-base-300/50">
               <button
@@ -639,7 +619,7 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
               </div>
             )}
           </div>
-        </div>}
+        </div>
 
         <p
           className="text-center font-mono text-[0.7rem] text-base-content/35"

@@ -51,6 +51,15 @@ function isChatWire(value: unknown): value is TextChatWire {
       (typeof w.authorUserId === 'string' && w.authorUserId.length > 0 && w.authorUserId.length <= 256)) &&
     typeof w.deviceKeyId === 'string' && w.deviceKeyId.length <= 512 &&
     typeof w.sig === 'string' && w.sig.length <= 512
+    && (w.attachment === undefined || (
+      typeof w.attachment === 'object' && w.attachment !== null &&
+      typeof w.attachment.id === 'string' && /^[0-9a-f]{64}$/i.test(w.attachment.id) &&
+      typeof w.attachment.name === 'string' && w.attachment.name.length > 0 && w.attachment.name.length <= 255 &&
+      typeof w.attachment.mimeType === 'string' && w.attachment.mimeType.length <= 128 &&
+      typeof w.attachment.size === 'number' && Number.isSafeInteger(w.attachment.size) &&
+      w.attachment.size >= 0 && w.attachment.size <= 50 * 1024 * 1024 &&
+      (w.attachment.thumbnail === undefined || (typeof w.attachment.thumbnail === 'string' && w.attachment.thumbnail.length <= 96_000))
+    ))
   )
 }
 

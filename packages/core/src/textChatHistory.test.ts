@@ -79,4 +79,14 @@ describe('createTextChatHistoryStore', () => {
       reactions: [],
     }).messages).toEqual([])
   })
+
+  it('rejects malformed or oversized attachment metadata', () => {
+    expect(hist.parseEnvelope({
+      messages: [
+        wire('bad-hash', 1, '', { attachment: { id: 'nope', name: 'a', mimeType: 'image/png', size: 1 } }),
+        wire('too-large', 2, '', { attachment: { id: 'a'.repeat(64), name: 'a', mimeType: 'image/png', size: 51 * 1024 * 1024 } }),
+      ],
+      reactions: [],
+    }).messages).toEqual([])
+  })
 })
