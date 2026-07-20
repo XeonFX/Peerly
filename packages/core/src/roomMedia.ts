@@ -129,6 +129,17 @@ export function createRoomMedia(
       })
     }
 
+    // Trystero publishes stream and track metadata over separate actions.
+    // Consumers of this controller wire `handlePeerStream`, so publishing the
+    // first capture via addTrack makes the corresponding raw stream event get
+    // discarded as unmatched track metadata. Use addStream for the initial
+    // publication; reserve track operations for an already-announced stream.
+    if (!previous && next) {
+      localStream = next
+      room.addStream(next)
+      return
+    }
+
     const canTrackOps =
       typeof room.replaceTrack === 'function' &&
       typeof room.addTrack === 'function' &&
