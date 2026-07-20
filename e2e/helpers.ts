@@ -167,7 +167,7 @@ export async function waitForWorkspace(page: Page, timeout = 30_000) {
 export async function e2eSignIn(page: Page, opts: JoinOptions) {
   await page.getByTestId('e2e-email').fill(emailFor(opts))
   await page.getByTestId('signin-e2e').click()
-  await expect(page.getByTestId('signed-in-user')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('workspace-rail')).toBeVisible({ timeout: 15_000 })
 }
 
 export async function joinWorkspace(page: Page, opts: JoinOptions) {

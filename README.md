@@ -178,11 +178,16 @@ Deployment owners can replace the curated Nostr set with the build-time `VITE_NO
 For strict NAT / corporate firewalls, add your own TURN server:
 
 ```bash
-VITE_TURN_URLS=turn:your-turn.example:3478 \
+VITE_TURN_URLS=turn:your-turn.example:3478,turns:your-turn.example:5349 \
 VITE_TURN_USERNAME=user \
 VITE_TURN_CREDENTIAL=pass \
 npm run build
 ```
+
+Core expands conventional TURN endpoints into UDP `3478`, TCP `3478`, TLS
+`5349`, and TLS `443` candidates. Expose TURN/TLS on `443` for networks that
+block non-HTTPS ports; with one public IP, route TCP by TLS SNI so `turn.*`
+reaches coturn and `relay.*` continues to reach HTTPS/WSS.
 
 ## Deploy
 

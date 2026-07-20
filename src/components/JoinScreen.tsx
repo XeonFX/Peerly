@@ -395,9 +395,6 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
           </div>
         </header>
 
-        {/* Who you are, first — it decides which workspaces appear below. */}
-        {identitySection}
-
         {view === 'home' ? friendsPanel : null}
 
         {view === 'home' && (

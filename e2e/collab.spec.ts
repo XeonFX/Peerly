@@ -96,7 +96,7 @@ test.describe('Peerly P2P collaboration', () => {
 
     // Leaving must NOT sign you out — you land on the picker still signed in.
     await leaveToPicker(page)
-    await expect(page.getByTestId('signed-in-user')).toBeVisible()
+    await expect(page.getByTestId('workspace-picker')).toBeVisible()
 
     // The workspace we just joined is offered without pasting the link again.
     await page.getByTestId('open-workspace-test-ws').click()
@@ -121,7 +121,8 @@ test.describe('Peerly P2P collaboration', () => {
 
     // Same browser, different identity: outsider@ is not on the fixture's
     // allow-list, so the workspace must not be offered to them.
-    await page.getByTestId('sign-out').click()
+    await page.getByTestId('rail-account').click()
+    await page.getByTestId('account-sign-out').click()
     await e2eSignIn(page, { email: 'outsider@e2e.test' })
     await expect(page.getByTestId('open-workspace-test-ws')).not.toBeVisible()
   })

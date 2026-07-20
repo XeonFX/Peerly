@@ -8,10 +8,9 @@ import { useGlobalDmChat } from '../hooks/useGlobalDmChat'
 import type { LobbyProfile } from '../hooks/usePresenceLobby'
 import { FriendsPanel } from './FriendsPanel'
 import { GlobalDmChat } from './GlobalDmChat'
+import { Icon } from './Icon'
 import { useI18n } from '../i18n'
 import type { IncomingFriendInvite, OutgoingFriendInvite } from '../collab/friendInviteStore'
-import type { StoredWorkspace } from '../collab/workspaceStore'
-import { WorkspaceAvatar } from './WorkspaceAvatar'
 
 type Props = {
   profile: LobbyProfile
@@ -34,15 +33,11 @@ type Props = {
   /** Incoming lobby ring from App (open that DM). */
   pendingRing: DmRingPayload | null
   onConsumeRing: () => void
-  recentWorkspace?: StoredWorkspace
-  onOpenWorkspace: (workspace: StoredWorkspace) => void
-  onCreateWorkspace: () => void
-  onJoinWorkspace: () => void
 }
 
 /**
- * Signed-in home: friends + global DMs on the left/main, workspaces below or
- * beside — Discord-style Direct Messages destination for the rail Home button.
+ * Signed-in home: Discord-style Friends/DM navigation. The compact left list
+ * chooses a destination; Friends or the selected conversation owns the main pane.
  */
 export function HomeView({
   profile,
@@ -60,10 +55,6 @@ export function HomeView({
   onRemoveFriend,
   pendingRing,
   onConsumeRing,
-  recentWorkspace,
-  onOpenWorkspace,
-  onCreateWorkspace,
-  onJoinWorkspace,
 }: Props) {
   const { tr } = useI18n()
   const [activeFriend, setActiveFriend] = useState<Friend | null>(null)
@@ -122,30 +113,6 @@ export function HomeView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4" data-testid="home-view">
-      <section className="rounded-box border border-base-300 bg-base-100/70 p-4" data-testid="home-workspace-actions">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wider text-base-content/50">{tr('Recent workspace')}</p>
-            {recentWorkspace ? (
-              <button
-                type="button"
-                className="mt-2 flex items-center gap-2 rounded-box px-2 py-1.5 text-left hover:bg-base-200"
-                onClick={() => onOpenWorkspace(recentWorkspace)}
-                data-testid="open-recent-workspace"
-              >
-                <WorkspaceAvatar name={recentWorkspace.workspaceName} avatarId={recentWorkspace.workspaceAvatarId} size="md" />
-                <span className="font-semibold">{recentWorkspace.workspaceName}</span>
-              </button>
-            ) : (
-              <p className="mt-1 text-sm text-base-content/55">{tr('No workspace opened yet.')}</p>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <button type="button" className="btn btn-outline btn-sm" onClick={onJoinWorkspace}>{tr('Join workspace')}</button>
-            <button type="button" className="btn btn-primary btn-sm" onClick={onCreateWorkspace}>{tr('Create workspace')}</button>
-          </div>
-        </div>
-      </section>
       {ringBanner && (
         <div
           className="flex items-center gap-2 rounded-box border border-primary/30 bg-primary/10 px-3 py-2 text-sm"
@@ -183,60 +150,96 @@ export function HomeView({
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(16rem,20rem)_1fr]">
-        <FriendsPanel
-          friends={friends}
-          outgoing={outgoing}
-          incoming={incoming}
-          onlineCount={onlineCount}
-          isUserOnline={isUserOnline}
-          activeDmUserId={activeFriend?.subjectUserId}
-          onMessageFriend={friend => void openFriend(friend)}
-          onInvite={onInvite}
-          onAccept={onAccept}
-          onDecline={onDecline}
-          onCancelOutgoing={onCancelOutgoing}
-          onRemoveFriend={onRemoveFriend}
-        />
-
-        {activeFriend && roomCode ? (
-          <GlobalDmChat
-            friendName={activeFriend.subjectName}
-            friendEmail={activeFriend.subjectEmail}
-            friendOnline={friendOnline}
-            partnerInRoom={chat.partnerInRoom}
-            messages={chat.messages}
-            selfUserId={profile.userId}
-            error={chat.error}
-            onSend={chat.sendMessage}
-            onEdit={chat.editMessage}
-            onDelete={chat.deleteMessage}
-            onClose={() => {
+      <div className="grid min-h-0 flex-1 overflow-hidden rounded-box border border-base-300/80 bg-base-100/70 md:grid-cols-[15rem_minmax(0,1fr)]">
+        <aside className="border-b border-base-300/70 bg-base-200/50 p-2 md:border-b-0 md:border-r" aria-label={tr('Direct messages')}>
+          <button
+            type="button"
+            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium ${
+              activeFriend ? 'hover:bg-base-300/70' : 'bg-base-300 text-base-content'
+            }`}
+            data-testid="home-friends-tab"
+            aria-current={!activeFriend || undefined}
+            onClick={() => {
               setActiveFriend(null)
               setRoomCode(null)
             }}
-          />
-        ) : (
-          <div
-            className="flex min-h-[12rem] flex-col items-center justify-center rounded-box border border-dashed border-base-300 bg-base-100/50 p-6 text-center"
-            data-testid="global-dm-empty"
           >
-            <p className="text-sm font-medium text-base-content/80">
-              {tr('Direct messages')}
-            </p>
-            <p className="mt-1 max-w-sm text-xs text-base-content/55">
-              {activeFriend
-                ? tr(
-                    'This friend uses the old insecure DM format. Remove and invite them again to create a secure credential.'
-                  )
-                : tr(
-                    'Message a friend from the list. They need to be signed in to Peerly to get a ring and join the private chat.'
-                  )}
-            </p>
-          </div>
-        )}
-      </div>
+            <Icon name="user" size={17} />
+            {tr('Friends')}
+            {incoming.length > 0 && (
+              <span className="ml-auto min-w-5 rounded-full bg-primary px-1.5 text-center text-xs text-primary-content">
+                {incoming.length}
+              </span>
+            )}
+          </button>
+          <h2 className="mb-1 mt-4 px-3 text-[0.65rem] font-semibold uppercase tracking-wider text-base-content/50">
+            {tr('Direct messages')}
+          </h2>
+          {friends.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-base-content/45">{tr('No friends yet.')}</p>
+          ) : (
+            <ul className="space-y-0.5" data-testid="direct-message-list">
+              {friends.map(friend => {
+                const online = isUserOnline(friend.subjectUserId)
+                const active = activeFriend?.subjectUserId === friend.subjectUserId
+                const canMessage = Boolean(friendDmSecret(friend))
+                return (
+                  <li key={friend.subjectUserId}>
+                    <button
+                      type="button"
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
+                        active ? 'bg-primary/15 text-primary' : 'text-base-content/75 hover:bg-base-300/70 hover:text-base-content'
+                      } disabled:cursor-not-allowed disabled:opacity-45`}
+                      data-testid={`direct-message-${friend.subjectUserId}`}
+                      disabled={!canMessage}
+                      title={canMessage ? tr('Message {name}', { name: friend.subjectName }) : tr('Remove and invite this friend again to enable secure messages.')}
+                      onClick={() => void openFriend(friend)}
+                    >
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${online ? 'bg-success' : 'bg-base-content/25'}`} aria-hidden />
+                      <span className="min-w-0 flex-1 truncate">{friend.subjectName}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </aside>
 
+        <main className="min-h-0 min-w-0 p-3 sm:p-4">
+          {activeFriend && roomCode ? (
+            <GlobalDmChat
+              friendName={activeFriend.subjectName}
+              friendEmail={activeFriend.subjectEmail}
+              friendOnline={friendOnline}
+              partnerInRoom={chat.partnerInRoom}
+              messages={chat.messages}
+              selfUserId={profile.userId}
+              error={chat.error}
+              onSend={chat.sendMessage}
+              onEdit={chat.editMessage}
+              onDelete={chat.deleteMessage}
+              onClose={() => {
+                setActiveFriend(null)
+                setRoomCode(null)
+              }}
+            />
+          ) : (
+            <FriendsPanel
+              friends={friends}
+              outgoing={outgoing}
+              incoming={incoming}
+              onlineCount={onlineCount}
+              isUserOnline={isUserOnline}
+              onMessageFriend={friend => void openFriend(friend)}
+              onInvite={onInvite}
+              onAccept={onAccept}
+              onDecline={onDecline}
+              onCancelOutgoing={onCancelOutgoing}
+              onRemoveFriend={onRemoveFriend}
+            />
+          )}
+        </main>
+      </div>
     </div>
   )
 }
