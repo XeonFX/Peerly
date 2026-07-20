@@ -43,4 +43,24 @@ describe('device sync', () => {
     expect(localStorage.getItem('peerly-gdm-hist-v1-room')).toContain('"id":"a"')
     expect(localStorage.getItem('peerly-gdm-hist-v1-room')).toContain('"id":"b"')
   })
+
+  it('preserves the local workspace rail order when newer activity syncs in', () => {
+    localStorage.setItem('peerly-workspaces', JSON.stringify([
+      { workspaceId: 'alpha', lastOpenedAt: 10 },
+      { workspaceId: 'beta', lastOpenedAt: 20 },
+    ]))
+    importDeviceSyncSnapshot({
+      v: 1,
+      createdAt: 30,
+      values: {
+        'peerly-workspaces': JSON.stringify([
+          { workspaceId: 'beta', lastOpenedAt: 40 },
+          { workspaceId: 'gamma', lastOpenedAt: 30 },
+        ]),
+      },
+    }, 'user-1')
+
+    const merged = JSON.parse(localStorage.getItem('peerly-workspaces') ?? '[]') as Array<{ workspaceId: string }>
+    expect(merged.map(workspace => workspace.workspaceId)).toEqual(['alpha', 'beta', 'gamma'])
+  })
 })

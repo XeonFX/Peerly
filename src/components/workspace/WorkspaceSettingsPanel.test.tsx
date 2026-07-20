@@ -60,7 +60,7 @@ afterEach(() => {
 })
 
 describe('WorkspaceSettingsPanel', () => {
-  it('renders storage and attention controls and changes the locale', async () => {
+  it('renders workspace controls without global appearance preferences', async () => {
     render(
       <I18nProvider>
         <WorkspaceSettingsPanel
@@ -93,9 +93,8 @@ describe('WorkspaceSettingsPanel', () => {
     expect(screen.getByTestId('workspace-storage').textContent).toContain('2 cached files')
     expect(screen.getByTestId('attention-sound-toggle').textContent).toContain('Turn on attention sounds')
 
-    fireEvent.change(screen.getByTestId('locale-select'), { target: { value: 'pl' } })
-    expect(screen.getByRole('heading', { name: 'Ustawienia przestrzeni' })).toBeTruthy()
-    expect(screen.getByTestId('attention-sound-toggle').textContent).toContain('Włącz dźwięki powiadomień')
+    expect(screen.queryByTestId('locale-select')).toBeNull()
+    expect(screen.queryByTestId('theme-toggle')).toBeNull()
   })
 
   it('clears local history after explicit confirmation', async () => {

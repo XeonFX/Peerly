@@ -11,6 +11,7 @@ import {
 } from '../collab/identityProviders'
 import { signInWithProvider } from '../collab/providerSignIn'
 import { deriveUserId } from '../collab/userId'
+import { saveIdCredentials } from '../session'
 import { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { Avatar } from './Avatar'
 import { useI18n } from '../i18n'
@@ -106,6 +107,9 @@ export function IdentityLoginButtons({
       const claims = await authManager.verifyAndStoreIdToken(token, providerId)
       const userId = await deriveUserId(claims.iss, claims.sub)
       await ensureOidcAvatar(claims.picture)
+      // Identity is app-wide, not workspace-scoped. Persist it immediately so
+      // App can render Home and the global rail before a workspace is opened.
+      saveIdCredentials(token, providerId, claims.email, userId)
       onSignedIn({ email: claims.email, name: claims.name, token, providerId, userId })
     },
     [authManager, onSignedIn]
@@ -138,6 +142,7 @@ export function IdentityLoginButtons({
       const token = authManager.getIdToken()
       if (!token) throw new Error(tr('Sign-in failed'))
       const userId = await deriveUserId(claims.iss, claims.sub)
+      saveIdCredentials(token, 'google', claims.email, userId)
       onSignedIn({ email: claims.email, name: claims.name, token, providerId: 'google', userId })
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err))

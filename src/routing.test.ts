@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { defaultWorkspaceRoute, hasInviteHash, pathForRoute, pathWithHash, routeFromPath } from './routing'
+import { defaultWorkspaceRoute, hasInviteHash, pathForRoute, pathWithHash, resolveInitialRoute, routeFromPath } from './routing'
 
 describe('routing', () => {
   it('round-trips picker routes', () => {
@@ -28,8 +29,22 @@ describe('routing', () => {
     expect(routeFromPath(pathForRoute(defaultWorkspaceRoute()))?.screen).toBe('workspace')
   })
 
-  it('maps root to create tab', () => {
-    expect(routeFromPath('/')).toEqual({ screen: 'picker', tab: 'create' })
+  it('maps root and /login to the logged-out landing view', () => {
+    expect(routeFromPath('/')).toEqual({ screen: 'login' })
+    expect(routeFromPath('/login')).toEqual({ screen: 'login' })
+  })
+
+  it('round-trips signed-in global routes', () => {
+    expect(routeFromPath(pathForRoute({ screen: 'home' }))).toEqual({ screen: 'home' })
+    expect(routeFromPath(pathForRoute({ screen: 'account' }))).toEqual({ screen: 'account' })
+  })
+
+  it('protects create while preserving invite-based sign in', () => {
+    window.history.replaceState(null, '', '/create')
+    expect(resolveInitialRoute(false, false)).toEqual({ screen: 'login' })
+    expect(resolveInitialRoute(false, true)).toEqual({ screen: 'picker', tab: 'create' })
+    window.history.replaceState(null, '', '/join#invite=abc')
+    expect(resolveInitialRoute(false, false)).toEqual({ screen: 'picker', tab: 'join' })
   })
 
   it('round-trips a device pairing link', () => {

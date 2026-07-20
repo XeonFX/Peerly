@@ -17,7 +17,6 @@ import type { useBrowserStorage } from '../../hooks/useBrowserStorage'
 import type { P2pCapability } from '../../types'
 import { P2pCapabilityIndicator } from '../P2pCapabilityIndicator'
 import { RelayHealthCard } from './RelayHealthCard'
-import { ThemeToggle } from '../ThemeToggle'
 import { useI18n } from '../../i18n'
 
 type Props = {
@@ -71,7 +70,7 @@ export function WorkspaceSettingsPanel({
   onAvatarClear,
   onBack,
 }: Props) {
-  const { locale, setLocale, t, tr } = useI18n()
+  const { t, tr } = useI18n()
   const fileRef = useRef<HTMLInputElement>(null)
   const [usage, setUsage] = useState<WorkspaceUsage | null>(null)
   const [syncMode, setSyncMode] = useState<FileSyncMode>(() => loadFileSyncMode())
@@ -212,37 +211,6 @@ export function WorkspaceSettingsPanel({
               )}
             </div>
             {uploadError && <p className="text-sm text-error">{uploadError}</p>}
-          </div>
-        </section>
-
-        <section
-          className="card mt-5 border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl"
-          data-testid="appearance-settings"
-        >
-          <div className="card-body gap-3">
-            <div>
-              <h3 className="text-base font-semibold">{tr('Appearance')}</h3>
-              <p className="mt-1 text-xs leading-relaxed text-base-content/65">
-                {tr('Theme preference is stored only on this device.')}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <ThemeToggle />
-              <label className="flex items-center gap-2 text-sm">
-                <span>{t('settings.language', 'Language')}</span>
-                <select
-                  id="app-locale"
-                  name="locale"
-                  className="select select-bordered select-sm"
-                  value={locale}
-                  onChange={event => setLocale(event.target.value as 'en' | 'pl')}
-                  data-testid="locale-select"
-                >
-                  <option value="en">English</option>
-                  <option value="pl">Polski</option>
-                </select>
-              </label>
-            </div>
           </div>
         </section>
 

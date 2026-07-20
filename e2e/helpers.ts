@@ -202,9 +202,9 @@ export async function createWorkspace(
 ) {
   await installFreshSession(page)
   await page.goto('/')
-  // Sign in first: the create/join tabs only exist once there is an identity.
+  // Sign in first, then use the dedicated create destination in the global rail.
   await e2eSignIn(page, opts)
-  await page.getByTestId('create-workspace-tab').click()
+  await page.getByTestId('rail-create-workspace').click()
   await page.getByTestId('workspace-name').fill(opts.workspaceName)
   if (opts.guests) await page.getByTestId('guest-emails').fill(opts.guests)
   await page.getByTestId('join-submit').click()

@@ -12,6 +12,7 @@ import type { DmRingPayload } from './collab/dmRing'
 import { LegalPage } from './legal/LegalPage'
 import { Workspace } from './components/Workspace'
 import { WorkspaceRail } from './components/WorkspaceRail'
+import { AccountPreferencesPage } from './components/AccountPreferencesPage'
 import { acceptCurrentLegal, hasAcceptedCurrentLegal } from './consent'
 import { defaultWorkspaceRoute } from './routing'
 import { useAppRouting } from './hooks/useAppRouting'
@@ -24,10 +25,12 @@ import {
   rememberWorkspace,
   snapshotWorkspace,
   workspacesForEmail,
+  mostRecentlyOpenedWorkspace,
   type StoredWorkspace,
 } from './collab/workspaceStore'
 import {
   clearActiveWorkspace,
+  clearIdCredentials,
   hydrateSessionAvatar,
   loadIdentityEmail,
   loadIdentityUserId,
@@ -39,12 +42,16 @@ import {
   saveSession,
   type Session,
 } from './session'
+import type { IncomingFriendInvite } from './collab/friendInviteStore'
+import { loadDmNotificationsEnabled } from './collab/notificationPreference'
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [ready, setReady] = useState(false)
+  const [, setIdentityVersion] = useState(0)
+  const signedIn = Boolean(loadSignedInIdentity())
   const { route, navigate, pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
-    useAppRouting(Boolean(session), ready)
+    useAppRouting(Boolean(session), signedIn, ready)
   const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedCurrentLegal())
   const acceptLegal = () => {
     acceptCurrentLegal()
@@ -75,12 +82,35 @@ function App() {
   }, [session?.identityEmail, session?.identityUserId, session?.userName])
 
   const [pendingDmRing, setPendingDmRing] = useState<DmRingPayload | null>(null)
+  const [friendInviteNotice, setFriendInviteNotice] = useState<IncomingFriendInvite | null>(null)
+
+  const notifyFriendInvite = (invite: IncomingFriendInvite) => {
+    setFriendInviteNotice(invite)
+    if (
+      document.visibilityState !== 'visible' &&
+      loadDmNotificationsEnabled() &&
+      typeof Notification !== 'undefined' &&
+      Notification.permission === 'granted'
+    ) {
+      const notification = new Notification('New Peerly friend request', {
+        body: `${invite.fromName} sent you a friend request.`,
+        icon: '/icon-192.png',
+        tag: `peerly-friend-${invite.inviteId}`,
+      })
+      notification.onclick = () => {
+        window.focus()
+        navigate({ screen: 'home' })
+        notification.close()
+      }
+    }
+  }
 
   const presence = usePresenceLobby({
     identity: lobbyProfile ? deviceIdentity : null,
     profile: lobbyProfile,
     onFriendsChanged: friendsApi.reload,
     onDmRing: ring => setPendingDmRing(ring),
+    onFriendInvite: notifyFriendInvite,
   })
 
   const { manager, peerHandshake, resolvePeerUserId, resolvePeerContact, signMessage, signReaction, getBoundUserId } =
@@ -140,6 +170,7 @@ function App() {
   // Reads localStorage each render (cheap: a small JSON parse + filter), so it
   // reflects joins/switches immediately without a reactive store.
   const railWorkspaces = identityEmail ? workspacesForEmail(identityEmail) : []
+  const recentWorkspace = mostRecentlyOpenedWorkspace(railWorkspaces)
 
   /** Close the active workspace, stay signed in, land on the home/DM view. */
   const goHome = () => {
@@ -172,8 +203,9 @@ function App() {
   }
 
   const createWorkspace = () => {
-    goHome()
-    setPickerTab('create')
+    clearActiveWorkspace()
+    setSession(null)
+    navigate({ screen: 'picker', tab: 'create' })
   }
 
   // Public legal pages render regardless of session/hydration state.
@@ -181,7 +213,7 @@ function App() {
     return (
       <LegalPage
         doc={route.doc}
-        onBack={() => navigate(session ? defaultWorkspaceRoute() : { screen: 'picker', tab: 'create' })}
+        onBack={() => navigate(session ? defaultWorkspaceRoute() : signedIn ? { screen: 'home' } : { screen: 'login' })}
       />
     )
   }
@@ -194,6 +226,17 @@ function App() {
 
   const content = route.screen === 'sync' ? (
     <SyncActivityPage />
+  ) : route.screen === 'account' ? (
+    <AccountPreferencesPage
+      email={identityEmail ?? ''}
+      onSignOut={() => {
+        clearActiveWorkspace()
+        clearIdCredentials()
+        setSession(null)
+        setIdentityVersion(version => version + 1)
+        navigate({ screen: 'login' }, { replace: true })
+      }}
+    />
   ) : route.screen === 'devices' && lobbyProfile ? (
     <MyDevicesPage
       identity={deviceIdentity}
@@ -224,33 +267,52 @@ function App() {
     />
   ) : (
     <JoinScreen
+      view={
+        route.screen === 'home'
+          ? 'home'
+          : route.screen === 'login'
+            ? 'login'
+            : route.screen === 'picker'
+              ? route.tab
+              : 'login'
+      }
       pickerTab={pickerTab}
       onPickerTabChange={setPickerTab}
       onJoined={async next => {
         setSession(await hydrateSessionAvatar(next))
         if (route.screen !== 'devices') enterWorkspace()
       }}
-      friendsPanel={
-        lobbyProfile ? (
-          <HomeView
-            profile={lobbyProfile}
-            identity={deviceIdentity}
-            friends={friendsApi.friends}
-            outgoing={presence.outgoing}
-            incoming={presence.incoming}
-            onlineCount={presence.onlineCount}
-            isUserOnline={presence.isUserOnline}
-            ringDm={presence.ringDm}
-            onInvite={presence.inviteByEmail}
-            onAccept={presence.acceptInvite}
-            onDecline={presence.declineInvite}
-            onCancelOutgoing={presence.cancelOutgoing}
-            onRemoveFriend={friendsApi.remove}
-            pendingRing={pendingDmRing}
-            onConsumeRing={() => setPendingDmRing(null)}
-          />
-        ) : undefined
-      }
+      onIdentityChange={nextSignedIn => {
+        setIdentityVersion(version => version + 1)
+        if (nextSignedIn) {
+          if (route.screen === 'login') navigate({ screen: 'home' }, { replace: true })
+          return
+        }
+        navigate({ screen: 'login' }, { replace: true })
+      }}
+      friendsPanel={route.screen === 'home' && lobbyProfile ? (
+        <HomeView
+          profile={lobbyProfile}
+          identity={deviceIdentity}
+          friends={friendsApi.friends}
+          outgoing={presence.outgoing}
+          incoming={presence.incoming}
+          onlineCount={presence.onlineCount}
+          isUserOnline={presence.isUserOnline}
+          ringDm={presence.ringDm}
+          onInvite={presence.inviteByEmail}
+          onAccept={presence.acceptInvite}
+          onDecline={presence.declineInvite}
+          onCancelOutgoing={presence.cancelOutgoing}
+          onRemoveFriend={friendsApi.remove}
+          pendingRing={pendingDmRing}
+          onConsumeRing={() => setPendingDmRing(null)}
+          recentWorkspace={recentWorkspace}
+          onOpenWorkspace={workspace => void switchWorkspace(workspace)}
+          onCreateWorkspace={createWorkspace}
+          onJoinWorkspace={() => navigate({ screen: 'picker', tab: 'join' })}
+        />
+      ) : undefined}
     />
   )
 
@@ -271,18 +333,29 @@ function App() {
         <WorkspaceRail
           workspaces={railWorkspaces}
           activeWorkspaceId={session?.workspaceId}
-          onHome={!session && route.screen !== 'devices' && route.screen !== 'sync'}
+          onHome={route.screen === 'home'}
           onDevices={route.screen === 'devices'}
           onSync={route.screen === 'sync'}
+          onAccount={route.screen === 'account'}
           onSelectWorkspace={switchWorkspace}
           onHomeSelect={goHome}
           onDevicesSelect={() => navigate({ screen: 'devices' })}
           onSyncSelect={() => navigate({ screen: 'sync' })}
+          onAccountSelect={() => navigate({ screen: 'account' })}
           onCreateWorkspace={createWorkspace}
         />
         <div className="min-w-0 flex-1 overflow-hidden">{content}</div>
       </div>
       {consentBanner}
+      {friendInviteNotice && (
+        <div className="toast toast-end toast-top z-50" data-testid="friend-request-notification">
+          <div className="alert alert-info shadow-lg">
+            <span><strong>{friendInviteNotice.fromName}</strong> sent you a friend request.</span>
+            <button type="button" className="btn btn-sm" onClick={() => { navigate({ screen: 'home' }); setFriendInviteNotice(null) }}>Open</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFriendInviteNotice(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
     </>
   )
 }

@@ -63,6 +63,8 @@ export type PresenceLobbyOptions = {
   onFriendsChanged?: () => void
   /** Friend rang this device to open a global DM room. */
   onDmRing?: (ring: DmRingPayload) => void
+  /** Called once when a previously unseen valid friend request is received. */
+  onFriendInvite?: (invite: IncomingFriendInvite) => void
 }
 
 /**
@@ -77,11 +79,13 @@ export function usePresenceLobby({
   profile,
   onFriendsChanged,
   onDmRing,
+  onFriendInvite,
 }: PresenceLobbyOptions) {
   const profileRef = useLatest(profile)
   const identityRef = useLatest(identity)
   const onFriendsChangedRef = useLatest(onFriendsChanged)
   const onDmRingRef = useLatest(onDmRing)
+  const onFriendInviteRef = useLatest(onFriendInvite)
 
   const [outgoing, setOutgoing] = useState<OutgoingFriendInvite[]>(() => loadOutgoingInvites())
   const [incoming, setIncoming] = useState<IncomingFriendInvite[]>(() => loadIncomingInvites())
@@ -268,16 +272,17 @@ export function usePresenceLobby({
           name: parsed.fromName,
           emailHash: parsed.fromEmailHash,
         })
-        setIncoming(prev =>
-          upsertIncomingInvite(prev, {
-            inviteId: parsed.inviteId,
-            fromUserId: parsed.fromUserId,
-            fromName: parsed.fromName,
-            fromEmailHash: parsed.fromEmailHash,
-            payload: parsed,
-            receivedAt: Date.now(),
-          })
-        )
+        const incomingInvite: IncomingFriendInvite = {
+          inviteId: parsed.inviteId,
+          fromUserId: parsed.fromUserId,
+          fromName: parsed.fromName,
+          fromEmailHash: parsed.fromEmailHash,
+          payload: parsed,
+          receivedAt: Date.now(),
+        }
+        const isNew = !loadIncomingInvites().some(item => item.inviteId === parsed.inviteId)
+        setIncoming(prev => upsertIncomingInvite(prev, incomingInvite))
+        if (isNew) onFriendInviteRef.current?.(incomingInvite)
       })()
     }
 
@@ -360,7 +365,7 @@ export function usePresenceLobby({
       connectedPeersRef.current = 0
       setOnlineCount(0)
     }
-  }, [room, roomEnabled, profileRef, identityRef, onFriendsChangedRef, onDmRingRef])
+  }, [room, roomEnabled, profileRef, identityRef, onFriendsChangedRef, onDmRingRef, onFriendInviteRef])
 
   const inviteByEmail = useCallback(
     async (toEmail: string): Promise<{ ok: true } | { ok: false; error: string }> => {
