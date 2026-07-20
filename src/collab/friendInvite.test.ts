@@ -67,6 +67,7 @@ describe('friendInvite protocol', () => {
       fromName: 'Bob',
       fromEmail: 'bob@example.com',
       toUserId: 'alice',
+      dmSecret: '0123456789abcdef0123456789abcdef',
     })
     expect(await verifyFriendInviteResponse(accept)).toBe(true)
     expect(parseFriendInviteResponsePayload(accept)?.fromEmail).toBe('bob@example.com')

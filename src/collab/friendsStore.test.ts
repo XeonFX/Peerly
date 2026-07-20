@@ -1,8 +1,10 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { canonicalizePublicKey } from './deviceIdentity'
 import {
   addFriend,
   emptyFriends,
+  friendDmSecret,
+  dmDeviceKeyForFriend,
   inviteableFriendEmails,
   isFriend,
   listFriends,
@@ -48,6 +50,15 @@ beforeAll(async () => {
   identity.publicKeyId = async () => publicKeyId
 })
 
+beforeEach(() => {
+  const values = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+  })
+})
+
 describe('friendsStore', () => {
   it('adds and removes friends with email', async () => {
     const list = emptyFriends()
@@ -79,5 +90,20 @@ describe('friendsStore', () => {
     })
     const inviteable = inviteableFriendEmails(list, ['bob@example.com'])
     expect(inviteable.map(f => f.subjectEmail)).toEqual(['ada@example.com'])
+  })
+
+  it('stores DM credentials separately from the friend attestation', async () => {
+    const list = emptyFriends()
+    const friend = await addFriend(list, identity as never, {
+      ownerUserId: 'me',
+      subjectUserId: 'secure',
+      subjectName: 'Secure',
+      subjectEmail: 'secure@example.com',
+      dmSecret: '0123456789abcdef0123456789abcdef',
+      subjectDeviceKeyId: 'P-256:peer-key',
+    })
+    expect(friend.category).toBeUndefined()
+    expect(friendDmSecret(friend)).toBe('0123456789abcdef0123456789abcdef')
+    expect(dmDeviceKeyForFriend(list, 'secure')).toBe('P-256:peer-key')
   })
 })

@@ -1,5 +1,7 @@
 import {
   encodeCanonicalLines,
+  generateDmSecret,
+  isValidDmSecret,
   parsePresencePayload as coreParsePresence,
   type DeviceSigner,
   type PresencePayload,
@@ -16,8 +18,8 @@ export type { PresencePayload }
  * that email-hash is online, a signed invite is sent directed. No mailbox.
  */
 
-export const FRIEND_INVITE_SCHEME = 'peerly-friend-invite-v1'
-export const FRIEND_INVITE_RESPONSE_SCHEME = 'peerly-friend-invite-resp-v1'
+export const FRIEND_INVITE_SCHEME = 'peerly-friend-invite-v2'
+export const FRIEND_INVITE_RESPONSE_SCHEME = 'peerly-friend-invite-resp-v2'
 
 const MAX_NAME = 80
 const HEX64 = /^[0-9a-f]{64}$/i
@@ -36,6 +38,7 @@ export type FriendInvitePayload = {
   fromEmail: string
   fromEmailHash: string
   toEmailHash: string
+  dmSecret: string
   ts: number
   deviceKeyId: DeviceKeyId
   sig: string
@@ -51,6 +54,7 @@ export type FriendInviteResponsePayload = {
   fromName: string
   /** Invitee's email only on accept (inviter already knew the hash target). */
   fromEmail?: string
+  dmSecret?: string
   /** Original inviter userId. */
   toUserId: string
   ts: number
@@ -70,6 +74,7 @@ export function friendInviteBytes(
     invite.fromEmail,
     invite.fromEmailHash,
     invite.toEmailHash,
+    invite.dmSecret,
     String(invite.ts),
     invite.deviceKeyId,
   ])
@@ -86,6 +91,7 @@ export function friendInviteResponseBytes(
     response.fromUserId,
     response.fromName,
     response.fromEmail ?? '',
+    response.dmSecret ?? '',
     response.toUserId,
     String(response.ts),
     response.deviceKeyId,
@@ -116,6 +122,7 @@ export async function createFriendInvite(
     fromEmail,
     fromEmailHash,
     toEmailHash,
+    dmSecret: generateDmSecret(),
     ts: Date.now(),
     deviceKeyId: await signer.publicKeyId(),
   }
@@ -132,6 +139,7 @@ export async function createFriendInviteResponse(
     fromName: string
     fromEmail: string
     toUserId: string
+    dmSecret?: string
   }
 ): Promise<FriendInviteResponsePayload> {
   if (input.accept && !isPlausibleEmail(input.fromEmail)) {
@@ -144,6 +152,7 @@ export async function createFriendInviteResponse(
     fromUserId: input.fromUserId,
     fromName: input.fromName.trim().slice(0, MAX_NAME) || input.fromUserId.slice(0, 12),
     ...(input.accept ? { fromEmail: normalizeEmail(input.fromEmail) } : {}),
+    ...(input.accept && input.dmSecret ? { dmSecret: input.dmSecret.toLowerCase() } : {}),
     toUserId: input.toUserId,
     ts: Date.now(),
     deviceKeyId: await signer.publicKeyId(),
@@ -168,6 +177,7 @@ function inviteShapeOk(msg: Partial<FriendInvitePayload>): msg is FriendInvitePa
     HEX64.test(msg.fromEmailHash) &&
     typeof msg.toEmailHash === 'string' &&
     HEX64.test(msg.toEmailHash) &&
+    isValidDmSecret(msg.dmSecret) &&
     typeof msg.ts === 'number' &&
     Number.isFinite(msg.ts) &&
     typeof msg.deviceKeyId === 'string' &&
@@ -192,6 +202,7 @@ function responseShapeOk(
     msg.fromName.length <= MAX_NAME &&
     (msg.fromEmail === undefined ||
       (typeof msg.fromEmail === 'string' && isPlausibleEmail(msg.fromEmail))) &&
+    (msg.dmSecret === undefined || isValidDmSecret(msg.dmSecret)) &&
     typeof msg.toUserId === 'string' &&
     !!msg.toUserId &&
     msg.fromUserId !== msg.toUserId &&
@@ -219,7 +230,9 @@ export async function verifyFriendInviteResponse(
   if (!responseShapeOk(response)) return false
   if (Date.now() - response.ts > INVITE_TTL_MS) return false
   if (response.accept && !response.fromEmail) return false
+  if (response.accept && !response.dmSecret) return false
   if (!response.accept && response.fromEmail) return false
+  if (!response.accept && response.dmSecret) return false
   return verifyWithDeviceKeyId(
     response.deviceKeyId,
     friendInviteResponseBytes(response),
@@ -245,6 +258,7 @@ export function parseFriendInvitePayload(raw: unknown): FriendInvitePayload | nu
     fromEmail: normalizeEmail(msg.fromEmail),
     fromEmailHash: msg.fromEmailHash.toLowerCase(),
     toEmailHash: msg.toEmailHash.toLowerCase(),
+    dmSecret: msg.dmSecret.toLowerCase(),
     ts: msg.ts,
     deviceKeyId: msg.deviceKeyId,
     sig: msg.sig,
@@ -264,6 +278,7 @@ export function parseFriendInviteResponsePayload(
     fromUserId: msg.fromUserId.trim(),
     fromName: msg.fromName.trim().slice(0, MAX_NAME),
     ...(msg.fromEmail ? { fromEmail: normalizeEmail(msg.fromEmail) } : {}),
+    ...(msg.dmSecret ? { dmSecret: msg.dmSecret.toLowerCase() } : {}),
     toUserId: msg.toUserId.trim(),
     ts: msg.ts,
     deviceKeyId: msg.deviceKeyId,

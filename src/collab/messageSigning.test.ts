@@ -47,6 +47,7 @@ async function signedEntry(
       channelId: entry.channelId,
       editedAt: entry.editedAt,
       deletedAt: entry.deletedAt,
+      deviceGrant: entry.deviceGrant,
     })
   )
   return entry
@@ -77,6 +78,25 @@ describe('messageSigning', () => {
     const deleted = await signedEntry(identity, { text: '', deletedAt: 3000 })
     expect(await verifyHistoryEntry(deleted)).toBe('valid')
     expect(await verifyHistoryEntry({ ...deleted, deletedAt: undefined })).toBe('invalid')
+  })
+
+  it('accepts an approved-device revision and binds the grant into the signature', async () => {
+    const original = new DeviceIdentity(memoryStore())
+    const approved = new DeviceIdentity(memoryStore())
+    const { signDeviceGrant } = await import('./deviceAuthorization')
+    const grant = await signDeviceGrant(
+      original,
+      'user-alice',
+      await approved.publicKeyId(),
+      'pairing-id-1234567890'
+    )
+    const entry = await signedEntry(approved, { editedAt: 2000, deviceGrant: grant })
+    expect(await verifyHistoryEntry(entry)).toBe('valid')
+    expect(await verifyHistoryEntry({ ...entry, deviceGrant: { ...grant, pairingId: 'changed-pairing-id-1234' } })).toBe('invalid')
+    const result = await sanitizeHistoryEntries([entry], key =>
+      key === grant.issuerDeviceKeyId ? 'user-alice' : undefined
+    )
+    expect(result[0]?.senderUserId).toBe('user-alice')
   })
 
   it('drops forged entries, keeps text of unsigned ones without identity', async () => {

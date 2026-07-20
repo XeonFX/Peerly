@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Friend } from '../collab/friendsStore'
+import { friendDmDeviceKey, friendDmSecret } from '../collab/friendsStore'
 import { dmRoomCode } from '../collab/dmCode'
 import type { DmRingPayload } from '../collab/dmRing'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
@@ -20,7 +21,6 @@ type Props = {
   isUserOnline: (userId: string) => boolean
   ringDm: (
     toUserId: string,
-    code: string,
     reason: 'open' | 'message',
     preview?: string
   ) => boolean
@@ -63,7 +63,12 @@ export function HomeView({
   const openFriend = useCallback(
     async (friend: Friend) => {
       setActiveFriend(friend)
-      const code = await dmRoomCode(profile.userId, friend.subjectUserId)
+      const secret = friendDmSecret(friend)
+      if (!secret) {
+        setRoomCode(null)
+        return
+      }
+      const code = await dmRoomCode(profile.userId, friend.subjectUserId, secret)
       setRoomCode(code)
     },
     [profile.userId]
@@ -85,7 +90,7 @@ export function HomeView({
   const ringFriend = useCallback(
     (reason: 'open' | 'message', preview?: string) => {
       if (!activeFriend || !roomCode) return false
-      return ringDm(activeFriend.subjectUserId, roomCode, reason, preview)
+      return ringDm(activeFriend.subjectUserId, reason, preview)
     },
     [activeFriend, roomCode, ringDm]
   )
@@ -95,6 +100,8 @@ export function HomeView({
     identity,
     profile,
     friendUserId: activeFriend?.subjectUserId ?? null,
+    friendDeviceKeyId: friendDmDeviceKey(activeFriend) ?? null,
+    friendName: activeFriend?.subjectName ?? null,
     ringFriend,
   })
 
@@ -168,6 +175,8 @@ export function HomeView({
             selfUserId={profile.userId}
             error={chat.error}
             onSend={chat.sendMessage}
+            onEdit={chat.editMessage}
+            onDelete={chat.deleteMessage}
             onClose={() => {
               setActiveFriend(null)
               setRoomCode(null)
@@ -182,9 +191,13 @@ export function HomeView({
               {tr('Direct messages')}
             </p>
             <p className="mt-1 max-w-sm text-xs text-base-content/55">
-              {tr(
-                'Message a friend from the list. They need to be signed in to Peerly to get a ring and join the private chat.'
-              )}
+              {activeFriend
+                ? tr(
+                    'This friend uses the old insecure DM format. Remove and invite them again to create a secure credential.'
+                  )
+                : tr(
+                    'Message a friend from the list. They need to be signed in to Peerly to get a ring and join the private chat.'
+                  )}
             </p>
           </div>
         )}

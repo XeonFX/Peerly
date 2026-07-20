@@ -52,6 +52,10 @@ export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIn
     record: (peerId, raw) => {
       const userId = raw.userId.trim()
       if (!userId || !peerId) return
+      // A transport peer may refresh its profile, but it must never leave its
+      // old user/email reverse indexes pointing at the replacement entry.
+      // Those indexes are used for directed security-sensitive messages.
+      if (byPeer.has(peerId)) drop(peerId)
       const name =
         typeof raw.name === 'string' && raw.name.trim()
           ? raw.name.trim().slice(0, 80)
@@ -66,7 +70,7 @@ export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIn
         userId,
         name,
         ...(emailHash ? { emailHash } : {}),
-        seenAt: raw.seenAt ?? Date.now(),
+        seenAt: Number.isFinite(raw.seenAt) ? raw.seenAt! : Date.now(),
       }
       byPeer.set(peerId, entry)
       peerByUserId.set(userId, peerId)

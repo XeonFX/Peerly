@@ -1,5 +1,6 @@
 import {
   addPeopleEntry,
+  createDmCredentialStore,
   createPeopleAttestation,
   emptyPeopleList,
   isSubjectListed,
@@ -22,6 +23,7 @@ import type { DeviceIdentity } from './deviceIdentity'
 const SCHEME = 'peerly-friend-v1'
 const STORAGE_KEY = 'peerly-friends-v1'
 const SUBS_KEY = 'peerly-friends-subs-v1'
+const dmCredentials = createDmCredentialStore('peerly-dm-credentials-v1')
 
 export type Friend = PeopleAttestation
 
@@ -53,6 +55,8 @@ export async function addFriend(
     subjectUserId: string
     subjectName: string
     subjectEmail: string
+    dmSecret?: string
+    subjectDeviceKeyId?: string
   }
 ): Promise<Friend> {
   const entry = await createPeopleAttestation(identity, SCHEME, {
@@ -62,14 +66,39 @@ export async function addFriend(
     subjectName: input.subjectName,
     subjectEmail: input.subjectEmail,
   })
+  if (input.dmSecret && input.subjectDeviceKeyId) {
+    dmCredentials.set(input.subjectUserId, {
+      secret: input.dmSecret,
+      deviceKeyId: input.subjectDeviceKeyId,
+    })
+  }
   addPeopleEntry(list, entry)
   saveFriends(list)
   return entry
 }
 
+export function friendDmSecret(friend: Friend | undefined): string | undefined {
+  return friend ? dmCredentials.get(friend.subjectUserId)?.secret : undefined
+}
+
+export function friendDmDeviceKey(friend: Friend | null | undefined): string | undefined {
+  return friend ? dmCredentials.get(friend.subjectUserId)?.deviceKeyId : undefined
+}
+
+export function dmSecretForFriend(list: PeopleList, userId: string): string | undefined {
+  return isFriend(list, userId) ? dmCredentials.get(userId)?.secret : undefined
+}
+
+export function dmDeviceKeyForFriend(list: PeopleList, userId: string): string | undefined {
+  return isFriend(list, userId) ? dmCredentials.get(userId)?.deviceKeyId : undefined
+}
+
 export function removeFriend(list: PeopleList, subjectUserId: string): boolean {
   const changed = removePeopleEntry(list, subjectUserId)
-  if (changed) saveFriends(list)
+  if (changed) {
+    dmCredentials.remove(subjectUserId)
+    saveFriends(list)
+  }
   return changed
 }
 

@@ -134,12 +134,20 @@ export {
   type PeopleSubscription,
   type SharedPeopleList,
 } from './peopleList.js'
-export { dmRoomCode } from './dmRoomCode.js'
+export { dmRoomCode, generateDmSecret, isValidDmSecret } from './dmRoomCode.js'
+export {
+  createDmCredentialStore,
+  type DmCredential,
+  type DmCredentialStore,
+} from './dmCredentials.js'
 export {
   decideDmRingToast,
+  dmRingBytes,
   DM_RING_TOAST_COOLDOWN_MS,
   isValidDmRoomCode,
   parseDmRingPayload,
+  signDmRing,
+  verifyDmRing,
   type DmRingPayload,
   type DmRingReason,
   type DmRingToastDecision,
@@ -185,6 +193,19 @@ export {
   type TextChatHistoryEnvelope,
   type TextChatHistoryStore,
 } from './textChatHistory.js'
+export {
+  clearSyncActivities,
+  getSyncActivities,
+  recordSyncActivity,
+  subscribeSyncActivities,
+  syncPayloadBytes,
+  type SyncActivity,
+  type SyncActivityInput,
+  type SyncDataKind,
+  type SyncDirection,
+  type SyncPeer,
+  type SyncRelationship,
+} from './syncActivity.js'
 export {
   createSpeakingDetector,
   type SpeakingDetector,

@@ -244,6 +244,24 @@ layer (OIDC token verification is provided, but what a verified identity is
 Room-code possession is the only access control here — treat codes like
 credentials and share them in URL fragments, never query strings.
 
+For direct messages, never derive a room password from public user identifiers
+alone. `generateDmSecret()` creates a random per-friend credential and
+`dmRoomCode(userA, userB, scheme, sharedSecret)` namespaces that credential for
+an app and pair. Exchange the secret only during an authenticated friendship
+handshake. DM ring payloads intentionally contain no room credential and should
+be signed with `signDmRing`; consumers must bind `deviceKeyId` to the friend
+record before accepting a ring.
+
+The shared presence and text-history helpers clean reverse indexes and bound
+untrusted envelopes, but applications remain responsible for authenticating
+presence identities and verifying message signatures before display or storage.
+
+`recordSyncActivity`, `subscribeSyncActivities`, and `getSyncActivities` provide
+a shared metadata-only activity feed for P2P applications. Callers supply a
+relationship-aware peer descriptor plus category, count, and byte estimate;
+the bounded in-memory log intentionally has no payload-content field and is
+never persisted.
+
 ## Publishing (maintainers)
 
 Releases go through the `release-core.yml` GitHub Actions workflow (manual

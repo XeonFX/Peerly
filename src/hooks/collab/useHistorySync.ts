@@ -5,6 +5,7 @@ import type { HistoryEntry, HistoryRequest } from '../../protocol/types'
 import { loadFileSyncMode } from '../../collab/syncPreferences'
 import { estimateBrowserStorageCached, storagePressure } from '../../utils/browserStorage'
 import type { WorkspaceSyncProgress } from '../../types'
+import { recordSyncActivity, syncPayloadBytes } from '@peerly/core'
 
 type HistoryAction = {
   requestMany: (
@@ -96,6 +97,13 @@ export function useHistorySync(
           entries.push(...result.value)
           respondingPeers.push(result.peerId)
           historySyncedRef.current.add(syncKey(channelId, result.peerId))
+          recordSyncActivity({
+            direction: 'received', kind: 'history',
+            peer: { peerId: result.peerId, relationship: 'workspace-member' },
+            itemCount: result.value.length,
+            bytes: syncPayloadBytes(result.value),
+            summary: `${channelId} · ${result.value.length} messages and file records`,
+          })
         }
       }
 

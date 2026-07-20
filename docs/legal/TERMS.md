@@ -1,6 +1,6 @@
 # Terms of Service
 
-_Last updated: 2026-07-19_
+_Last updated: 2026-07-20_
 
 > This is the English reference copy. The authoritative, localized text is the
 > in-app page at `/terms` (rendered from `src/legal/legalContent.ts`).

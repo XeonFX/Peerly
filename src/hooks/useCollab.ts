@@ -7,8 +7,10 @@ import { routeDmChannel } from '../collab/dmStore'
 import { FileCache } from '../collab/fileCache'
 import type { ChatPayload, ReactionPayload } from '../protocol/types'
 import type { Message, SharedFile, UserProfile } from '../types'
+import { recordSyncActivity, syncPayloadBytes } from '@peerly/core'
 import { estimateBrowserStorageCached, hasRoomForWrite } from '../utils/browserStorage'
-import { sanitizeHistoryEntries, type SignedFields } from '../collab/messageSigning'
+import { sanitizeHistoryEntries, verifyHistoryEntry, type SignedFields } from '../collab/messageSigning'
+import { findDeviceGrant } from '../collab/deviceAuthorization'
 import type { SignedReactionFields } from '../collab/reactionSigning'
 import { verifyReaction } from '../collab/reactionSigning'
 import { buildSenderDirectory } from '../utils/senderDirectory'
@@ -28,7 +30,7 @@ import { useVideoCall } from './collab/useVideoCall'
 import { wireRoomProtocol } from './collab/wireRoomProtocol'
 import { useRoom } from './useRoom'
 import { useAttention } from './useAttention'
-import { messageFromFileMeta } from '../protocol/mappers'
+import { messageFromFileMeta, toHistoryEntry } from '../protocol/mappers'
 
 export type UseCollabOptions = {
   workspaceId: string
@@ -285,9 +287,24 @@ export function useCollab({
       // fallback: a verified member must not be able to write as someone else.
       const senderUserId = identityRef.current?.resolvePeerUserId?.(payload.senderId)
       const message = chatPayloadToMessage({ ...payload, senderUserId })
-      if (message.editedAt || message.deletedAt) applyMessageRevision(message)
-      else channelStore.appendMessage(message, senderDirectoryRef.current, peersRef.current)
-      if (route.kind === 'dm') notifyDirectMessageRef.current(message)
+      const sender = senderDirectoryRef.current[payload.senderId]
+      recordSyncActivity({
+        direction: 'received', kind: 'message',
+        peer: {
+          peerId: payload.senderId, userId: senderUserId,
+          name: sender?.name ?? payload.senderName, avatar: sender?.avatar,
+          relationship: 'workspace-member',
+        },
+        itemCount: 1, bytes: syncPayloadBytes(payload),
+        summary: `${payload.channelId} · ${payload.editedAt || payload.deletedAt ? 'message revision' : 'message'}`,
+      })
+      void (async () => {
+        if ((message.editedAt || message.deletedAt) &&
+          await verifyHistoryEntry(toHistoryEntry(message)) !== 'valid') return
+        if (message.editedAt || message.deletedAt) applyMessageRevision(message)
+        else channelStore.appendMessage(message, senderDirectoryRef.current, peersRef.current)
+        if (route.kind === 'dm') notifyDirectMessageRef.current(message)
+      })()
     },
     onFileProgress: (percent, peerId, meta) => {
       files.handleReceiveProgress(percent, peerId, meta)
@@ -509,13 +526,21 @@ export function useCollab({
             }
           : payload
         void sendChatPayload(signed, target ? { target } : undefined)
+        const targets = target
+          ? peersRef.current.filter(peer => peer.id === target)
+          : peersRef.current
+        for (const peer of targets) recordSyncActivity({
+          direction: 'sent', kind: 'message',
+          peer: { peerId: peer.id, userId: peer.userId, name: peer.name, avatar: peer.avatar, relationship: 'workspace-member' },
+          itemCount: 1, bytes: syncPayloadBytes(signed), summary: `${channelId} · message`,
+        })
         appendMessage(chatPayloadToMessage(signed), senderDirectoryRef.current)
       })()
     },
     // The narrow deps are the point: `channelStore` and `chatAction` are fresh
     // objects every render, and depending on them made sendMessage — and with
     // it the whole ChatSlice — churn per render.
-    [sendChatPayload, appendMessage, profileRef, senderDirectoryRef]
+    [sendChatPayload, appendMessage, profileRef, senderDirectoryRef, peersRef]
   )
 
   const reviseMessage = useCallback(
@@ -547,27 +572,40 @@ export function useCollab({
       }
       void (async () => {
         const signer = identityRef.current?.signMessage
-        const signed = signer
-          ? {
-              ...payload,
-              ...(await signer({
-                id: payload.id,
-                type: 'text',
-                text: payload.text,
-                senderUserId: payload.senderUserId,
-                timestamp: payload.timestamp,
-                channelId: payload.channelId,
-                editedAt: payload.editedAt,
-                deletedAt: payload.deletedAt,
-              })),
-            }
-          : payload
+        const fields = {
+          id: payload.id,
+          type: 'text' as const,
+          text: payload.text,
+          senderUserId: payload.senderUserId,
+          timestamp: payload.timestamp,
+          channelId: payload.channelId,
+          editedAt: payload.editedAt,
+          deletedAt: payload.deletedAt,
+        }
+        let signed: ChatPayload = payload
+        if (signer) {
+          const initial = await signer(fields)
+          const deviceGrant = selfUserId && existing.senderDeviceKeyId &&
+            initial.senderDeviceKeyId !== existing.senderDeviceKeyId
+            ? findDeviceGrant(selfUserId, existing.senderDeviceKeyId, initial.senderDeviceKeyId)
+            : undefined
+          if (initial.senderDeviceKeyId !== existing.senderDeviceKeyId && !deviceGrant) return
+          const proof = deviceGrant ? await signer({ ...fields, deviceGrant }) : initial
+          signed = { ...payload, deviceGrant, ...proof }
+        }
         const target = route.kind === 'dm' ? route.peerId : undefined
         await sendChatPayload(signed, target ? { target } : undefined)
+        const targets = target ? peersRef.current.filter(peer => peer.id === target) : peersRef.current
+        for (const peer of targets) recordSyncActivity({
+          direction: 'sent', kind: 'message',
+          peer: { peerId: peer.id, userId: peer.userId, name: peer.name, avatar: peer.avatar, relationship: 'workspace-member' },
+          itemCount: 1, bytes: syncPayloadBytes(signed),
+          summary: `${channelId} · ${nextText === null ? 'message deletion' : 'message edit'}`,
+        })
         applyMessageRevision(chatPayloadToMessage(signed))
       })()
     },
-    [applyMessageRevision, channelStore.messages, pastSelfIds, profileRef, sendChatPayload]
+    [applyMessageRevision, channelStore.messages, pastSelfIds, profileRef, sendChatPayload, peersRef]
   )
 
   const editMessage = useCallback(

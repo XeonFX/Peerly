@@ -33,6 +33,8 @@ Per-screen behavior, routes, and major functions:
 - **Video calls** — incoming-call awareness, screen sharing, camera/microphone selection, and WebRTC media with TURN support for strict networks
 - **Installable offline shell** — a service worker caches the production app shell and loaded release assets so local history remains reachable without signaling
 - **English and Polish UI** — the device language preference covers navigation, settings, chat, files, calls, storage, invites, confirmations, placeholders, and accessibility labels
+- **Approved-device sync** — the My Devices screen uses mutual, fingerprint-confirmed approval to link a second signed-in device; allowlisted local data then merges directly while both devices are online, and approved devices can sign edits/deletes of the account's earlier messages
+- **Visible P2P transfers** — the Sync activity tab shows metadata-only sent/received events, transfer sizes, data categories, and the known friend, workspace member, peer, or approved device involved; message bodies and secrets are never logged
 - **Accessibility hardening** — deterministic view focus, polite incoming-message announcements, clearer light-theme contrast, and motion-aware navigation
 - **Connectivity diagnostics** — distinguishes local WebRTC availability, a verified peer connection, signaling failure, and paths that need TURN
 - **Build stamp** — version and git commit shown in the UI so you can confirm what is deployed
@@ -88,7 +90,7 @@ Neither action deletes content from other members. Re-sync requires at least one
 
 ### Sensitive-media screen
 
-NSFWJS and its MobileNetV2 model are loaded lazily only when visual media needs checking. Classification runs locally through a single inference queue; sampled video frames are neither uploaded nor persisted. Shared images, video-file samples, and visible remote video streams can be blurred behind a reveal action.
+NSFWJS and its MobileNetV2 model are loaded lazily only when visual media needs checking. Peerly serializes classification and backs off live-video sampling after clean frames; sampled frames are neither uploaded nor persisted. Shared images, video-file samples, and visible remote video streams can be blurred behind a reveal action.
 
 This is a receiver-side privacy aid, not moderation or access control. Classification deliberately fails open when the model or browser graphics backend is unavailable, and a modified peer can bypass its own outbound checks.
 
@@ -345,6 +347,7 @@ working until two peers fail to find each other.
 - **Identity handshake** — three-round P2P verification: OIDC JWT + allow-list signature + live device-key proof
 - **No server-side enforcement** — allow-list is creator-signed; peers verify signatures and JWTs locally
 - **Messages are author-signed** — every message and file announcement is signed with the sender's device key at send time. Signed v2 revisions make edits/deletes tamper-evident, and each reaction is signed independently. Relayed history is verified on import: tampered entries are dropped, and identity claims are honoured only for keys bound to that user in a live handshake.
+- **Device approval is explicit** — sharing an account login does not grant one device authority over another device's messages. Both devices must confirm a one-time pairing, exchange reciprocal signed grants, and retain those grants locally. Continuous sync is peer-to-peer and only runs while approved devices are simultaneously online; account sessions and identity tokens are never copied.
 - **Security headers** — a strict Content-Security-Policy ships via `public/_headers`; CI serves the production bundle with those headers, asserts zero startup violations, and proves its negative control is blocked.
 - **Inviting is creator-only** — the allow-list is only accepted if it verifies against the workspace's creator key, and that key never leaves the browser profile that created the workspace. A second device, even the creator's, cannot add members.
 - **Revocation is best-effort** — the creator can remove a member, and every device judges peers against the newest creator-signed list it holds, so updated members stop admitting the removed member at their next handshake. The honest limit: the removed member and any member who never received the update can still pair, and open connections are not torn down. Nothing short of a server closes that gap.

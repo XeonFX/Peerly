@@ -12,8 +12,10 @@ export type WorkspaceRoute =
 
 /** Public legal pages, reachable regardless of session/workspace state. */
 export type LegalRoute = { screen: 'legal'; doc: 'privacy' | 'terms' }
+export type DevicesRoute = { screen: 'devices'; pairSecret?: string }
+export type SyncRoute = { screen: 'sync' }
 
-export type AppRoute = PickerRoute | WorkspaceRoute | LegalRoute
+export type AppRoute = PickerRoute | WorkspaceRoute | LegalRoute | DevicesRoute | SyncRoute
 
 const PARSE_BASE = 'http://peerly.local'
 
@@ -33,6 +35,10 @@ export function pathForRoute(route: AppRoute): string {
   if (route.screen === 'picker') {
     return route.tab === 'create' ? '/create' : '/join'
   }
+  if (route.screen === 'devices') {
+    return route.pairSecret ? `/devices#pair=${encodeURIComponent(route.pairSecret)}` : '/devices'
+  }
+  if (route.screen === 'sync') return '/sync'
 
   switch (route.view) {
     case 'channel': {
@@ -46,7 +52,7 @@ export function pathForRoute(route: AppRoute): string {
   }
 }
 
-function parsePathRoute(pathname: string, search: string): AppRoute | null {
+function parsePathRoute(pathname: string, search: string, hash = ''): AppRoute | null {
   const path = pathname.replace(/\/+$/, '') || '/'
 
   if (path === '/privacy') {
@@ -61,6 +67,11 @@ function parsePathRoute(pathname: string, search: string): AppRoute | null {
   if (path === '/join') {
     return { screen: 'picker', tab: 'join' }
   }
+  if (path === '/devices') {
+    const match = /^#?pair=([0-9a-f]{32})$/i.exec(hash)
+    return { screen: 'devices', pairSecret: match?.[1]?.toLowerCase() }
+  }
+  if (path === '/sync') return { screen: 'sync' }
   if (path === '/workspace') {
     return defaultWorkspaceRoute()
   }
@@ -89,14 +100,14 @@ function parsePathRoute(pathname: string, search: string): AppRoute | null {
 export function routeFromPath(pathAndQuery: string): AppRoute | null {
   try {
     const url = new URL(pathAndQuery, PARSE_BASE)
-    return parsePathRoute(url.pathname, url.search)
+    return parsePathRoute(url.pathname, url.search, url.hash)
   } catch {
     return null
   }
 }
 
 export function routeFromLocation(loc: Location | { pathname: string; search: string; hash?: string }): AppRoute | null {
-  return parsePathRoute(loc.pathname, loc.search)
+  return parsePathRoute(loc.pathname, loc.search, loc.hash)
 }
 
 /** Preserve invite fragments (#invite=…) when updating picker paths. */
@@ -118,6 +129,7 @@ export function resolveInitialRoute(hasWorkspaceSession: boolean): AppRoute {
   if (fromUrl?.screen === 'workspace') {
     return fromUrl
   }
+  if (fromUrl?.screen === 'devices' || fromUrl?.screen === 'sync') return fromUrl
   if (hasWorkspaceSession) {
     return defaultWorkspaceRoute()
   }

@@ -1,6 +1,7 @@
 import { selfId } from '../../collab/identity'
 import { routeDmChannel } from '../../collab/dmStore'
 import { useCallback, useRef, useState, type RefObject } from 'react'
+import { recordSyncActivity, syncPayloadBytes } from '@peerly/core'
 import {
   FILE_TOO_LARGE_ERROR,
   MAX_FILE_BYTES,
@@ -181,6 +182,11 @@ export function useFileTransfer(
       const message = messageFromFileMeta(safeMeta, url)
       if (message.file) message.file.nsfw = nsfw
       onFileMessage(message)
+      recordSyncActivity({
+        direction: 'received', kind: 'file',
+        peer: { peerId: safeMeta.senderId, userId: safeMeta.senderUserId, relationship: 'workspace-member' },
+        itemCount: 1, bytes: data.byteLength, summary: `${safeMeta.name} · original file body`,
+      })
       setTransfers(prev => prev.filter(t => t.id !== safeMeta.id))
     },
     [blobUrls, fileCache, onFileMessage]
@@ -252,6 +258,12 @@ export function useFileTransfer(
 
         try {
           await fileAction.send(cached.buffer, { metadata: cached.meta, target: peerId })
+          recordSyncActivity({
+            direction: 'sent', kind: 'file',
+            peer: { peerId, relationship: 'workspace-member' },
+            itemCount: 1, bytes: cached.buffer.byteLength,
+            summary: `${cached.meta.name} · original file body`,
+          })
         } catch (err) {
           console.warn('[Peerly] Failed to serve file to peer:', peerId, err)
         }
@@ -339,6 +351,12 @@ export function useFileTransfer(
       // Announce metadata only. Peers request the content-addressed body when
       // opened, or immediately when their device is in automatic sync mode.
       await fileMetaAction.send(meta, target ? { target } : undefined)
+      recordSyncActivity({
+        direction: 'sent', kind: 'file',
+        peer: { peerId: target, relationship: 'workspace-member' },
+        itemCount: 1, bytes: syncPayloadBytes(meta),
+        summary: `${meta.name} · file metadata${target ? '' : ' to online workspace members'}`,
+      })
     },
     [blobUrls, fileCache, profileRef, identityRef, onFileNsfw]
   )

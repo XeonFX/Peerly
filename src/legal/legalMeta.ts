@@ -18,5 +18,5 @@ export const legalMeta = {
   /** Minimum age to use the app. Peerly is invite-only team collaboration. */
   minAge: 16,
   /** Last substantive update to the legal texts (ISO date). */
-  lastUpdated: '2026-07-19',
+  lastUpdated: '2026-07-20',
 } as const

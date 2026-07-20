@@ -32,6 +32,17 @@ describe('routing', () => {
     expect(routeFromPath('/')).toEqual({ screen: 'picker', tab: 'create' })
   })
 
+  it('round-trips a device pairing link', () => {
+    const pairSecret = '0123456789abcdef0123456789abcdef'
+    const route = { screen: 'devices' as const, pairSecret }
+    expect(pathForRoute(route)).toBe(`/devices#pair=${pairSecret}`)
+    expect(routeFromPath(pathForRoute(route))).toEqual(route)
+  })
+
+  it('round-trips the sync activity route', () => {
+    expect(routeFromPath(pathForRoute({ screen: 'sync' }))).toEqual({ screen: 'sync' })
+  })
+
   it('detects invite hashes', () => {
     expect(hasInviteHash('#invite=abc')).toBe(true)
     expect(hasInviteHash('invite=abc')).toBe(true)

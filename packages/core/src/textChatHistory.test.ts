@@ -67,4 +67,16 @@ describe('createTextChatHistoryStore', () => {
     expect(hist.load('r').wires).toHaveLength(3)
     expect(hist.load('r').wires.map(w => w.id)).toEqual(['3', '4', '5'])
   })
+
+  it('bounds untrusted envelopes before returning them', () => {
+    const many = Array.from({ length: 20 }, (_, index) => wire(String(index), index))
+    expect(hist.parseEnvelope({ messages: many, reactions: [] }).messages).toHaveLength(3)
+  })
+
+  it('rejects non-finite timestamps and oversized fields', () => {
+    expect(hist.parseEnvelope({
+      messages: [wire('bad', Number.POSITIVE_INFINITY), wire('huge', 1, 'x'.repeat(4_001))],
+      reactions: [],
+    }).messages).toEqual([])
+  })
 })

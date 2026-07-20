@@ -1,3 +1,7 @@
+import { encodeCanonicalLines } from './canonical.js'
+import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity.js'
+import type { DeviceSigner } from './textChatSigning.js'
+
 /**
  * Lobby-level DM ring protocol. The DM itself lives in a private Trystero room
  * (see dmRoomCode); the ring only tells a friend "open this room" over a shared
@@ -10,11 +14,41 @@ export type DmRingPayload = {
   toUserId: string
   fromUserId: string
   fromName: string
-  /** Deterministic DM room code (32 hex). */
-  code: string
   reason: DmRingReason
   /** Short text preview when reason is message. */
   preview?: string
+  deviceKeyId: string
+  sig: string
+}
+
+export function dmRingBytes(scheme: string, ring: Omit<DmRingPayload, 'sig'>): Uint8Array {
+  return encodeCanonicalLines([
+    scheme,
+    ring.toUserId,
+    ring.fromUserId,
+    ring.fromName,
+    ring.reason,
+    ring.preview ?? '',
+    ring.deviceKeyId,
+  ])
+}
+
+export async function signDmRing(
+  signer: DeviceSigner,
+  scheme: string,
+  fields: Omit<DmRingPayload, 'deviceKeyId' | 'sig'>
+): Promise<DmRingPayload> {
+  const deviceKeyId = await signer.publicKeyId()
+  const body = { ...fields, deviceKeyId }
+  return { ...body, sig: await signer.sign(dmRingBytes(scheme, body)) }
+}
+
+export async function verifyDmRing(scheme: string, ring: DmRingPayload): Promise<boolean> {
+  return verifyWithDeviceKeyId(
+    ring.deviceKeyId as DeviceKeyId,
+    dmRingBytes(scheme, ring),
+    ring.sig
+  )
 }
 
 const CODE_RE = /^[0-9a-f]{32}$/i
@@ -30,8 +64,9 @@ export function parseDmRingPayload(raw: unknown): DmRingPayload | null {
   if (typeof msg.toUserId !== 'string' || !msg.toUserId.trim()) return null
   if (typeof msg.fromUserId !== 'string' || !msg.fromUserId.trim()) return null
   if (msg.toUserId === msg.fromUserId) return null
-  if (typeof msg.code !== 'string' || !isValidDmRoomCode(msg.code)) return null
   if (msg.reason !== 'open' && msg.reason !== 'message') return null
+  if (typeof msg.deviceKeyId !== 'string' || !msg.deviceKeyId || msg.deviceKeyId.length > 512) return null
+  if (typeof msg.sig !== 'string' || !msg.sig || msg.sig.length > 512) return null
   const fromName =
     typeof msg.fromName === 'string' && msg.fromName.trim()
       ? msg.fromName.trim().slice(0, 80)
@@ -44,9 +79,10 @@ export function parseDmRingPayload(raw: unknown): DmRingPayload | null {
     toUserId: msg.toUserId.trim(),
     fromUserId: msg.fromUserId.trim(),
     fromName,
-    code: msg.code.toLowerCase(),
     reason: msg.reason,
     preview,
+    deviceKeyId: msg.deviceKeyId,
+    sig: msg.sig,
   }
 }
 

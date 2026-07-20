@@ -35,6 +35,7 @@ const payload = {
   fromEmail: 'alice@example.com',
   fromEmailHash: 'a'.repeat(64),
   toEmailHash: 'b'.repeat(64),
+  dmSecret: '0123456789abcdef0123456789abcdef',
   ts: Date.now(),
   deviceKeyId: 'P-256:x:y',
   sig: 'sig',

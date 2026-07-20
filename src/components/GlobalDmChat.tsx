@@ -12,6 +12,8 @@ type Props = {
   selfUserId: string
   error: string | null
   onSend: (text: string) => Promise<void>
+  onEdit: (messageId: string, text: string) => void
+  onDelete: (messageId: string) => void
   onClose: () => void
 }
 
@@ -27,6 +29,8 @@ export function GlobalDmChat({
   selfUserId,
   error,
   onSend,
+  onEdit,
+  onDelete,
   onClose,
 }: Props) {
   const { tr } = useI18n()
@@ -126,6 +130,15 @@ export function GlobalDmChat({
                   <p className={msg.deletedAt ? 'italic opacity-70' : 'whitespace-pre-wrap break-words'}>
                     {body}
                   </p>
+                  {mine && !msg.deletedAt && (
+                    <div className="mt-1 flex justify-end gap-1 text-[0.65rem] opacity-75">
+                      <button type="button" className="hover:underline" onClick={() => {
+                        const next = prompt(tr('Edit message'), msg.text)
+                        if (next?.trim()) onEdit(msg.id, next)
+                      }}>{tr('Edit')}</button>
+                      <button type="button" className="hover:underline" onClick={() => onDelete(msg.id)}>{tr('Delete')}</button>
+                    </div>
+                  )}
                 </div>
               </div>
             )
