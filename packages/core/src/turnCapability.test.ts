@@ -23,4 +23,27 @@ describe('probeTurnCapability', () => {
       detail: expect.stringContaining('blocked by administrator'),
     })
   })
+
+  it('succeeds on the first relay candidate without waiting for gathering to finish', async () => {
+    class FakePeerConnection {
+      onicecandidate: ((event: { candidate: { type: string; protocol: string } | null }) => void) | null = null
+      onicecandidateerror: ((event: { errorText?: string }) => void) | null = null
+      createDataChannel() {}
+      async createOffer() { return {} }
+      async setLocalDescription() {
+        queueMicrotask(() => this.onicecandidate?.({ candidate: { type: 'relay', protocol: 'tcp' } }))
+      }
+      close() {}
+    }
+    vi.stubGlobal('RTCPeerConnection', FakePeerConnection)
+
+    await expect(probeTurnCapability(
+      { VITE_TURN_URLS: 'turn:turn.example:3478' },
+      20
+    )).resolves.toEqual({
+      status: 'available',
+      detail: 'TURN relay allocation succeeded (tcp).',
+      transports: ['tcp'],
+    })
+  })
 })

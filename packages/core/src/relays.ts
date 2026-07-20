@@ -129,24 +129,30 @@ export type TurnServer = {
  * A single TURN endpoint is easy to configure but brittle in the real world:
  * UDP is fastest, TCP survives UDP-blocking networks, and TLS/443 is the path
  * most likely to pass a restrictive proxy/firewall. Expand conventional TURN
- * ports into that transport ladder while preserving every explicit URL.
+ * ports into a compact transport ladder. Conventional aliases collapse to
+ * three canonical URLs so browsers do not probe duplicate endpoints or trip
+ * Firefox's five-server warning once the fallback STUN URL is included.
  */
 export function expandTurnUrls(urls: readonly string[]): string[] {
   const expanded = new Set<string>()
   for (const raw of urls) {
     const value = raw.trim()
     if (!value) continue
-    expanded.add(value)
     const match = /^(turns?):([^/?#:]+|\[[^\]]+\])(?::(\d+))?(?:\?transport=(udp|tcp))?$/i.exec(value)
-    if (!match) continue
+    if (!match) {
+      expanded.add(value)
+      continue
+    }
     const [, scheme, host] = match
     // Only infer the standard transport ladder from conventional endpoints.
     // Custom ports remain exactly as configured.
     const port = match[3] ?? (scheme.toLowerCase() === 'turns' ? '5349' : '3478')
-    if (port !== '3478' && port !== '5349' && port !== '443') continue
+    if (port !== '3478' && port !== '5349' && port !== '443') {
+      expanded.add(value)
+      continue
+    }
     expanded.add(`turn:${host}:3478?transport=udp`)
     expanded.add(`turn:${host}:3478?transport=tcp`)
-    expanded.add(`turns:${host}:5349?transport=tcp`)
     expanded.add(`turns:${host}:443?transport=tcp`)
   }
   return [...expanded]

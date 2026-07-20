@@ -39,6 +39,11 @@ export async function probeTurnCapability(
         if (event.candidate) {
           if (event.candidate.type === 'relay') {
             transports.add(event.candidate.protocol || 'unknown')
+            // A relay candidate already proves reachability, authentication,
+            // and allocation. Do not wait for every fallback transport to
+            // finish: a blocked UDP/TCP path may keep ICE gathering open past
+            // the timeout and turn a successful allocation into a false red.
+            resolve()
           }
           return
         }
