@@ -69,6 +69,8 @@ export type Peer = {
   id: string
   /** Durable identity verified during this peer's handshake; never wire-claimed. */
   userId?: string
+  /** Visible through the workspace relay, but not yet authenticated over P2P. */
+  presenceOnly?: boolean
   name: string
   color: string
   avatar?: string

@@ -2,7 +2,7 @@ import type { PeerHandshake } from '@trystero-p2p/core'
 import type { joinRoom as joinNostrRoom } from '@trystero-p2p/nostr'
 import type { Env } from './env.js'
 import type { SignalingStrategy } from './signaling.js'
-import { getIceServers, getNostrRelayConfig, getSupabaseRoomConfig, getTurnConfig } from './relays.js'
+import { getIceServers, getNostrRelayConfig, getSupabaseRoomConfig } from './relays.js'
 
 export type Room = ReturnType<typeof joinNostrRoom>
 
@@ -68,7 +68,12 @@ export function classifyJoinError(message: string): JoinErrorKind {
  * (wedged PC / stalled handshake) rather than only showing TURN advice.
  */
 export function isRecoverableJoinError(kind: JoinErrorKind): boolean {
-  return kind === 'handshake-timeout' || kind === 'sdp-collision' || kind === 'needs-turn'
+  // A post-SDP ICE failure belongs to one remote peer. Rebuilding the entire
+  // room for it disconnects healthy peers and, in public lobbies, lets one
+  // unreachable stranger cause a permanent reconnect storm. Trystero will
+  // advertise again and create a fresh PeerConnection when that peer returns;
+  // only failures that can wedge our own current room instance need a rejoin.
+  return kind === 'handshake-timeout' || kind === 'sdp-collision'
 }
 
 export type JoinRoomOptions = {
@@ -112,23 +117,23 @@ export async function joinRoomByCode(options: JoinRoomOptions): Promise<Room> {
   const env = options.env ?? {}
 
   const iceServers = getIceServers(env)
-  const turnConfig = getTurnConfig(env)
-
   const baseConfig = {
     ...(password ? { password } : {}),
-    // Also pass turnConfig so Trystero's "has TURN?" detection and any path
-    // that only reads turnConfig (not rtcConfig.iceServers) still works.
-    ...(turnConfig ? { turnConfig } : {}),
     rtcConfig: {
-      // Pre-gather a few candidates without the Firefox "many ICE servers" tax.
-      iceCandidatePoolSize: 4,
-      // One transport per peer reduces mid-renegotiation extmap collisions
-      // (Chrome InvalidAccessError on RTP extension ID reassignment).
-      bundlePolicy: 'max-bundle' as RTCBundlePolicy,
+      // Do not set iceCandidatePoolSize here. Trystero already keeps a pool of
+      // prepared offers; asking every one of those PeerConnections to pre-gather
+      // four additional candidate sets multiplies TURN allocations into the
+      // hundreds before a user has connected to anybody.
+      // Keep the browser's default bundle policy. Forcing max-bundle makes
+      // Chromium reject Trystero's regenerated data-only offers because those
+      // offers legitimately have no BUNDLE group (breaking leave/rematch).
       rtcpMuxPolicy: 'require' as RTCRtcpMuxPolicy,
       // A lean STUN + TURN list, deliberately replacing Trystero's four default
       // STUN servers: five-plus ICE servers slow discovery (and Firefox warns).
       // Left unset when no TURN is configured so Trystero keeps its defaults.
+      // This is deliberately the only place TURN is supplied. Passing the same
+      // servers through turnConfig as well causes duplicate ICE work; Trystero
+      // also checks rtcConfig.iceServers when producing TURN diagnostics.
       ...(iceServers ? { iceServers } : {}),
     },
   }

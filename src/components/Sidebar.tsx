@@ -363,6 +363,9 @@ export function Sidebar({
             >
               <Avatar name={peer.name} color={peer.color} avatar={peer.avatar} />
               <span className="min-w-0 flex-1 truncate">{peer.name}</span>
+              {peer.presenceOnly && (
+                <span className="shrink-0 text-xs text-base-content/55">{tr('Connecting')}</span>
+              )}
               {(() => {
                 const contact = resolvePeerContact?.(peer.id)
                 const friendAlready = contact ? isFriend?.(contact.userId) : false
@@ -386,7 +389,7 @@ export function Sidebar({
                         <Icon name="plus" size={15} />
                       </button>
                     )}
-                    <button
+                    {!peer.presenceOnly && <button
                       type="button"
                       className="btn btn-ghost btn-xs btn-square shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                       title={tr('Message {name}', { name: peer.name })}
@@ -395,7 +398,7 @@ export function Sidebar({
                       onClick={() => onStartDirectMessage(peer)}
                     >
                       <Icon name="message-circle" size={15} />
-                    </button>
+                    </button>}
                   </>
                 )
               })()}

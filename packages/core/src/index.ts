@@ -52,8 +52,19 @@ export {
 } from './oidcIdToken.js'
 export { renderGoogleSignInButton } from './googleSignIn.js'
 export {
+  coordinationMemberId,
+  coordinationScope,
+  createRelayCoordinator,
+  openCoordinationData,
+  sealCoordinationData,
+  type RelayCoordinationEvent,
+  type RelayCoordinator,
+  type RelayPresenceMember,
+} from './coordination.js'
+export {
   GOOGLE_ISSUERS,
   GOOGLE_JWKS_URL,
+  GOOGLE_JWKS_PROXY_PATH,
   resetGoogleJwksCache,
   verifyGoogleIdToken,
   type GoogleIdTokenClaims,

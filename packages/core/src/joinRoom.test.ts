@@ -38,10 +38,10 @@ describe('classifyJoinError', () => {
 })
 
 describe('isRecoverableJoinError', () => {
-  it('allows rejoin for timeout, collision, and post-SDP ICE wedge', () => {
+  it('rejoins local wedges without rebuilding a room for one unreachable peer', () => {
     expect(isRecoverableJoinError('handshake-timeout')).toBe(true)
     expect(isRecoverableJoinError('sdp-collision')).toBe(true)
-    expect(isRecoverableJoinError('needs-turn')).toBe(true)
+    expect(isRecoverableJoinError('needs-turn')).toBe(false)
     expect(isRecoverableJoinError('password-mismatch')).toBe(false)
     expect(isRecoverableJoinError('unknown')).toBe(false)
   })

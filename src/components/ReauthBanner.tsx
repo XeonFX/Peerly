@@ -53,6 +53,8 @@ export function ReauthBanner({ phase, session, authManager, onReauthed }: Props)
     },
     [authManager, onReauthed, provider, session.identityEmail, tr]
   )
+  const completeWithTokenRef = useRef(completeWithToken)
+  completeWithTokenRef.current = completeWithToken
 
   const handleReauth = async () => {
     setError(null)
@@ -90,7 +92,7 @@ export function ReauthBanner({ phase, session, authManager, onReauthed }: Props)
         if (!keyId || cancelled) return
         const token = await signInWithProvider('google', keyId)
         if (cancelled) return
-        await completeWithToken(token)
+        await completeWithTokenRef.current(token)
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       }
@@ -98,7 +100,7 @@ export function ReauthBanner({ phase, session, authManager, onReauthed }: Props)
     return () => {
       cancelled = true
     }
-  }, [authManager, completeWithToken, isGoogle, phase])
+  }, [authManager, isGoogle, phase])
 
   if (phase === 'ok') return null
 

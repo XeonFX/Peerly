@@ -14,6 +14,7 @@ export type GoogleIdTokenClaims = OidcIdTokenClaims
  * an authentication bypass.
  */
 export const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
+export const GOOGLE_JWKS_PROXY_PATH = '/api/auth/google/jwks'
 export const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com'])
 const GOOGLE_JWKS_STORAGE_KEY = 'peerly-google-jwks-v1'
 const GOOGLE_JWKS_STALE_FALLBACK_MS = 7 * 24 * 60 * 60 * 1000
@@ -42,14 +43,28 @@ function storeGoogleJwks(value: StoredGoogleJwks): void {
 
 async function defaultFetchJwks(): Promise<{ keys: JwkWithKid[] }> {
   try {
-    const res = await fetch(GOOGLE_JWKS_URL)
-    if (!res.ok) throw new Error(`Failed to fetch Google's public keys: HTTP ${res.status}`)
-    const value = (await res.json()) as { keys: JwkWithKid[] }
-    if (!Array.isArray(value.keys) || value.keys.length === 0) {
-      throw new Error("Google's public-key response was empty")
+    // Prefer the app's same-origin cache. Some mobile/filtered networks allow
+    // the app and Google Accounts UI but reset googleapis.com, making a first
+    // login impossible before localStorage has a last-good key set.
+    const urls = typeof globalThis.location?.origin === 'string'
+      ? [GOOGLE_JWKS_PROXY_PATH, GOOGLE_JWKS_URL]
+      : [GOOGLE_JWKS_URL]
+    let lastError: unknown
+    for (const url of urls) {
+      try {
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(`Failed to fetch Google's public keys: HTTP ${res.status}`)
+        const value = (await res.json()) as { keys: JwkWithKid[] }
+        if (!Array.isArray(value.keys) || value.keys.length === 0) {
+          throw new Error("Google's public-key response was empty")
+        }
+        storeGoogleJwks({ keys: value.keys, fetchedAt: Date.now() })
+        return value
+      } catch (error) {
+        lastError = error
+      }
     }
-    storeGoogleJwks({ keys: value.keys, fetchedAt: Date.now() })
-    return value
+    throw lastError
   } catch (error) {
     // Google's token is short-lived and still goes through issuer, audience,
     // nonce, expiry, and signature verification. A recently downloaded old
