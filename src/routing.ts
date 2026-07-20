@@ -5,6 +5,10 @@ export type PickerRoute = {
   tab: 'create' | 'join'
 }
 
+export type LoginRoute = { screen: 'login' }
+export type HomeRoute = { screen: 'home' }
+export type AccountRoute = { screen: 'account' }
+
 export type WorkspaceRoute =
   | { screen: 'workspace'; view: 'channel'; channelId: string; showFiles: boolean }
   | { screen: 'workspace'; view: 'profile' }
@@ -15,7 +19,15 @@ export type LegalRoute = { screen: 'legal'; doc: 'privacy' | 'terms' }
 export type DevicesRoute = { screen: 'devices'; pairSecret?: string }
 export type SyncRoute = { screen: 'sync' }
 
-export type AppRoute = PickerRoute | WorkspaceRoute | LegalRoute | DevicesRoute | SyncRoute
+export type AppRoute =
+  | LoginRoute
+  | HomeRoute
+  | AccountRoute
+  | PickerRoute
+  | WorkspaceRoute
+  | LegalRoute
+  | DevicesRoute
+  | SyncRoute
 
 const PARSE_BASE = 'http://peerly.local'
 
@@ -32,6 +44,9 @@ export function pathForRoute(route: AppRoute): string {
   if (route.screen === 'legal') {
     return `/${route.doc}`
   }
+  if (route.screen === 'login') return '/login'
+  if (route.screen === 'home') return '/home'
+  if (route.screen === 'account') return '/profile'
   if (route.screen === 'picker') {
     return route.tab === 'create' ? '/create' : '/join'
   }
@@ -61,7 +76,12 @@ function parsePathRoute(pathname: string, search: string, hash = ''): AppRoute |
   if (path === '/terms') {
     return { screen: 'legal', doc: 'terms' }
   }
-  if (path === '/' || path === '/create') {
+  if (path === '/' || path === '/login') {
+    return { screen: 'login' }
+  }
+  if (path === '/home') return { screen: 'home' }
+  if (path === '/profile') return { screen: 'account' }
+  if (path === '/create') {
     return { screen: 'picker', tab: 'create' }
   }
   if (path === '/join') {
@@ -120,7 +140,7 @@ export function hasInviteHash(hash = typeof window !== 'undefined' ? window.loca
   return /^#?invite=/.test(hash)
 }
 
-export function resolveInitialRoute(hasWorkspaceSession: boolean): AppRoute {
+export function resolveInitialRoute(hasWorkspaceSession: boolean, hasSignedInIdentity = false): AppRoute {
   const fromUrl = typeof window !== 'undefined' ? routeFromLocation(window.location) : null
   const inviteInHash = typeof window !== 'undefined' && hasInviteHash(window.location.hash)
   if (fromUrl?.screen === 'legal') {
@@ -136,6 +156,14 @@ export function resolveInitialRoute(hasWorkspaceSession: boolean): AppRoute {
   if (inviteInHash) {
     return { screen: 'picker', tab: 'join' }
   }
-  if (fromUrl?.screen === 'picker') return fromUrl
-  return { screen: 'picker', tab: 'create' }
+  if (fromUrl?.screen === 'login') {
+    return hasSignedInIdentity ? { screen: 'home' } : fromUrl
+  }
+  if (fromUrl?.screen === 'home' || fromUrl?.screen === 'account') {
+    return hasSignedInIdentity ? fromUrl : { screen: 'login' }
+  }
+  if (fromUrl?.screen === 'picker') {
+    return fromUrl.tab === 'join' || hasSignedInIdentity ? fromUrl : { screen: 'login' }
+  }
+  return hasSignedInIdentity ? { screen: 'home' } : { screen: 'login' }
 }

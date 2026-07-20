@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   forgetWorkspace,
   loadWorkspaces,
+  mostRecentlyOpenedWorkspace,
   rememberWorkspace,
   workspacesForEmail,
 } from './workspaceStore'
@@ -62,11 +63,15 @@ describe('workspaceStore', () => {
     expect(loadWorkspaces()).toHaveLength(1)
   })
 
-  it('orders most recently opened first', () => {
+  it('keeps workspace order stable while tracking the most recently opened one', () => {
+    vi.spyOn(Date, 'now').mockReturnValueOnce(100).mockReturnValueOnce(200).mockReturnValueOnce(300)
     rememberWorkspace(workspace('old', ['alice@example.com']))
     rememberWorkspace(workspace('new', ['alice@example.com']))
+    rememberWorkspace(workspace('old', ['alice@example.com']))
 
-    expect(loadWorkspaces().map(w => w.workspaceId)).toEqual(['new', 'old'])
+    const stored = loadWorkspaces()
+    expect(stored.map(w => w.workspaceId)).toEqual(['old', 'new'])
+    expect(mostRecentlyOpenedWorkspace(stored)?.workspaceId).toBe('old')
   })
 
   // Members get added over time. Pinning the list from the day you joined would

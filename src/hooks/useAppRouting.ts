@@ -11,8 +11,8 @@ import {
   type WorkspaceRoute,
 } from '../routing'
 
-export function useAppRouting(inWorkspace: boolean, ready: boolean) {
-  const [route, setRoute] = useState<AppRoute>(() => resolveInitialRoute(inWorkspace))
+export function useAppRouting(inWorkspace: boolean, signedIn: boolean, ready: boolean) {
+  const [route, setRoute] = useState<AppRoute>(() => resolveInitialRoute(inWorkspace, signedIn))
   const urlSeededRef = useRef(false)
 
   const syncUrl = useCallback((next: AppRoute, replace = false, preserveHash = false) => {
@@ -42,19 +42,20 @@ export function useAppRouting(inWorkspace: boolean, ready: boolean) {
     const onPopState = () => {
       const parsed = routeFromLocation(window.location)
       if (!parsed) {
-        setRoute(inWorkspace ? defaultWorkspaceRoute() : { screen: 'picker', tab: 'create' })
+        setRoute(inWorkspace ? defaultWorkspaceRoute() : signedIn ? { screen: 'home' } : { screen: 'login' })
         return
       }
       if (ready && !inWorkspace && parsed.screen === 'workspace') {
-        setRoute({ screen: 'picker', tab: 'create' })
-        syncUrl({ screen: 'picker', tab: 'create' }, true)
+        const fallback: AppRoute = signedIn ? { screen: 'home' } : { screen: 'login' }
+        setRoute(fallback)
+        syncUrl(fallback, true)
         return
       }
       setRoute(parsed)
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [inWorkspace, ready, syncUrl])
+  }, [inWorkspace, signedIn, ready, syncUrl])
 
   useEffect(() => {
     if (!ready) return
@@ -63,16 +64,28 @@ export function useAppRouting(inWorkspace: boolean, ready: boolean) {
       return
     }
     if (!inWorkspace && route.screen === 'workspace') {
-      navigate({ screen: 'picker', tab: 'create' }, { replace: true })
+      navigate(signedIn ? { screen: 'home' } : { screen: 'login' }, { replace: true })
+      return
     }
-  }, [ready, inWorkspace, route.screen, navigate])
+    if (signedIn && route.screen === 'login') {
+      navigate({ screen: 'home' }, { replace: true })
+      return
+    }
+    if (!signedIn && (route.screen === 'home' || route.screen === 'account')) {
+      navigate({ screen: 'login' }, { replace: true })
+      return
+    }
+    if (!signedIn && route.screen === 'picker' && route.tab === 'create') {
+      navigate({ screen: 'login' }, { replace: true })
+    }
+  }, [ready, inWorkspace, signedIn, route, navigate])
 
   const enterWorkspace = useCallback(() => {
     navigate(defaultWorkspaceRoute(), { replace: true })
   }, [navigate])
 
   const leaveToPicker = useCallback(() => {
-    navigate({ screen: 'picker', tab: 'create' }, { replace: true })
+    navigate({ screen: 'home' }, { replace: true })
   }, [navigate])
 
   const setPickerTab = useCallback(

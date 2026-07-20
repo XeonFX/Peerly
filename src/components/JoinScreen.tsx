@@ -56,10 +56,12 @@ function WorkspaceUsageBadge({ usage }: { usage: WorkspaceUsage | undefined }) {
 }
 
 type Props = {
+  view: 'login' | 'home' | 'create' | 'join'
   pickerTab: 'create' | 'join'
   onPickerTabChange: (tab: 'create' | 'join') => void
   onJoined: (session: Session) => void
-  /** Friends + email-invite panel (wired from App presence lobby). */
+  onIdentityChange?: (signedIn: boolean) => void
+  /** Friends + email-invite panel, rendered only on the signed-in home view. */
   friendsPanel?: ReactNode
 }
 
@@ -79,7 +81,7 @@ function restoreSignedInIdentity(): SignedInIdentity | null {
   return { email, token, providerId, userId: loadIdentityUserId() ?? undefined }
 }
 
-export function JoinScreen({ pickerTab, onPickerTabChange, onJoined, friendsPanel }: Props) {
+export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIdentityChange, friendsPanel }: Props) {
   const { tr } = useI18n()
   const browserStorage = useBrowserStorage()
   const { capability: p2pCapability } = useP2pCapability()
@@ -90,7 +92,7 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined, friendsPane
   const hashInvite =
     typeof window !== 'undefined' ? decodeInviteFromHash(window.location.hash) : null
   const activeInvite = invite ?? hashInvite
-  const activeMode: Mode = activeInvite ? 'join' : pickerTab
+  const activeMode: Mode = activeInvite ? 'join' : view === 'join' ? 'join' : pickerTab
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [createdInviteLink, setCreatedInviteLink] = useState<string | null>(null)
@@ -283,10 +285,14 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined, friendsPane
     <IdentityLoginButtons
       authManager={authManagerRef.current}
       signedIn={signedIn}
-      onSignedIn={setSignedIn}
+      onSignedIn={identity => {
+        setSignedIn(identity)
+        onIdentityChange?.(true)
+      }}
       onSignOut={() => {
         clearIdCredentials()
         setSignedIn(null)
+        onIdentityChange?.(false)
       }}
       busy={busy}
       onBusyChange={setBusy}
@@ -379,9 +385,9 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined, friendsPane
   }
 
   return (
-    <div className="join-screen flex min-h-full items-center justify-center p-4">
+    <div className="join-screen h-full overflow-y-auto p-4">
       <div className="fixed right-4 top-4 z-20"><ThemeToggle compact /></div>
-      <div className="join-card w-full max-w-2xl space-y-5">
+      <div className={`join-card mx-auto w-full space-y-5 py-2 ${view === 'home' ? 'max-w-6xl' : 'max-w-2xl'}`}>
         <header className="space-y-2 text-center">
           <div className="join-logo flex items-center justify-center gap-2">
             <span className="brand-mark brand-mark-sm" aria-hidden="true"><img src={peerlyBrand} alt="" /></span>
@@ -392,21 +398,24 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined, friendsPane
         {/* Who you are, first — it decides which workspaces appear below. */}
         {identitySection}
 
-        {friendsPanel}
+        {view === 'home' ? friendsPanel : null}
 
-        <BrowserStorageCard
-          estimate={browserStorage.estimate}
-          pressure={browserStorage.pressure}
-          onRefresh={() => void browserStorage.refresh(true)}
-          onRequestPersistence={browserStorage.requestPersistence}
-          requestingPersistence={browserStorage.requestingPersistence}
-        />
-
-        <P2pCapabilityIndicator capability={p2pCapability} rtcPeerCount={0} compact />
+        {view === 'home' && (
+          <>
+            <BrowserStorageCard
+              estimate={browserStorage.estimate}
+              pressure={browserStorage.pressure}
+              onRefresh={() => void browserStorage.refresh(true)}
+              onRequestPersistence={browserStorage.requestPersistence}
+              requestingPersistence={browserStorage.requestingPersistence}
+            />
+            <P2pCapabilityIndicator capability={p2pCapability} rtcPeerCount={0} compact />
+          </>
+        )}
 
         {inviteBanner}
 
-        <section className="space-y-2" data-testid="workspace-picker">
+        {view === 'home' && <section className="space-y-2" data-testid="workspace-picker">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-medium uppercase tracking-wider text-base-content/50">
               {tr('Your workspaces')}
@@ -507,9 +516,9 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined, friendsPane
                 </li>
               ))}
           </ul>
-        </section>
+        </section>}
 
-        <div className="card border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
+        {(view === 'create' || view === 'join') && <div className="card border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
           <div className="card-body gap-4 p-5">
             <div role="tablist" className="tabs tabs-boxed join-tabs bg-base-300/50">
               <button
@@ -633,7 +642,7 @@ export function JoinScreen({ pickerTab, onPickerTabChange, onJoined, friendsPane
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
         <p
           className="text-center font-mono text-[0.7rem] text-base-content/35"

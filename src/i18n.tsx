@@ -14,6 +14,16 @@ const pl: Record<string, string> = {
 }
 
 const plByEnglish: Record<string, string> = {
+  'Profile & preferences': 'Profil i preferencje',
+  'These preferences apply across Peerly, not to a single workspace.': 'Te preferencje dotyczą całego Peerly, a nie jednej przestrzeni.',
+  'Theme and language are stored on this device.': 'Motyw i język są zapisane na tym urządzeniu.',
+  'Recent workspace': 'Ostatnia przestrzeń',
+  'No workspace opened yet.': 'Nie otwarto jeszcze żadnej przestrzeni.',
+  Notifications: 'Powiadomienia',
+  'Browser notifications announce direct messages and friend requests while Peerly is in the background.': 'Powiadomienia przeglądarki informują o wiadomościach bezpośrednich i zaproszeniach do znajomych, gdy Peerly działa w tle.',
+  'Turn on notifications': 'Włącz powiadomienia',
+  'Turn off notifications': 'Wyłącz powiadomienia',
+  Account: 'Konto',
   'Sync activity': 'Aktywność synchronizacji',
   'Approved device': 'Zatwierdzone urządzenie',
   'Nearby user (not a friend)': 'Użytkownik w pobliżu (nieznajomy)',

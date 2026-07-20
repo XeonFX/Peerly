@@ -11,7 +11,7 @@ import type { WorkspaceAccess } from './inviteLink'
  * — a workspace you have joined is a workspace this browser can rejoin.
  */
 export type StoredWorkspace = WorkspaceAccess & {
-  /** Drives ordering in the picker: most recently used first. */
+  /** Used to select the recent workspace; it does not reorder the workspace rail. */
   lastOpenedAt: number
   /** Local workspace icon — not part of the signed invite payload. */
   workspaceAvatarId?: string
@@ -59,7 +59,7 @@ export function loadWorkspaces(): StoredWorkspace[] {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
     // Drop anything malformed rather than letting it reach the join flow.
-    return parsed.filter(isStoredWorkspace).sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
+    return parsed.filter(isStoredWorkspace)
   } catch {
     return []
   }
@@ -93,7 +93,19 @@ export function rememberWorkspace(workspace: Omit<StoredWorkspace, 'lastOpenedAt
     lastOpenedAt: Date.now(),
   }
 
-  save([next, ...existing.filter(w => w.workspaceId !== workspace.workspaceId)])
+  if (!previous) {
+    save([...existing, next])
+    return
+  }
+  // Replace in place so merely opening a workspace never makes the rail jump.
+  save(existing.map(item => (item.workspaceId === workspace.workspaceId ? next : item)))
+}
+
+export function mostRecentlyOpenedWorkspace(workspaces: readonly StoredWorkspace[]): StoredWorkspace | undefined {
+  return workspaces.reduce<StoredWorkspace | undefined>(
+    (latest, workspace) => !latest || workspace.lastOpenedAt > latest.lastOpenedAt ? workspace : latest,
+    undefined
+  )
 }
 
 export function forgetWorkspace(workspaceId: string): void {

@@ -34,6 +34,7 @@ export type IconName =
   | 'shield'
   | 'sun'
   | 'trash'
+  | 'user'
   | 'video'
   | 'video-off'
   | 'x'
@@ -112,6 +113,8 @@ export function Icon({ name, size = 18, className = '', ...props }: Props) {
         return <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>
       case 'trash':
         return <><path d="M3 6h18"/><path d="M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6"/></>
+      case 'user':
+        return <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>
       case 'video':
         return <><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/></>
       case 'video-off':

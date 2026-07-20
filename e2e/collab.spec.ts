@@ -1192,10 +1192,10 @@ test.describe('Peerly P2P collaboration', () => {
     // Relay health is Nostr-only diagnostics; E2E runs ws-relay, so the card
     // must stay hidden rather than probe a strategy it doesn't apply to.
     await expect(page.getByTestId('relay-health-card')).toHaveCount(0)
+    await page.getByTestId('rail-account').click()
     await page.getByTestId('locale-select').selectOption('pl')
-    await expect(page.getByRole('heading', { name: 'Uwaga i powiadomienia' })).toBeVisible()
-    await expect(page.getByTestId('attention-sound-toggle')).toContainText('Włącz dźwięki powiadomień')
-    await page.getByTestId('workspace-settings-back').click()
+    await expect(page.getByRole('heading', { name: 'Profil i preferencje' })).toBeVisible()
+    await page.locator('[data-testid^="rail-workspace-"]').first().click()
     await expect(page.getByRole('heading', { name: 'Kanały' })).toBeVisible()
     await expect(page.getByTestId('video-call-button')).toHaveAttribute(
       'aria-label',
@@ -1204,9 +1204,9 @@ test.describe('Peerly P2P collaboration', () => {
     await page.getByTestId('member-self').click()
     await expect(page.getByRole('heading', { name: 'Twój profil' })).toBeVisible()
     await page.getByTestId('profile-back').click()
-    await page.getByTestId('workspace-settings-open').click()
+    await page.getByTestId('rail-account').click()
     await page.getByTestId('locale-select').selectOption('en')
-    await expect(page.getByRole('heading', { name: 'Attention & notifications' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Profile & preferences' })).toBeVisible()
   })
 
   test('synced channel persists after peer refresh', async ({ browser }) => {

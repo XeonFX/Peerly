@@ -89,7 +89,12 @@ function mergeArrays(current: string, incoming: string, key: string): string {
       const previous = byId.get(id)
       if (!previous || revision(item) >= revision(previous)) byId.set(id, item)
     }
-    return JSON.stringify([...byId.values()].sort((a, b) => revision(a) - revision(b)).slice(-500))
+    const merged = [...byId.values()]
+    // Workspace position is user-facing navigation state. Map replacement
+    // preserves the local order and appends workspaces learned from a device;
+    // sorting by lastOpenedAt would make the rail jump after every sync.
+    if (key === 'peerly-workspaces') return JSON.stringify(merged.slice(-500))
+    return JSON.stringify(merged.sort((a, b) => revision(a) - revision(b)).slice(-500))
   } catch { return current }
 }
 
