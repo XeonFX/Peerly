@@ -14,6 +14,7 @@ export type ChatPayload = {
   senderDeviceKeyId?: string
   /** ECDSA signature over the signed fields; absent on legacy messages. */
   signature?: string
+  deviceGrant?: import('../collab/deviceAuthorization').DeviceGrant
   senderName: string
   senderColor: string
   senderAvatar?: string
@@ -76,6 +77,7 @@ export type HistoryEntry = {
   senderDeviceKeyId?: string
   /** ECDSA signature over the signed fields; absent on legacy messages. */
   signature?: string
+  deviceGrant?: import('../collab/deviceAuthorization').DeviceGrant
   senderName: string
   senderColor: string
   senderAvatar?: string

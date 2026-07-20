@@ -18,17 +18,24 @@ export {
   CONSECUTIVE_FLAGS_REQUIRED,
   INITIAL_NSFW_SCAN_STATE,
   shouldFlagNsfw,
-  VIDEO_SCREEN_INTERVAL_MS,
-  videoScreeningDelay,
   type NsfwScreenScanState,
 } from '@peerly/core'
+
+export const VIDEO_SCREEN_INTERVAL_MS = 3_000
+
+/** Peerly's conservative call cadence; attachments share the same serial model. */
+export function videoScreeningDelay(cleanRuns: number): number {
+  if (cleanRuns < 5) return VIDEO_SCREEN_INTERVAL_MS
+  if (cleanRuns < 10) return 10_000
+  return 30_000
+}
 
 type Classifier = {
   classify: (source: VisualSource) => Promise<NsfwPrediction[]>
 }
 
 let classifierPromise: Promise<Classifier> | null = null
-const pool = createInferencePool()
+const pool = createInferencePool(1)
 const canvasCache = new WeakMap<VisualSource, HTMLCanvasElement>()
 
 function loadClassifier(): Promise<Classifier> {

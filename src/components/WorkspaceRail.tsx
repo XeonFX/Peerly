@@ -10,8 +10,12 @@ type Props = {
   activeWorkspaceId?: string
   /** True when the home / direct-messages view is showing. */
   onHome: boolean
+  onDevices: boolean
+  onSync: boolean
   onSelectWorkspace: (workspace: StoredWorkspace) => void
   onHomeSelect: () => void
+  onDevicesSelect: () => void
+  onSyncSelect: () => void
   onCreateWorkspace: () => void
   /** Per-workspace unread totals (best-effort; only the active one is live). */
   unreadByWorkspace?: Record<string, number>
@@ -26,8 +30,12 @@ export function WorkspaceRail({
   workspaces,
   activeWorkspaceId,
   onHome,
+  onDevices,
+  onSync,
   onSelectWorkspace,
   onHomeSelect,
+  onDevicesSelect,
+  onSyncSelect,
   onCreateWorkspace,
   unreadByWorkspace = {},
 }: Props) {
@@ -48,14 +56,32 @@ export function WorkspaceRail({
         <img src={peerlyBrand} alt="" className="h-7 w-7 object-contain" />
       </RailButton>
 
+      <RailButton
+        label={tr('Sync activity')}
+        active={onSync}
+        onClick={onSyncSelect}
+        testId="rail-sync"
+      >
+        <Icon name="refresh" size={21} />
+      </RailButton>
+
       <div className="my-1 h-px w-8 shrink-0 bg-base-content/10" />
+
+      <RailButton
+        label={tr('My devices')}
+        active={onDevices}
+        onClick={onDevicesSelect}
+        testId="rail-devices"
+      >
+        <Icon name="shield" size={21} />
+      </RailButton>
 
       <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
         {workspaces.map(workspace => (
           <RailButton
             key={workspace.workspaceId}
             label={workspace.workspaceName}
-            active={!onHome && workspace.workspaceId === activeWorkspaceId}
+            active={!onHome && !onDevices && !onSync && workspace.workspaceId === activeWorkspaceId}
             unread={unreadByWorkspace[workspace.workspaceId] ?? 0}
             onClick={() => onSelectWorkspace(workspace)}
             testId={`rail-workspace-${workspace.workspaceId}`}

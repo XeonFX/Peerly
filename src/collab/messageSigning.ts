@@ -1,6 +1,7 @@
 import { encodeCanonicalLines, verifyWithDeviceKeyId, type DeviceKeyId } from '@peerly/core'
 import type { HistoryEntry } from '../protocol/types'
 import { sanitizeReactions } from './reactionSigning'
+import { verifyDeviceGrant, type DeviceGrant } from './deviceAuthorization'
 
 /**
  * Author signatures for messages, so relayed history cannot be forged.
@@ -28,6 +29,7 @@ export type SignedFields = {
   channelId: string
   editedAt?: number
   deletedAt?: number
+  deviceGrant?: DeviceGrant
 }
 
 export function signedMessageBytes(fields: SignedFields): Uint8Array {
@@ -48,12 +50,20 @@ export function signedMessageBytes(fields: SignedFields): Uint8Array {
       ? [String(fields.editedAt ?? ''), String(fields.deletedAt ?? '')]
       : []
   return encodeCanonicalLines([
-    revision.length > 0 ? 'peerly-msg-v2' : 'peerly-msg-v1',
+    fields.deviceGrant ? 'peerly-msg-v3' : revision.length > 0 ? 'peerly-msg-v2' : 'peerly-msg-v1',
     fields.id,
     fields.channelId,
     String(fields.timestamp),
     fields.senderUserId ?? '',
     fields.senderDeviceKeyId,
+    ...(fields.deviceGrant ? [
+      fields.deviceGrant.userId,
+      fields.deviceGrant.issuerDeviceKeyId,
+      fields.deviceGrant.subjectDeviceKeyId,
+      String(fields.deviceGrant.createdAt),
+      fields.deviceGrant.pairingId,
+      fields.deviceGrant.sig,
+    ] : []),
     ...revision,
     ...content,
   ])
@@ -63,6 +73,12 @@ export type EntryVerdict = 'valid' | 'invalid' | 'unsigned'
 
 export async function verifyHistoryEntry(entry: HistoryEntry): Promise<EntryVerdict> {
   if (!entry.senderDeviceKeyId || !entry.signature) return 'unsigned'
+  if (entry.deviceGrant && (
+    !entry.senderUserId ||
+    entry.deviceGrant.userId !== entry.senderUserId ||
+    entry.deviceGrant.subjectDeviceKeyId !== entry.senderDeviceKeyId ||
+    !(await verifyDeviceGrant(entry.deviceGrant))
+  )) return 'invalid'
   const ok = await verifyWithDeviceKeyId(
     entry.senderDeviceKeyId,
     signedMessageBytes({
@@ -76,6 +92,7 @@ export async function verifyHistoryEntry(entry: HistoryEntry): Promise<EntryVerd
       channelId: entry.channelId,
       editedAt: entry.editedAt,
       deletedAt: entry.deletedAt,
+      deviceGrant: entry.deviceGrant,
     }),
     entry.signature
   )
@@ -107,7 +124,9 @@ export async function sanitizeHistoryEntries(
         const bound = entry.senderDeviceKeyId
           ? getBoundUserId(entry.senderDeviceKeyId)
           : undefined
-        if (entry.senderUserId && bound !== entry.senderUserId) {
+        const grantBound = entry.deviceGrant &&
+          getBoundUserId(entry.deviceGrant.issuerDeviceKeyId) === entry.senderUserId
+        if (entry.senderUserId && bound !== entry.senderUserId && !grantBound) {
           safeEntry = { ...entry, senderUserId: undefined }
         }
       }

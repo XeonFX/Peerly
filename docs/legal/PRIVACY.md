@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-07-19_
+_Last updated: 2026-07-20_
 
 > This is the English reference copy. The authoritative, localized text is the
 > in-app page at `/privacy` (rendered from `src/legal/legalContent.ts`). Edit
@@ -38,7 +38,9 @@ relay) and, when needed, a TURN server.
 - **Content** — messages, files, video-call audio/video, name, and avatar go
   directly to workspace participants.
 - **On-device data** — history and files (IndexedDB), preferences, a device
-  cryptographic key, remembered workspaces, and consents.
+  cryptographic key, remembered workspaces, and consents. Optional pairing
+  syncs selected data directly between mutually approved devices while both
+  are online; login sessions, identity tokens, and private keys are not copied.
 
 We run no analytics, tracking pixels, or advertising. We do not sell data.
 

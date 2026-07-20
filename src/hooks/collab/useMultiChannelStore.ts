@@ -12,6 +12,7 @@ import {
 import { FileCache } from '../../collab/fileCache'
 import { BlobUrlRegistry } from '../../utils/blobUrls'
 import { saveLocalHistory } from '../../utils/historyStorage'
+import { grantAuthorizes } from '../../collab/deviceAuthorization'
 
 /**
  * Bound what a channel retains. Peers supply history, so without a cap one peer
@@ -91,10 +92,14 @@ export function useMultiChannelStore(
         const existing = current[index]
         const incomingRevision = Math.max(message.editedAt ?? 0, message.deletedAt ?? 0)
         const existingRevision = Math.max(existing.editedAt ?? 0, existing.deletedAt ?? 0)
-        const sameAuthor =
-          (message.senderUserId && message.senderUserId === existing.senderUserId) ||
-          (message.senderDeviceKeyId &&
-            message.senderDeviceKeyId === existing.senderDeviceKeyId) ||
+        const sameDevice = Boolean(message.senderDeviceKeyId &&
+          message.senderDeviceKeyId === existing.senderDeviceKeyId)
+        const approvedDevice = Boolean(
+          message.senderUserId && message.senderUserId === existing.senderUserId &&
+          existing.senderDeviceKeyId && message.senderDeviceKeyId &&
+          grantAuthorizes(message.deviceGrant, message.senderUserId, existing.senderDeviceKeyId, message.senderDeviceKeyId)
+        )
+        const sameAuthor = sameDevice || approvedDevice ||
           (!message.senderUserId && message.senderId === existing.senderId)
         if (!sameAuthor || incomingRevision <= existingRevision) return current
         const next = [...current]
@@ -207,11 +212,24 @@ export function useMultiChannelStore(
     if (restored.length === 0) return existing
     const byId = new Map(existing.map(message => [message.id, message]))
     for (const message of restored) {
-      if (!byId.has(message.id)) {
+      const current = byId.get(message.id)
+      const currentRevision = current ? Math.max(current.editedAt ?? 0, current.deletedAt ?? 0) : -1
+      const restoredRevision = Math.max(message.editedAt ?? 0, message.deletedAt ?? 0)
+      if (!current || restoredRevision > currentRevision) {
         byId.set(message.id, message)
       }
     }
     return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp)
+  }, [])
+
+  useEffect(() => {
+    const reload = () => {
+      epochRef.current += 1
+      loadedChannelsRef.current = new Set()
+      setReloadTick(value => value + 1)
+    }
+    window.addEventListener('peerly-device-data-synced', reload)
+    return () => window.removeEventListener('peerly-device-data-synced', reload)
   }, [])
 
   const loadChannel = useCallback(

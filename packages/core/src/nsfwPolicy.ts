@@ -37,6 +37,9 @@ export type InferencePool = {
 export function createInferencePool(
   maxConcurrent: number = NSFW_MAX_CONCURRENT_INFERENCES
 ): InferencePool {
+  if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
+    throw new RangeError('maxConcurrent must be a positive integer')
+  }
   let active = 0
   const waiters: Array<() => void> = []
   return {

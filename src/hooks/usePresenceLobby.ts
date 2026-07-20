@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   createPresenceIndex,
   PRESENCE_INTERVAL_MS,
+  signDmRing,
+  verifyDmRing,
   type PresencePayload,
 } from '@peerly/core'
 import { useLatest, useRoom } from '@peerly/core/react'
@@ -35,7 +37,15 @@ import {
   type DmRingReason,
 } from '../collab/dmRing'
 import { LOBBY_APP_ID, LOBBY_ROOM_ID } from '../collab/mesh'
-import { addFriend, isFriend, loadFriends } from '../collab/friendsStore'
+import {
+  addFriend,
+  dmDeviceKeyForFriend,
+  dmSecretForFriend,
+  isFriend,
+  loadFriends,
+} from '../collab/friendsStore'
+
+const DM_RING_SCHEME = 'peerly-dm-ring-v2'
 
 /** Re-send undelivered (or re-deliver) invites while the peer stays online. */
 const INVITE_RETRY_MS = 8_000
@@ -197,15 +207,22 @@ export function usePresenceLobby({
       deliverPendingInvites()
     }
 
-    dmRingAction.onMessage = msg => {
+    dmRingAction.onMessage = (msg, { peerId }) => {
       const parsed = parseDmRingPayload(msg)
       if (!parsed) return
       const me = profileRef.current
       if (!me || parsed.toUserId !== me.userId) return
       if (parsed.fromUserId === me.userId) return
       // Only accept rings from people we already friended (mutual intent).
-      if (!isFriend(loadFriends(), parsed.fromUserId)) return
-      onDmRingRef.current?.(parsed)
+      const friends = loadFriends()
+      if (!isFriend(friends, parsed.fromUserId)) return
+      if (presence.get(peerId)?.userId !== parsed.fromUserId) return
+      if (dmDeviceKeyForFriend(friends, parsed.fromUserId) !== parsed.deviceKeyId) return
+      const secret = dmSecretForFriend(friends, parsed.fromUserId)
+      if (!secret) return
+      void verifyDmRing(DM_RING_SCHEME, parsed).then(valid => {
+        if (valid) onDmRingRef.current?.(parsed)
+      })
     }
 
     inviteAction.onMessage = (msg, { peerId }) => {
@@ -222,6 +239,14 @@ export function usePresenceLobby({
           const id = identityRef.current
           if (id) {
             try {
+              await addFriend(loadFriends(), id, {
+                ownerUserId: me.userId,
+                subjectUserId: parsed.fromUserId,
+                subjectName: parsed.fromName,
+                subjectEmail: parsed.fromEmail,
+                dmSecret: parsed.dmSecret,
+                subjectDeviceKeyId: parsed.deviceKeyId,
+              })
               const resp = await createFriendInviteResponse(id, {
                 inviteId: parsed.inviteId,
                 accept: true,
@@ -229,6 +254,7 @@ export function usePresenceLobby({
                 fromName: me.name,
                 fromEmail: me.email,
                 toUserId: parsed.fromUserId,
+                dmSecret: parsed.dmSecret,
               })
               void inviteRespAction.send(resp, { target: peerId })
             } catch {
@@ -255,7 +281,7 @@ export function usePresenceLobby({
       })()
     }
 
-    inviteRespAction.onMessage = (msg, { peerId: _peerId }) => {
+    inviteRespAction.onMessage = (msg, { peerId }) => {
       void (async () => {
         const parsed = parseFriendInviteResponsePayload(msg)
         if (!parsed) return
@@ -267,13 +293,23 @@ export function usePresenceLobby({
 
         // Capture typed target email before removing the pending row.
         const out = loadOutgoingInvites().find(o => o.inviteId === parsed.inviteId)
+        if (!out || presence.get(peerId)?.userId !== parsed.fromUserId) return
         setOutgoing(prev => removeOutgoingInvite(prev, parsed.inviteId))
 
         if (!parsed.accept) return
+        if (parsed.dmSecret !== out.payload.dmSecret) return
 
         const email = normalizeEmail(parsed.fromEmail ?? out?.toEmail ?? '')
         if (!email || !isPlausibleEmail(email)) return
         if (isFriend(loadFriends(), parsed.fromUserId)) {
+          await addFriend(loadFriends(), id, {
+            ownerUserId: me.userId,
+            subjectUserId: parsed.fromUserId,
+            subjectName: parsed.fromName || email,
+            subjectEmail: email,
+            dmSecret: parsed.dmSecret,
+            subjectDeviceKeyId: parsed.deviceKeyId,
+          })
           onFriendsChangedRef.current?.()
           return
         }
@@ -282,6 +318,8 @@ export function usePresenceLobby({
           subjectUserId: parsed.fromUserId,
           subjectName: parsed.fromName || email,
           subjectEmail: email,
+          dmSecret: parsed.dmSecret,
+          subjectDeviceKeyId: parsed.deviceKeyId,
         })
         onFriendsChangedRef.current?.()
       })()
@@ -339,7 +377,9 @@ export function usePresenceLobby({
       const friends = loadFriends()
       for (const f of friends.own.values()) {
         if (normalizeEmail(f.subjectEmail ?? '') === normalized) {
-          return { ok: false, error: 'Already friends' }
+          if (dmSecretForFriend(friends, f.subjectUserId)) {
+            return { ok: false, error: 'Already friends' }
+          }
         }
       }
 
@@ -394,13 +434,14 @@ export function usePresenceLobby({
       if (!entry) return false
 
       try {
-        const resp = await createFriendInviteResponse(id, {
+          const resp = await createFriendInviteResponse(id, {
           inviteId: entry.inviteId,
           accept: true,
           fromUserId: me.userId,
           fromName: me.name,
           fromEmail: me.email,
-          toUserId: entry.fromUserId,
+            toUserId: entry.fromUserId,
+            dmSecret: entry.payload.dmSecret,
         })
         const peerId = presenceIndexRef.current.peerIdForUserId(entry.fromUserId)
         if (peerId && sendersRef.current) {
@@ -413,6 +454,8 @@ export function usePresenceLobby({
             subjectUserId: entry.fromUserId,
             subjectName: entry.fromName,
             subjectEmail: entry.payload.fromEmail,
+            dmSecret: entry.payload.dmSecret,
+            subjectDeviceKeyId: entry.payload.deviceKeyId,
           })
         }
         setIncoming(prev => removeIncomingInvite(prev, inviteId))
@@ -472,25 +515,25 @@ export function usePresenceLobby({
    * Returns false when they are not currently present on the mesh.
    */
   const ringDm = useCallback(
-    (toUserId: string, code: string, reason: DmRingReason, preview?: string): boolean => {
+    (toUserId: string, reason: DmRingReason, preview?: string): boolean => {
       const me = profileRef.current
       const senders = sendersRef.current
       if (!me || !senders || !toUserId || toUserId === me.userId) return false
       if (!isFriend(loadFriends(), toUserId)) return false
       const peerId = presenceIndexRef.current.peerIdForUserId(toUserId)
       if (!peerId) return false
-      const payload: DmRingPayload = {
+      const identity = identityRef.current
+      if (!identity) return false
+      void signDmRing(identity, DM_RING_SCHEME, {
         toUserId,
         fromUserId: me.userId,
         fromName: me.name,
-        code: code.toLowerCase(),
         reason,
         preview: preview?.trim().slice(0, 120) || undefined,
-      }
-      senders.dmRing(payload, peerId)
+      }).then(payload => senders.dmRing(payload, peerId))
       return true
     },
-    [profileRef]
+    [profileRef, identityRef]
   )
 
   return {

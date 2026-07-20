@@ -7,6 +7,7 @@ import {
   shouldFlagNsfw,
   VIDEO_SCREEN_INTERVAL_MS,
   videoScreeningDelay,
+  createInferencePool,
 } from './nsfwPolicy.js'
 
 const prediction = (className: string, probability: number) => ({ className, probability })
@@ -31,6 +32,11 @@ describe('video screen policy constants', () => {
     expect(VIDEO_SCREEN_INTERVAL_MS).toBeGreaterThanOrEqual(200)
     expect(CONSECUTIVE_FLAGS_REQUIRED).toBe(1)
     expect(CONSECUTIVE_CLEAN_TO_CLEAR).toBe(3)
+  })
+
+  it('rejects invalid inference concurrency instead of deadlocking', () => {
+    expect(() => createInferencePool(0)).toThrow(RangeError)
+    expect(() => createInferencePool(1.5)).toThrow(RangeError)
   })
 })
 

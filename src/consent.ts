@@ -4,7 +4,7 @@
  * user is re-prompted on their next visit. Lightweight localStorage record —
  * appropriate for a serverless app with no account database.
  */
-export const LEGAL_VERSION = 1
+export const LEGAL_VERSION = 2
 
 /** localStorage key — shared with e2e so tests can seed acceptance. */
 export const LEGAL_CONSENT_STORAGE_KEY = 'peerly-legal-consent-v1'

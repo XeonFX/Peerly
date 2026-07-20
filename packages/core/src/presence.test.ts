@@ -30,6 +30,18 @@ describe('createPresenceIndex', () => {
     expect(idx.get('old')).toBeUndefined()
   })
 
+  it('removes stale reverse indexes when one peer changes identity', () => {
+    const idx = createPresenceIndex()
+    const oldHash = 'a'.repeat(64)
+    const newHash = 'b'.repeat(64)
+    idx.record('peer', { userId: 'old-user', name: 'Old', emailHash: oldHash })
+    idx.record('peer', { userId: 'new-user', name: 'New', emailHash: newHash })
+    expect(idx.peerIdForUserId('old-user')).toBeUndefined()
+    expect(idx.peerIdForEmailHash(oldHash)).toBeUndefined()
+    expect(idx.peerIdForUserId('new-user')).toBe('peer')
+    expect(idx.peerIdForEmailHash(newHash)).toBe('peer')
+  })
+
   it('exports a positive default TTL', () => {
     expect(PRESENCE_TTL_MS).toBeGreaterThan(10_000)
   })

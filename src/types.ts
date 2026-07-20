@@ -28,6 +28,8 @@ export type Message = {
   senderDeviceKeyId?: string
   /** ECDSA signature over the signed fields; absent on legacy messages. */
   signature?: string
+  /** Approval from the original device when this revision came from another device. */
+  deviceGrant?: import('./collab/deviceAuthorization').DeviceGrant
   senderName: string
   senderColor: string
   senderAvatar?: string

@@ -43,12 +43,14 @@ function isChatWire(value: unknown): value is TextChatWire {
   if (typeof value !== 'object' || value === null) return false
   const w = value as Partial<TextChatWire>
   return (
-    typeof w.id === 'string' &&
-    typeof w.ts === 'number' &&
-    typeof w.text === 'string' &&
-    typeof w.name === 'string' &&
-    typeof w.deviceKeyId === 'string' &&
-    typeof w.sig === 'string'
+    typeof w.id === 'string' && w.id.length > 0 && w.id.length <= 256 &&
+    typeof w.ts === 'number' && Number.isFinite(w.ts) &&
+    typeof w.text === 'string' && w.text.length <= 4_000 &&
+    typeof w.name === 'string' && w.name.length <= 80 &&
+    (w.authorUserId === undefined ||
+      (typeof w.authorUserId === 'string' && w.authorUserId.length > 0 && w.authorUserId.length <= 256)) &&
+    typeof w.deviceKeyId === 'string' && w.deviceKeyId.length <= 512 &&
+    typeof w.sig === 'string' && w.sig.length <= 512
   )
 }
 
@@ -56,13 +58,13 @@ function isReactionWire(value: unknown): value is TextReactionWire {
   if (typeof value !== 'object' || value === null) return false
   const w = value as Partial<TextReactionWire>
   return (
-    typeof w.messageId === 'string' &&
-    typeof w.emoji === 'string' &&
+    typeof w.messageId === 'string' && w.messageId.length > 0 && w.messageId.length <= 256 &&
+    typeof w.emoji === 'string' && w.emoji.length > 0 && w.emoji.length <= 16 &&
     typeof w.active === 'boolean' &&
-    typeof w.ts === 'number' &&
-    typeof w.authorUserId === 'string' &&
-    typeof w.deviceKeyId === 'string' &&
-    typeof w.sig === 'string'
+    typeof w.ts === 'number' && Number.isFinite(w.ts) &&
+    typeof w.authorUserId === 'string' && w.authorUserId.length > 0 && w.authorUserId.length <= 256 &&
+    typeof w.deviceKeyId === 'string' && w.deviceKeyId.length <= 512 &&
+    typeof w.sig === 'string' && w.sig.length <= 512
   )
 }
 
@@ -73,10 +75,10 @@ export function mergeTextChatWires(
   cap: number = DEFAULT_HISTORY_CAP
 ): TextChatWire[] {
   const byId = new Map<string, TextChatWire>()
-  for (const wire of existing) {
+  for (const wire of existing.slice(-cap)) {
     if (isChatWire(wire)) byId.set(wire.id, wire)
   }
-  for (const wire of incoming) {
+  for (const wire of incoming.slice(-cap)) {
     if (!isChatWire(wire)) continue
     const prev = byId.get(wire.id)
     if (!prev) {
@@ -97,10 +99,10 @@ export function mergeTextReactionWires(
 ): TextReactionWire[] {
   const key = (r: TextReactionWire) => `${r.messageId}\0${r.authorUserId}\0${r.emoji}`
   const byKey = new Map<string, TextReactionWire>()
-  for (const r of existing) {
+  for (const r of existing.slice(-cap)) {
     if (isReactionWire(r)) byKey.set(key(r), r)
   }
-  for (const r of incoming) {
+  for (const r of incoming.slice(-cap)) {
     if (!isReactionWire(r)) continue
     const k = key(r)
     const prev = byKey.get(k)
@@ -110,14 +112,26 @@ export function mergeTextReactionWires(
 }
 
 export function parseTextChatHistoryEnvelope(raw: unknown): TextChatHistoryEnvelope {
+  return parseBoundedTextChatHistoryEnvelope(raw, DEFAULT_HISTORY_CAP, 500)
+}
+
+function parseBoundedTextChatHistoryEnvelope(
+  raw: unknown,
+  messageCap: number,
+  reactionCap: number
+): TextChatHistoryEnvelope {
   if (Array.isArray(raw)) {
-    return { messages: raw.filter(isChatWire), reactions: [] }
+    return { messages: raw.slice(-messageCap).filter(isChatWire), reactions: [] }
   }
   if (typeof raw === 'object' && raw !== null) {
     const obj = raw as Partial<TextChatHistoryEnvelope>
     return {
-      messages: Array.isArray(obj.messages) ? obj.messages.filter(isChatWire) : [],
-      reactions: Array.isArray(obj.reactions) ? obj.reactions.filter(isReactionWire) : [],
+      messages: Array.isArray(obj.messages)
+        ? obj.messages.slice(-messageCap).filter(isChatWire)
+        : [],
+      reactions: Array.isArray(obj.reactions)
+        ? obj.reactions.slice(-reactionCap).filter(isReactionWire)
+        : [],
     }
   }
   return { messages: [], reactions: [] }
@@ -208,7 +222,7 @@ export function createTextChatHistoryStore(
     save,
     mergeMessages: (a, b) => mergeTextChatWires(a, b, messageCap),
     mergeReactions: (a, b) => mergeTextReactionWires(a, b, reactionCap),
-    parseEnvelope: parseTextChatHistoryEnvelope,
+    parseEnvelope: raw => parseBoundedTextChatHistoryEnvelope(raw, messageCap, reactionCap),
     messageCap,
     reactionCap,
   }

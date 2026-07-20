@@ -14,6 +14,8 @@ export type TextChatWire = {
   ts: number
   text: string
   name: string
+  /** Durable app user id. When present it is covered by the signature. */
+  authorUserId?: string
   deviceKeyId: DeviceKeyId
   sig: string
   editedAt?: number
@@ -37,11 +39,14 @@ export type DeviceSigner = {
 }
 
 export function textChatBytes(scheme: string, wire: Omit<TextChatWire, 'sig'>): Uint8Array {
+  // Preserve verification of legacy wires that predate authorUserId. New
+  // callers should always provide it for identity-bearing conversations.
   return encodeCanonicalLines([
     scheme,
     wire.id,
     String(wire.ts),
     wire.name,
+    ...(wire.authorUserId === undefined ? [] : [wire.authorUserId]),
     wire.deviceKeyId,
     String(wire.editedAt ?? ''),
     String(wire.deletedAt ?? ''),
@@ -89,6 +94,12 @@ export async function verifyTextChat(scheme: string, wire: TextChatWire): Promis
   if (typeof wire.ts !== 'number') return false
   if (typeof wire.text !== 'string' || wire.text.length > 4000) return false
   if (typeof wire.name !== 'string' || wire.name.length > 80) return false
+  if (
+    wire.authorUserId !== undefined &&
+    (typeof wire.authorUserId !== 'string' ||
+      wire.authorUserId.length === 0 ||
+      wire.authorUserId.length > 256)
+  ) return false
   if (typeof wire.deviceKeyId !== 'string' || typeof wire.sig !== 'string') return false
   return verifyWithDeviceKeyId(wire.deviceKeyId, textChatBytes(scheme, wire), wire.sig)
 }

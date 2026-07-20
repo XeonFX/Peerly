@@ -6,6 +6,8 @@ import { WorkspaceAuthManager } from './collab/workspaceAuth'
 import { ConsentBanner } from './components/ConsentBanner'
 import { HomeView } from './components/HomeView'
 import { JoinScreen } from './components/JoinScreen'
+import { MyDevicesPage } from './components/MyDevicesPage'
+import { SyncActivityPage } from './components/SyncActivityPage'
 import type { DmRingPayload } from './collab/dmRing'
 import { LegalPage } from './legal/LegalPage'
 import { Workspace } from './components/Workspace'
@@ -13,6 +15,7 @@ import { WorkspaceRail } from './components/WorkspaceRail'
 import { acceptCurrentLegal, hasAcceptedCurrentLegal } from './consent'
 import { defaultWorkspaceRoute } from './routing'
 import { useAppRouting } from './hooks/useAppRouting'
+import { useApprovedDeviceSync } from './hooks/useApprovedDeviceSync'
 import { useFriends } from './hooks/useFriends'
 import { usePresenceLobby } from './hooks/usePresenceLobby'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
@@ -52,6 +55,11 @@ function App() {
   // Friends outlive the open workspace — use durable identity userId on home too.
   const ownerUserId = session?.identityUserId ?? loadIdentityUserId() ?? undefined
   const friendsApi = useFriends(deviceIdentity, ownerUserId)
+  const reloadFriends = friendsApi.reload
+  const deviceSyncVersion = useApprovedDeviceSync(deviceIdentity, ownerUserId)
+  useEffect(() => {
+    reloadFriends()
+  }, [deviceSyncVersion, reloadFriends])
 
   const lobbyProfile = useMemo(() => {
     const email = session?.identityEmail ?? loadIdentityEmail()
@@ -142,7 +150,10 @@ function App() {
 
   /** Switch to another remembered workspace in place — no sign-out round trip. */
   const switchWorkspace = async (workspace: StoredWorkspace) => {
-    if (workspace.workspaceId === session?.workspaceId) return
+    if (workspace.workspaceId === session?.workspaceId) {
+      enterWorkspace()
+      return
+    }
     const identity = loadSignedInIdentity()
     // Token expired (ReauthBanner territory) — send them home to re-authenticate
     // rather than persist a workspace we cannot hand a live token.
@@ -181,7 +192,15 @@ function App() {
 
   const consentBanner = legalAccepted ? null : <ConsentBanner onAccept={acceptLegal} />
 
-  const content = session ? (
+  const content = route.screen === 'sync' ? (
+    <SyncActivityPage />
+  ) : route.screen === 'devices' && lobbyProfile ? (
+    <MyDevicesPage
+      identity={deviceIdentity}
+      userId={lobbyProfile.userId}
+      initialSecret={route.pairSecret}
+    />
+  ) : session ? (
     <Workspace
       // Remount on workspace switch so the collab room tears down and rejoins
       // cleanly for the new workspace instead of mutating a live one.
@@ -209,7 +228,7 @@ function App() {
       onPickerTabChange={setPickerTab}
       onJoined={async next => {
         setSession(await hydrateSessionAvatar(next))
-        enterWorkspace()
+        if (route.screen !== 'devices') enterWorkspace()
       }}
       friendsPanel={
         lobbyProfile ? (
@@ -252,9 +271,13 @@ function App() {
         <WorkspaceRail
           workspaces={railWorkspaces}
           activeWorkspaceId={session?.workspaceId}
-          onHome={!session}
+          onHome={!session && route.screen !== 'devices' && route.screen !== 'sync'}
+          onDevices={route.screen === 'devices'}
+          onSync={route.screen === 'sync'}
           onSelectWorkspace={switchWorkspace}
           onHomeSelect={goHome}
+          onDevicesSelect={() => navigate({ screen: 'devices' })}
+          onSyncSelect={() => navigate({ screen: 'sync' })}
           onCreateWorkspace={createWorkspace}
         />
         <div className="min-w-0 flex-1 overflow-hidden">{content}</div>

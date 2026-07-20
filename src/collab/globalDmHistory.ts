@@ -20,6 +20,7 @@ export const GLOBAL_DM_HISTORY_CAP = store.messageCap
 export type GlobalDmMessage = TextChatWire & {
   /** Durable OIDC user id of the author when known. */
   authorUserId?: string
+  deviceGrant?: import('./deviceAuthorization').DeviceGrant
 }
 
 export function loadGlobalDmHistory(roomCode: string): GlobalDmMessage[] {

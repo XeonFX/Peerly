@@ -136,7 +136,7 @@ function VideoTile({
       }
       schedule(videoScreeningDelay(cleanRuns))
     }
-    schedule(400)
+    schedule(videoScreeningDelay(0))
     return () => {
       cancelled = true
       if (timer !== undefined) window.clearTimeout(timer)
