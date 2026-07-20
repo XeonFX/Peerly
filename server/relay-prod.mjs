@@ -1,4 +1,5 @@
 import { createWsRelayServer } from '@trystero-p2p/ws-relay/server'
+import { attachCoordinationServer } from './coordination.mjs'
 
 // Production signaling relay for Peerly and authorized consumer apps.
 //
@@ -51,8 +52,9 @@ const verifyClient = (info, cb) => {
   cb(true)
 }
 
-const relay = await createWsRelayServer({ port, verifyClient })
+const relay = await createWsRelayServer({ port, verifyClient, maxPayload: 256 * 1024 })
 await relay.ready
+const coordination = attachCoordinationServer(relay.wss)
 
 // ws never detects a half-open TCP connection on its own: a peer whose tab
 // crashed, slept, or dropped off wifi leaves a socket that stays "open" server
@@ -88,6 +90,7 @@ console.log(`relay listening on 127.0.0.1:${port}`)
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, async () => {
     clearInterval(heartbeat)
+    coordination.close()
     await relay.close()
     process.exit(0)
   })

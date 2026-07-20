@@ -50,8 +50,6 @@ const MAX_RECOVERY_ATTEMPTS = 3
 const RECOVERY_DEBOUNCE_MS = 2_000
 /** Backoff schedule for recovery attempts (ms). */
 const RECOVERY_BACKOFF_MS = [3_000, 8_000, 15_000] as const
-/** Keep trying after a failed burst; sleep long enough to avoid reconnect storms. */
-const RECOVERY_COOLDOWN_MS = 60_000
 
 export type UseRoomOptions = {
   appId: string
@@ -115,6 +113,7 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
     timer: 0,
     lastFailureAt: 0,
   })
+  const loggedJoinErrorsRef = useRef(new Map<string, number>())
 
   useEffect(() => {
     if (strategy !== 'ws-relay') return
@@ -156,18 +155,13 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
       const connectedPeers = Object.keys(instanceRef.current?.getPeers() ?? {}).length
       if (connectedPeers > 0) return
       if (recovery.timer !== 0) return
-      if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS) {
-        recovery.timer = window.setTimeout(() => {
-          recovery.timer = 0
-          recovery.attempts = 0
-          recovery.failures = 0
-          setRejoinNonce(nonce => nonce + 1)
-        }, RECOVERY_COOLDOWN_MS)
-        return
-      }
+      // Stop after the bounded recovery budget. The old one-minute cooldown
+      // reset the budget forever, so an unreachable peer kept every browser in
+      // the room rebuilding PeerConnections and TURN allocations indefinitely.
+      if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS) return
 
       // sdp-collision: PC is already broken — rejoin after one report.
-      // needs-turn / handshake-timeout: wait for a second signal (blip filter).
+      // handshake-timeout: wait for a second signal (blip filter).
       recovery.failures++
       const need = kind === 'sdp-collision' ? 1 : 2
       if (recovery.failures < need) return
@@ -196,10 +190,16 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
         env: envRef.current,
         relayUrls: resolvedRelayUrls ?? undefined,
         onPeerHandshake,
-        onJoinError: (details: { error?: unknown }) => {
-          console.error('[Trystero] Connection error:', details)
+        onJoinError: (details: { error?: unknown; peerId?: string }) => {
           const msg = String(details.error ?? 'Connection failed')
           const kind = classifyJoinError(msg)
+          const logKey = `${appId}\n${roomId}\n${details.peerId ?? ''}\n${kind}`
+          const lastLogged = loggedJoinErrorsRef.current.get(logKey) ?? 0
+          if (Date.now() - lastLogged >= 60_000) {
+            loggedJoinErrorsRef.current.set(logKey, Date.now())
+            if (kind === 'unknown') console.error('[Trystero] Connection issue:', details)
+            else console.warn('[Trystero] Connection issue:', details)
+          }
           if (kind === 'password-mismatch') {
             const connectedPeers = Object.keys(instanceRef.current?.getPeers() ?? {}).length
             if (connectedPeers === 0) reportRef.current('password-mismatch', msg)
@@ -212,6 +212,10 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
             if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS && kind === 'needs-turn') {
               reportRef.current('needs-turn', msg)
             }
+            return
+          }
+          if (kind === 'needs-turn') {
+            reportRef.current('needs-turn', msg)
             return
           }
           if (strategy === 'ws-relay') {
@@ -251,6 +255,7 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
   // timer must not fire into a room it no longer belongs to.
   useEffect(() => {
     const recovery = recoveryRef.current
+    loggedJoinErrorsRef.current.clear()
     recovery.failures = 0
     recovery.attempts = 0
     recovery.lastFailureAt = 0

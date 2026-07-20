@@ -43,6 +43,7 @@ const privacyPl: LegalDoc = {
         { p: 'Logowanie (OIDC): logujesz się przez zewnętrznego dostawcę (Google, Microsoft, Apple lub inny OIDC). Token tożsamości jest weryfikowany wyłącznie w Twojej przeglądarce. Odczytujemy z niego adres e-mail i imię i zapisujemy je lokalnie.' },
         { p: 'Lista dostępu (zaproszenia): twórca przestrzeni podpisuje listę adresów e-mail osób uprawnionych do dołączenia. Ta lista jest przesyłana P2P do uczestników, aby mogli weryfikować się nawzajem — oznacza to, że adresy e-mail zaproszonych osób są widoczne dla innych członków przestrzeni.' },
         { p: 'Adres IP: natura WebRTC sprawia, że łącząc się z innym uczestnikiem, Wasze przeglądarki wymieniają adresy IP; są one też widoczne dla operatorów przekaźników/TURN.' },
+        { p: 'Obecność w przestrzeni: nasz przekaźnik może tymczasowo (do ok. 45 sekund od ostatniego sygnału) przetwarzać niejawny identyfikator przestrzeni, pseudonimowy identyfikator członka i zaszyfrowane dane obecności, aby lista online działała także podczas zestawiania połączenia P2P. Przekaźnik nie otrzymuje klucza potrzebnego do odszyfrowania tych danych.' },
         { p: 'Treści: wiadomości, pliki, obraz/dźwięk z połączeń wideo oraz nazwa i awatar — trafiają bezpośrednio do uczestników przestrzeni.' },
         { p: 'Dane w urządzeniu: historia i pliki (IndexedDB), preferencje, klucz kryptograficzny urządzenia, zapamiętane przestrzenie i zgody — w pamięci lokalnej Twojej przeglądarki. Opcjonalne parowanie synchronizuje wybrane dane bezpośrednio między wzajemnie zatwierdzonymi urządzeniami, gdy oba są online; sesje logowania, tokeny tożsamości i prywatne klucze nie są kopiowane.' },
         { note: 'Nie prowadzimy analityki, nie używamy pikseli śledzących ani reklam. Nie sprzedajemy danych.' },
@@ -63,7 +64,7 @@ const privacyPl: LegalDoc = {
       blocks: [
         { ul: [
           'Inni uczestnicy przestrzeni — widzą Twoją nazwę, awatar, wiadomości, pliki i Twój adres IP; twórca i uczestnicy widzą też listę zaproszonych adresów e-mail.',
-          'Operatorzy przekaźników i serwera TURN — metadane połączenia i adresy IP.',
+          'Operatorzy przekaźników i serwera TURN — metadane połączenia, krótkotrwałe pseudonimowe dane obecności i adresy IP.',
           'Dostawca logowania (Google/Microsoft/Apple/OIDC).',
           'Dostawca hostingu plików aplikacji — standardowe logi żądań.',
         ] },
@@ -151,6 +152,7 @@ const privacyEn: LegalDoc = {
         { p: 'Sign-in (OIDC): you sign in through a third-party provider (Google, Microsoft, Apple, or another OIDC provider). The ID token is verified entirely in your browser. From it we read your email and name and store them locally.' },
         { p: 'Allow-list (invitations): the workspace creator signs a list of email addresses permitted to join. This list is sent P2P to participants so they can verify one another — meaning invited people’s email addresses are visible to other members of the workspace.' },
         { p: 'IP address: by the nature of WebRTC, connecting to another participant means your browsers exchange IP addresses; they are also visible to relay/TURN operators.' },
+        { p: 'Workspace presence: our relay may temporarily process (for about 45 seconds after the latest signal) an opaque workspace identifier, a pseudonymous member identifier, and encrypted presence data so the online list works while P2P is still connecting. The relay does not receive the key needed to decrypt that data.' },
         { p: 'Content: messages, files, video-call audio/video, and your name and avatar go directly to workspace participants.' },
         { p: 'On-device data: history and files (IndexedDB), preferences, a device cryptographic key, remembered workspaces, and consents — in your browser’s local storage. Optional pairing syncs selected data directly between mutually approved devices while both are online; login sessions, identity tokens, and private keys are not copied.' },
         { note: 'We run no analytics, tracking pixels, or advertising. We do not sell data.' },
@@ -171,7 +173,7 @@ const privacyEn: LegalDoc = {
       blocks: [
         { ul: [
           'Other workspace participants — see your name, avatar, messages, files, and IP; the creator and members also see the list of invited email addresses.',
-          'Relay and TURN operators — connection metadata and IP addresses.',
+          'Relay and TURN operators — connection metadata, short-lived pseudonymous presence data, and IP addresses.',
           'The sign-in provider (Google/Microsoft/Apple/OIDC).',
           'The app’s static-hosting provider — standard request logs.',
         ] },

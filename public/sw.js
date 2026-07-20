@@ -1,4 +1,4 @@
-const CACHE = 'peerly-shell-v1'
+const CACHE = 'peerly-shell-v2'
 const SHELL = ['/', '/site.webmanifest', '/icon-192.png', '/icon-512.png']
 
 self.addEventListener('install', event => {
@@ -33,7 +33,17 @@ self.addEventListener('fetch', event => {
           void caches.open(CACHE).then(cache => cache.put('/', copy))
           return response
         })
-        .catch(async () => (await caches.match('/')) ?? Response.error())
+        .catch(async () => {
+          const shell = await caches.match('/')
+          if (shell) return shell
+          // A first-ever offline navigation has no shell yet. Return a real
+          // HTTP response so Chrome does not report the service worker itself
+          // as a failed FetchEvent (and the user gets an actionable screen).
+          return new Response(
+            '<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Peerly offline</title><body><main style="font:16px system-ui;max-width:36rem;margin:15vh auto;padding:2rem"><h1>Peerly is offline</h1><p>Reconnect to the internet and reload this page.</p></main></body></html>',
+            { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }
+          )
+        })
     )
     return
   }

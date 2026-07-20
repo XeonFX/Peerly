@@ -42,6 +42,8 @@ declare global {
 }
 
 let scriptLoadPromise: Promise<void> | null = null
+let initializedConfig: { clientId: string; nonce: string } | null = null
+let activeCredentialHandler: ((response: CredentialResponse) => void) | null = null
 
 function loadGisScript(): Promise<void> {
   if (window.google?.accounts?.id) return Promise.resolve()
@@ -86,17 +88,29 @@ export async function renderGoogleSignInButton(
 
   return new Promise<string>((resolve, reject) => {
     try {
-      accounts.initialize({
-        client_id: clientId,
-        nonce,
-        auto_select: false,
-        // Let supported Chromium browsers mediate the button flow. Besides
-        // improving third-party-cookie resilience, this avoids the legacy
-        // cross-window postMessage path that can emit misleading COOP errors.
-        // GIS falls back to its normal popup flow in unsupported browsers.
-        use_fedcm_for_button: true,
-        callback: response => resolve(response.credential),
-      })
+      if (
+        initializedConfig &&
+        (initializedConfig.clientId !== clientId || initializedConfig.nonce !== nonce)
+      ) {
+        throw new Error('Google Sign-In configuration changed; reload the page and try again')
+      }
+
+      // GIS configuration is global to the page. Google documents initialize()
+      // as a one-shot call; calling it from every React render replaces the
+      // earlier callback and can make an already-rendered button stop working.
+      // Keep one stable callback and route the credential to the latest visible
+      // button instead.
+      activeCredentialHandler = response => resolve(response.credential)
+      if (!initializedConfig) {
+        accounts.initialize({
+          client_id: clientId,
+          nonce,
+          auto_select: false,
+          use_fedcm_for_button: true,
+          callback: response => activeCredentialHandler?.(response),
+        })
+        initializedConfig = { clientId, nonce }
+      }
       accounts.renderButton(container, { type: 'standard', theme: 'outline', size: 'large', width: 320 })
     } catch (err) {
       reject(err instanceof Error ? err : new Error(String(err)))

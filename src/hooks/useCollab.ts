@@ -24,6 +24,7 @@ import { useFileTransfer } from './collab/useFileTransfer'
 import { useHistorySync } from './collab/useHistorySync'
 import { useMultiChannelStore } from './collab/useMultiChannelStore'
 import { usePeerProfiles } from './collab/usePeerProfiles'
+import { useRelayWorkspacePresence } from './collab/useRelayWorkspacePresence'
 import { useProfileManager } from './collab/useProfileManager'
 import { useRoomAction } from './collab/useRoomAction'
 import { useVideoCall } from './collab/useVideoCall'
@@ -142,6 +143,13 @@ export function useCollab({
   }, [identityExpired, resetConnectionOnExpiry])
 
   const peers = usePeerProfiles(displayProfile)
+  const relayPresencePeers = useRelayWorkspacePresence({
+    enabled: !identityExpired,
+    workspaceId,
+    workspaceSecret,
+    selfUserId: identity?.selfUserId,
+    profile: displayProfile,
+  })
   const {
     reset: resetPeers,
     bindProfileAction,
@@ -718,12 +726,21 @@ export function useCollab({
     [channelStore.messages]
   )
 
+  const visiblePeers = useMemo(() => {
+    const direct = peers.peers
+    const connectedUsers = new Set(direct.map(peer => peer.userId).filter(Boolean))
+    return [
+      ...direct,
+      ...relayPresencePeers.filter(peer => !peer.userId || !connectedUsers.has(peer.userId)),
+    ]
+  }, [peers.peers, relayPresencePeers])
+
   return {
     selfId,
     selfUserId: identity?.selfUserId,
     pastSelfIds,
     profile: displayProfile,
-    peers: peers.peers,
+    peers: visiblePeers,
     messages: channelStore.messages,
     messagesByChannel: channelStore.messagesByChannel,
     sharedFiles,

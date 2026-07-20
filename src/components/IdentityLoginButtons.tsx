@@ -114,6 +114,8 @@ export function IdentityLoginButtons({
     },
     [authManager, onSignedIn]
   )
+  const completeSignInRef = useRef(completeSignIn)
+  completeSignInRef.current = completeSignIn
 
   const handleProviderSignIn = async (providerId: IdentityProviderId) => {
     onError(null)
@@ -169,7 +171,7 @@ export function IdentityLoginButtons({
         if (cancelled) return
         const token = await renderGoogleSignInButton(container, keyId, provider.clientId)
         if (cancelled) return
-        await completeSignIn('google', token)
+        await completeSignInRef.current('google', token)
       } catch {
         // Dismissed Google prompt or render failure — user can retry via sign out / refresh.
       }
@@ -178,7 +180,7 @@ export function IdentityLoginButtons({
     return () => {
       cancelled = true
     }
-  }, [signedIn, hasGoogle, googleMountKey, authManager, completeSignIn])
+  }, [signedIn, hasGoogle, googleMountKey, authManager])
 
   if (signedIn) {
     return (

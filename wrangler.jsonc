@@ -1,8 +1,10 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "peerly",
+  "main": "worker/index.mjs",
   "compatibility_date": "2026-07-16",
   "assets": {
+    "binding": "ASSETS",
     "directory": "./dist",
     "not_found_handling": "single-page-application"
   },
@@ -16,6 +18,7 @@
       "name": "peerly-preview",
       // assets is a non-inheritable key: every env re-declares it.
       "assets": {
+        "binding": "ASSETS",
         "directory": "./dist",
         "not_found_handling": "single-page-application"
       }
