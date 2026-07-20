@@ -1,8 +1,8 @@
 import { isSafeAvatarUrl } from '@peerly/core'
 
 // isSafeAvatarUrl/safeAvatarUrl now live in @peerly/core (avatarSafety.ts) so
-// HeyHubs shares the exact same allowlist; re-exported here so existing
-// imports throughout this app keep working unchanged.
+// Consumer apps share the exact same allowlist; re-exported here so existing
+// imports throughout Peerly keep working unchanged.
 export { isSafeAvatarUrl, safeAvatarUrl } from '@peerly/core'
 
 /**

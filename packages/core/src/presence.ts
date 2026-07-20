@@ -1,5 +1,5 @@
 /**
- * Lobby presence bookkeeping shared by Peerly / HeyHubs discovery rooms.
+ * Lobby presence bookkeeping shared by consumer discovery rooms.
  * Apps own wire shapes (email hash vs not) and React hooks; this owns maps + TTL.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Browser media device helpers shared by Peerly / HeyHubs call UIs.
+ * Browser media device helpers shared by consumer call UIs.
  * Storage keys for preferred devices stay app-owned; this module is pure I/O
  * against the Web APIs plus optional sink apply.
  */

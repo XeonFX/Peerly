@@ -3,8 +3,8 @@
  * exchanged when the friendship is established. User ids and scheme names are
  * public namespace inputs; they are deliberately not treated as credentials.
  *
- * Apps pass their own scheme string so Peerly and HeyHubs never share rooms
- * (e.g. `peerly-dm-v2` vs `hh-dm-v2`).
+ * Apps pass their own scheme string so separate products never share rooms
+ * (for example, `peerly-dm-v2` versus another app-owned scheme).
  */
 
 function bytesToHex(bytes: Uint8Array): string {
