@@ -8,6 +8,7 @@ export type PickerRoute = {
 export type LoginRoute = { screen: 'login' }
 export type HomeRoute = { screen: 'home' }
 export type AccountRoute = { screen: 'account' }
+export type StorageRoute = { screen: 'storage' }
 
 export type WorkspaceRoute =
   | { screen: 'workspace'; view: 'channel'; channelId: string; showFiles: boolean }
@@ -23,6 +24,7 @@ export type AppRoute =
   | LoginRoute
   | HomeRoute
   | AccountRoute
+  | StorageRoute
   | PickerRoute
   | WorkspaceRoute
   | LegalRoute
@@ -47,6 +49,7 @@ export function pathForRoute(route: AppRoute): string {
   if (route.screen === 'login') return '/login'
   if (route.screen === 'home') return '/home'
   if (route.screen === 'account') return '/profile'
+  if (route.screen === 'storage') return '/storage'
   if (route.screen === 'picker') {
     return route.tab === 'create' ? '/create' : '/join'
   }
@@ -81,6 +84,7 @@ function parsePathRoute(pathname: string, search: string, hash = ''): AppRoute |
   }
   if (path === '/home') return { screen: 'home' }
   if (path === '/profile') return { screen: 'account' }
+  if (path === '/storage') return { screen: 'storage' }
   if (path === '/create') {
     return { screen: 'picker', tab: 'create' }
   }
@@ -159,7 +163,7 @@ export function resolveInitialRoute(hasWorkspaceSession: boolean, hasSignedInIde
   if (fromUrl?.screen === 'login') {
     return hasSignedInIdentity ? { screen: 'home' } : fromUrl
   }
-  if (fromUrl?.screen === 'home' || fromUrl?.screen === 'account') {
+  if (fromUrl?.screen === 'home' || fromUrl?.screen === 'account' || fromUrl?.screen === 'storage') {
     return hasSignedInIdentity ? fromUrl : { screen: 'login' }
   }
   if (fromUrl?.screen === 'picker') {

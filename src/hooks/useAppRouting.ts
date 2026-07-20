@@ -71,7 +71,7 @@ export function useAppRouting(inWorkspace: boolean, signedIn: boolean, ready: bo
       navigate({ screen: 'home' }, { replace: true })
       return
     }
-    if (!signedIn && (route.screen === 'home' || route.screen === 'account')) {
+    if (!signedIn && (route.screen === 'home' || route.screen === 'account' || route.screen === 'storage')) {
       navigate({ screen: 'login' }, { replace: true })
       return
     }

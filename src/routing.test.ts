@@ -37,6 +37,7 @@ describe('routing', () => {
   it('round-trips signed-in global routes', () => {
     expect(routeFromPath(pathForRoute({ screen: 'home' }))).toEqual({ screen: 'home' })
     expect(routeFromPath(pathForRoute({ screen: 'account' }))).toEqual({ screen: 'account' })
+    expect(routeFromPath(pathForRoute({ screen: 'storage' }))).toEqual({ screen: 'storage' })
   })
 
   it('protects create while preserving invite-based sign in', () => {

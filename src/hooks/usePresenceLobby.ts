@@ -177,10 +177,10 @@ export function usePresenceLobby({
       setOutgoing(prev => {
         let changed = false
         const next = prev.map(item => {
-          const peerId = presence.peerIdForEmailHash(item.toEmailHash)
-          if (!peerId) return item
+          const peerIds = presence.peerIdsForEmailHash(item.toEmailHash)
+          if (peerIds.length === 0) return item
           if (item.lastSentAt && now - item.lastSentAt < INVITE_RETRY_MS) return item
-          void inviteAction.send(item.payload, { target: peerId })
+          for (const peerId of peerIds) void inviteAction.send(item.payload, { target: peerId })
           changed = true
           return { ...item, lastSentAt: now }
         })
@@ -411,9 +411,9 @@ export function usePresenceLobby({
         }
         setOutgoing(prev => upsertOutgoingInvite(prev, entry))
 
-        const peerId = presenceIndexRef.current.peerIdForEmailHash(payload.toEmailHash)
-        if (peerId && sendersRef.current) {
-          sendersRef.current.invite(payload, peerId)
+        const peerIds = presenceIndexRef.current.peerIdsForEmailHash(payload.toEmailHash)
+        if (peerIds.length && sendersRef.current) {
+          for (const peerId of peerIds) sendersRef.current.invite(payload, peerId)
           setOutgoing(prev => {
             const next = prev.map(i =>
               i.inviteId === inviteId ? { ...i, lastSentAt: Date.now() } : i
@@ -439,18 +439,18 @@ export function usePresenceLobby({
       if (!entry) return false
 
       try {
-          const resp = await createFriendInviteResponse(id, {
+        const resp = await createFriendInviteResponse(id, {
           inviteId: entry.inviteId,
           accept: true,
           fromUserId: me.userId,
           fromName: me.name,
           fromEmail: me.email,
-            toUserId: entry.fromUserId,
-            dmSecret: entry.payload.dmSecret,
+          toUserId: entry.fromUserId,
+          dmSecret: entry.payload.dmSecret,
         })
-        const peerId = presenceIndexRef.current.peerIdForUserId(entry.fromUserId)
-        if (peerId && sendersRef.current) {
-          sendersRef.current.inviteResp(resp, peerId)
+        const peerIds = presenceIndexRef.current.peerIdsForUserId(entry.fromUserId)
+        if (sendersRef.current) {
+          for (const peerId of peerIds) sendersRef.current.inviteResp(resp, peerId)
         }
 
         if (!isFriend(loadFriends(), entry.fromUserId)) {
@@ -489,9 +489,9 @@ export function usePresenceLobby({
           fromEmail: me.email,
           toUserId: entry.fromUserId,
         })
-        const peerId = presenceIndexRef.current.peerIdForUserId(entry.fromUserId)
-        if (peerId && sendersRef.current) {
-          sendersRef.current.inviteResp(resp, peerId)
+        const peerIds = presenceIndexRef.current.peerIdsForUserId(entry.fromUserId)
+        if (sendersRef.current) {
+          for (const peerId of peerIds) sendersRef.current.inviteResp(resp, peerId)
         }
         setIncoming(prev => removeIncomingInvite(prev, inviteId))
         return true
@@ -525,8 +525,8 @@ export function usePresenceLobby({
       const senders = sendersRef.current
       if (!me || !senders || !toUserId || toUserId === me.userId) return false
       if (!isFriend(loadFriends(), toUserId)) return false
-      const peerId = presenceIndexRef.current.peerIdForUserId(toUserId)
-      if (!peerId) return false
+      const peerIds = presenceIndexRef.current.peerIdsForUserId(toUserId)
+      if (peerIds.length === 0) return false
       const identity = identityRef.current
       if (!identity) return false
       void signDmRing(identity, DM_RING_SCHEME, {
@@ -535,7 +535,9 @@ export function usePresenceLobby({
         fromName: me.name,
         reason,
         preview: preview?.trim().slice(0, 120) || undefined,
-      }).then(payload => senders.dmRing(payload, peerId))
+      }).then(payload => {
+        for (const peerId of peerIds) senders.dmRing(payload, peerId)
+      })
       return true
     },
     [profileRef, identityRef]

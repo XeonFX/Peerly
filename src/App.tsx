@@ -141,9 +141,16 @@ function App() {
         await manager.signInWithE2eEmail(loaded.identityEmail)
         const token = manager.getIdToken()
         if (token) {
-          saveIdCredentials(token, loaded.identityProvider, loaded.identityEmail)
+          saveIdCredentials(token, loaded.identityProvider, loaded.identityEmail, loaded.identityUserId)
           saveSession(loaded)
         }
+      }
+      // Older sessions predate durable identity metadata. Backfill the user id
+      // while the verified workspace session and live token are both present,
+      // so leaving the workspace can still render the Home/DM experience.
+      const liveToken = loadIdToken()
+      if (loaded?.identityUserId && liveToken && !loadIdentityUserId()) {
+        saveIdCredentials(liveToken, loaded.identityProvider, loaded.identityEmail, loaded.identityUserId)
       }
       if (loaded) {
         setSession(await hydrateSessionAvatar(loaded))
@@ -206,6 +213,14 @@ function App() {
     navigate({ screen: 'picker', tab: 'create' })
   }
 
+  const signOut = () => {
+    clearActiveWorkspace()
+    clearIdCredentials()
+    setSession(null)
+    setIdentityVersion(version => version + 1)
+    navigate({ screen: 'login' }, { replace: true })
+  }
+
   // Public legal pages render regardless of session/hydration state.
   if (route.screen === 'legal') {
     return (
@@ -222,26 +237,17 @@ function App() {
 
   const consentBanner = legalAccepted ? null : <ConsentBanner onAccept={acceptLegal} />
 
+  const homeSection = route.screen === 'devices'
+    ? 'devices'
+    : route.screen === 'account'
+      ? 'account'
+      : route.screen === 'storage'
+        ? 'storage'
+        : 'friends'
+
   const content = route.screen === 'sync' ? (
     <SyncActivityPage />
-  ) : route.screen === 'account' ? (
-    <AccountPreferencesPage
-      email={identityEmail ?? ''}
-      onSignOut={() => {
-        clearActiveWorkspace()
-        clearIdCredentials()
-        setSession(null)
-        setIdentityVersion(version => version + 1)
-        navigate({ screen: 'login' }, { replace: true })
-      }}
-    />
-  ) : route.screen === 'devices' && lobbyProfile ? (
-    <MyDevicesPage
-      identity={deviceIdentity}
-      userId={lobbyProfile.userId}
-      initialSecret={route.pairSecret}
-    />
-  ) : session ? (
+  ) : session && route.screen !== 'home' && route.screen !== 'devices' && route.screen !== 'account' && route.screen !== 'storage' ? (
     <Workspace
       // Remount on workspace switch so the collab room tears down and rejoins
       // cleanly for the new workspace instead of mutating a live one.
@@ -263,12 +269,43 @@ function App() {
       onRemoveFriend={friendsApi.remove}
       inviteableFriends={emails => friendsApi.inviteable(emails)}
     />
+  ) : lobbyProfile && (route.screen === 'home' || route.screen === 'devices' || route.screen === 'account' || route.screen === 'storage') ? (
+    <HomeView
+      section={homeSection}
+      onSectionChange={section => {
+        if (section === 'friends') navigate({ screen: 'home' })
+        else if (section === 'storage') navigate({ screen: 'storage' })
+        else if (section === 'devices') navigate({ screen: 'devices' })
+        else navigate({ screen: 'account' })
+      }}
+      devicesPanel={
+        <MyDevicesPage
+          identity={deviceIdentity}
+          userId={lobbyProfile.userId}
+          initialSecret={route.screen === 'devices' ? route.pairSecret : undefined}
+        />
+      }
+      accountPanel={<AccountPreferencesPage email={identityEmail ?? ''} onSignOut={signOut} />}
+      profile={lobbyProfile}
+      identity={deviceIdentity}
+      friends={friendsApi.friends}
+      outgoing={presence.outgoing}
+      incoming={presence.incoming}
+      onlineCount={presence.onlineCount}
+      isUserOnline={presence.isUserOnline}
+      ringDm={presence.ringDm}
+      onInvite={presence.inviteByEmail}
+      onAccept={presence.acceptInvite}
+      onDecline={presence.declineInvite}
+      onCancelOutgoing={presence.cancelOutgoing}
+      onRemoveFriend={friendsApi.remove}
+      pendingRing={pendingDmRing}
+      onConsumeRing={() => setPendingDmRing(null)}
+    />
   ) : (
     <JoinScreen
       view={
-        route.screen === 'home'
-          ? 'home'
-          : route.screen === 'login'
+        route.screen === 'login'
             ? 'login'
             : route.screen === 'picker'
               ? route.tab
@@ -288,25 +325,6 @@ function App() {
         }
         navigate({ screen: 'login' }, { replace: true })
       }}
-      friendsPanel={route.screen === 'home' && lobbyProfile ? (
-        <HomeView
-          profile={lobbyProfile}
-          identity={deviceIdentity}
-          friends={friendsApi.friends}
-          outgoing={presence.outgoing}
-          incoming={presence.incoming}
-          onlineCount={presence.onlineCount}
-          isUserOnline={presence.isUserOnline}
-          ringDm={presence.ringDm}
-          onInvite={presence.inviteByEmail}
-          onAccept={presence.acceptInvite}
-          onDecline={presence.declineInvite}
-          onCancelOutgoing={presence.cancelOutgoing}
-          onRemoveFriend={friendsApi.remove}
-          pendingRing={pendingDmRing}
-          onConsumeRing={() => setPendingDmRing(null)}
-        />
-      ) : undefined}
     />
   )
 
@@ -327,16 +345,11 @@ function App() {
         <WorkspaceRail
           workspaces={railWorkspaces}
           activeWorkspaceId={session?.workspaceId}
-          onHome={route.screen === 'home'}
-          onDevices={route.screen === 'devices'}
+          onHome={route.screen === 'home' || route.screen === 'devices' || route.screen === 'account' || route.screen === 'storage'}
           onSync={route.screen === 'sync'}
-          onAccount={route.screen === 'account'}
           onSelectWorkspace={switchWorkspace}
           onHomeSelect={goHome}
-          onDevicesSelect={() => navigate({ screen: 'devices' })}
           onSyncSelect={() => navigate({ screen: 'sync' })}
-          onAccountSelect={() => navigate({ screen: 'account' })}
-          onJoinWorkspace={() => navigate({ screen: 'picker', tab: 'join' })}
           onCreateWorkspace={createWorkspace}
         />
         <div className="min-w-0 flex-1 overflow-hidden">{content}</div>

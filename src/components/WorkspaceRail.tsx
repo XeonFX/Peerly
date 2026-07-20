@@ -10,15 +10,10 @@ type Props = {
   activeWorkspaceId?: string
   /** True when the home / direct-messages view is showing. */
   onHome: boolean
-  onDevices: boolean
   onSync: boolean
-  onAccount: boolean
   onSelectWorkspace: (workspace: StoredWorkspace) => void
   onHomeSelect: () => void
-  onDevicesSelect: () => void
   onSyncSelect: () => void
-  onAccountSelect: () => void
-  onJoinWorkspace: () => void
   onCreateWorkspace: () => void
   /** Per-workspace unread totals (best-effort; only the active one is live). */
   unreadByWorkspace?: Record<string, number>
@@ -33,15 +28,10 @@ export function WorkspaceRail({
   workspaces,
   activeWorkspaceId,
   onHome,
-  onDevices,
   onSync,
-  onAccount,
   onSelectWorkspace,
   onHomeSelect,
-  onDevicesSelect,
   onSyncSelect,
-  onAccountSelect,
-  onJoinWorkspace,
   onCreateWorkspace,
   unreadByWorkspace = {},
 }: Props) {
@@ -71,32 +61,12 @@ export function WorkspaceRail({
         <Icon name="refresh" size={21} />
       </RailButton>
 
-      <div className="my-1 h-px w-8 shrink-0 bg-base-content/10" />
-
-      <RailButton
-        label={tr('My devices')}
-        active={onDevices}
-        onClick={onDevicesSelect}
-        testId="rail-devices"
-      >
-        <Icon name="shield" size={21} />
-      </RailButton>
-
-      <RailButton
-        label={tr('Profile & preferences')}
-        active={onAccount}
-        onClick={onAccountSelect}
-        testId="rail-account"
-      >
-        <Icon name="user" size={21} />
-      </RailButton>
-
       <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
         {workspaces.map(workspace => (
           <RailButton
             key={workspace.workspaceId}
             label={workspace.workspaceName}
-            active={!onHome && !onDevices && !onSync && !onAccount && workspace.workspaceId === activeWorkspaceId}
+            active={!onHome && !onSync && workspace.workspaceId === activeWorkspaceId}
             unread={unreadByWorkspace[workspace.workspaceId] ?? 0}
             onClick={() => onSelectWorkspace(workspace)}
             testId={`rail-workspace-${workspace.workspaceId}`}
@@ -105,14 +75,6 @@ export function WorkspaceRail({
           </RailButton>
         ))}
       </div>
-
-      <RailButton
-        label={tr('Join workspace')}
-        onClick={onJoinWorkspace}
-        testId="rail-join-workspace"
-      >
-        <Icon name="download" size={20} />
-      </RailButton>
 
       <RailButton
         label={tr('Create workspace')}

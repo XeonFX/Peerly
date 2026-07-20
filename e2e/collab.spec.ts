@@ -96,10 +96,10 @@ test.describe('Peerly P2P collaboration', () => {
 
     // Leaving must NOT sign you out — you land on the picker still signed in.
     await leaveToPicker(page)
-    await expect(page.getByTestId('workspace-picker')).toBeVisible()
+    await expect(page.getByTestId('home-view')).toBeVisible()
 
     // The workspace we just joined is offered without pasting the link again.
-    await page.getByTestId('open-workspace-test-ws').click()
+    await page.getByRole('button', { name: 'test-ws', exact: true }).click()
     await waitForWorkspace(page)
     await expect(page.locator('.workspace-name')).toContainText('test-ws')
   })
@@ -109,21 +109,24 @@ test.describe('Peerly P2P collaboration', () => {
     await leaveToPicker(page)
 
     await page.reload()
-    await expect(page.getByTestId('workspace-picker')).toBeVisible({ timeout: 15_000 })
-    await page.getByTestId('open-workspace-test-ws').click()
+    await expect(page.getByTestId('home-view')).toBeVisible({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'test-ws', exact: true }).click()
     await waitForWorkspace(page)
   })
 
   test('the picker only offers workspaces the signed-in email is invited to', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await leaveToPicker(page)
+    await page.getByTestId('rail-create-workspace').click()
     await expect(page.getByTestId('open-workspace-test-ws')).toBeVisible()
 
     // Same browser, different identity: outsider@ is not on the fixture's
     // allow-list, so the workspace must not be offered to them.
-    await page.getByTestId('rail-account').click()
+    await page.getByTestId('rail-home').click()
+    await page.getByTestId('home-account-tab').click()
     await page.getByTestId('account-sign-out').click()
     await e2eSignIn(page, { email: 'outsider@e2e.test' })
+    await page.getByTestId('rail-create-workspace').click()
     await expect(page.getByTestId('open-workspace-test-ws')).not.toBeVisible()
   })
 
@@ -185,7 +188,7 @@ test.describe('Peerly P2P collaboration', () => {
     await page.getByTestId('profile-back').click()
 
     await leaveToPicker(page)
-    await page.getByTestId('open-workspace-test-ws').click()
+    await page.getByRole('button', { name: 'test-ws', exact: true }).click()
     await waitForWorkspace(page)
 
     await openProfile(page)
@@ -225,6 +228,7 @@ test.describe('Peerly P2P collaboration', () => {
 
     await page.getByTestId('workspace-settings-back').click()
     await leaveToPicker(page)
+    await page.getByTestId('rail-create-workspace').click()
 
     // A backup is most valuable on a fresh profile. Forget the only remembered
     // workspace and prove restore remains available from the empty picker.
@@ -341,6 +345,7 @@ test.describe('Peerly P2P collaboration', () => {
 
     await expect(page.getByTestId('invited-bob@e2e.test')).toHaveCount(0, { timeout: 15_000 })
     await leaveToPicker(page)
+    await page.getByTestId('rail-create-workspace').click()
     await expect(page.getByTestId('open-workspace-remove-test')).toContainText('1 member')
   })
 
@@ -360,6 +365,7 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(page.getByTestId('invited-bob@e2e.test')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('invited-members')).toContainText('bob@e2e.test')
     await leaveToPicker(page)
+    await page.getByTestId('rail-create-workspace').click()
     await expect(page.getByTestId('open-workspace-invite-test')).toContainText('2 members')
   })
 
@@ -1123,6 +1129,37 @@ test.describe('Peerly P2P collaboration', () => {
     })
   })
 
+  test('friend DMs sync reactions and attachments', async ({ browser }) => {
+    await withTwoUsers(browser, async (alice, bob) => {
+      await alice.getByTestId('rail-home').click()
+      await bob.getByTestId('rail-home').click()
+
+      await alice.getByTestId('friend-invite-email').fill('bob@e2e.test')
+      await alice.getByTestId('friend-invite-submit').click()
+      await expect(bob.getByTestId('friend-incoming')).toBeVisible({ timeout: 15_000 })
+      await bob.locator('[data-testid^="friend-accept-"]').click()
+
+      await expect(alice.locator('[data-testid^="friend-message-"]')).toBeVisible({ timeout: 15_000 })
+      await alice.locator('[data-testid^="friend-message-"]').click()
+      await expect(bob.getByTestId('global-dm-chat')).toBeVisible({ timeout: 15_000 })
+
+      await alice.getByTestId('global-dm-input').fill('React to this DM')
+      await alice.getByTestId('global-dm-send').click()
+      await expect(bob.getByTestId('global-dm-messages')).toContainText('React to this DM', { timeout: 15_000 })
+      await bob.getByLabel('React 👍').click()
+      await expect(alice.getByTestId('global-dm-messages')).toContainText('👍 1', { timeout: 15_000 })
+
+      await alice.getByTestId('global-dm-file-input').setInputFiles({
+        name: 'hello-dm.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('Peerly direct-message attachment'),
+      })
+      const receivedFile = bob.getByRole('link', { name: 'hello-dm.txt' })
+      await expect(receivedFile).toBeVisible({ timeout: 15_000 })
+      await expect(receivedFile).toHaveAttribute('href', /^blob:/)
+    })
+  })
+
   test('unread badge appears for messages in other channels', async ({ browser }) => {
     await withTwoUsers(browser, async (alice, bob) => {
       await createChannel(alice, 'alerts')
@@ -1193,7 +1230,8 @@ test.describe('Peerly P2P collaboration', () => {
     // Relay health is Nostr-only diagnostics; E2E runs ws-relay, so the card
     // must stay hidden rather than probe a strategy it doesn't apply to.
     await expect(page.getByTestId('relay-health-card')).toHaveCount(0)
-    await page.getByTestId('rail-account').click()
+    await page.getByTestId('rail-home').click()
+    await page.getByTestId('home-account-tab').click()
     await page.getByTestId('locale-select').selectOption('pl')
     await expect(page.getByRole('heading', { name: 'Profil i preferencje' })).toBeVisible()
     await page.locator('[data-testid^="rail-workspace-"]').first().click()
@@ -1205,7 +1243,8 @@ test.describe('Peerly P2P collaboration', () => {
     await page.getByTestId('member-self').click()
     await expect(page.getByRole('heading', { name: 'Twój profil' })).toBeVisible()
     await page.getByTestId('profile-back').click()
-    await page.getByTestId('rail-account').click()
+    await page.getByTestId('rail-home').click()
+    await page.getByTestId('home-account-tab').click()
     await page.getByTestId('locale-select').selectOption('en')
     await expect(page.getByRole('heading', { name: 'Profile & preferences' })).toBeVisible()
   })

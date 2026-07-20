@@ -20,6 +20,14 @@ export type TextChatWire = {
   sig: string
   editedAt?: number
   deletedAt?: number
+  /** Optional content-addressed attachment metadata; file bytes travel separately. */
+  attachment?: {
+    id: string
+    name: string
+    mimeType: string
+    size: number
+    thumbnail?: string
+  }
 }
 
 export type TextReactionWire = {
@@ -51,6 +59,13 @@ export function textChatBytes(scheme: string, wire: Omit<TextChatWire, 'sig'>): 
     String(wire.editedAt ?? ''),
     String(wire.deletedAt ?? ''),
     wire.text,
+    ...(wire.attachment ? [
+      wire.attachment.id,
+      wire.attachment.name,
+      wire.attachment.mimeType,
+      String(wire.attachment.size),
+      wire.attachment.thumbnail ?? '',
+    ] : []),
   ])
 }
 
@@ -101,6 +116,15 @@ export async function verifyTextChat(scheme: string, wire: TextChatWire): Promis
       wire.authorUserId.length > 256)
   ) return false
   if (typeof wire.deviceKeyId !== 'string' || typeof wire.sig !== 'string') return false
+  if (wire.attachment !== undefined) {
+    const attachment = wire.attachment
+    if (!attachment || typeof attachment !== 'object') return false
+    if (typeof attachment.id !== 'string' || !/^[0-9a-f]{64}$/i.test(attachment.id)) return false
+    if (typeof attachment.name !== 'string' || attachment.name.length === 0 || attachment.name.length > 255) return false
+    if (typeof attachment.mimeType !== 'string' || attachment.mimeType.length > 128) return false
+    if (typeof attachment.size !== 'number' || !Number.isSafeInteger(attachment.size) || attachment.size < 0 || attachment.size > 50 * 1024 * 1024) return false
+    if (attachment.thumbnail !== undefined && (typeof attachment.thumbnail !== 'string' || attachment.thumbnail.length > 96_000)) return false
+  }
   return verifyWithDeviceKeyId(wire.deviceKeyId, textChatBytes(scheme, wire), wire.sig)
 }
 
