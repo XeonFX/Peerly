@@ -18,6 +18,7 @@ type Props = {
   onDevicesSelect: () => void
   onSyncSelect: () => void
   onAccountSelect: () => void
+  onJoinWorkspace: () => void
   onCreateWorkspace: () => void
   /** Per-workspace unread totals (best-effort; only the active one is live). */
   unreadByWorkspace?: Record<string, number>
@@ -40,6 +41,7 @@ export function WorkspaceRail({
   onDevicesSelect,
   onSyncSelect,
   onAccountSelect,
+  onJoinWorkspace,
   onCreateWorkspace,
   unreadByWorkspace = {},
 }: Props) {
@@ -103,6 +105,14 @@ export function WorkspaceRail({
           </RailButton>
         ))}
       </div>
+
+      <RailButton
+        label={tr('Join workspace')}
+        onClick={onJoinWorkspace}
+        testId="rail-join-workspace"
+      >
+        <Icon name="download" size={20} />
+      </RailButton>
 
       <RailButton
         label={tr('Create workspace')}

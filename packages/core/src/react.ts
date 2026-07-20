@@ -23,6 +23,7 @@ import {
   type RoomMediaState,
 } from './roomMedia.js'
 import { probeP2pCapability, type P2pCapability } from './p2pCapability.js'
+import { probeTurnCapability, type TurnCapability } from './turnCapability.js'
 import { createSpeakingDetector, type SpeakingDetector } from './speaking.js'
 
 export type RoomErrorKind =
@@ -49,6 +50,8 @@ const MAX_RECOVERY_ATTEMPTS = 3
 const RECOVERY_DEBOUNCE_MS = 2_000
 /** Backoff schedule for recovery attempts (ms). */
 const RECOVERY_BACKOFF_MS = [3_000, 8_000, 15_000] as const
+/** Keep trying after a failed burst; sleep long enough to avoid reconnect storms. */
+const RECOVERY_COOLDOWN_MS = 60_000
 
 export type UseRoomOptions = {
   appId: string
@@ -152,7 +155,16 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
 
       const connectedPeers = Object.keys(instanceRef.current?.getPeers() ?? {}).length
       if (connectedPeers > 0) return
-      if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS || recovery.timer !== 0) return
+      if (recovery.timer !== 0) return
+      if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS) {
+        recovery.timer = window.setTimeout(() => {
+          recovery.timer = 0
+          recovery.attempts = 0
+          recovery.failures = 0
+          setRejoinNonce(nonce => nonce + 1)
+        }, RECOVERY_COOLDOWN_MS)
+        return
+      }
 
       // sdp-collision: PC is already broken — rejoin after one report.
       // needs-turn / handshake-timeout: wait for a second signal (blip filter).
@@ -249,6 +261,26 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
       }
     }
   }, [appId, roomId])
+
+  // A live data channel proves the current network path works. Start future
+  // recovery from a fresh budget instead of permanently remembering unrelated
+  // failures from strangers that were encountered earlier in a public lobby.
+  useEffect(() => {
+    if (!room) return
+    const resetAfterSuccess = () => {
+      if (Object.keys(room.getPeers()).length === 0) return
+      if (recoveryRef.current.timer) {
+        window.clearTimeout(recoveryRef.current.timer)
+        recoveryRef.current.timer = 0
+      }
+      recoveryRef.current.failures = 0
+      recoveryRef.current.attempts = 0
+      recoveryRef.current.lastFailureAt = 0
+    }
+    resetAfterSuccess()
+    const timer = window.setInterval(resetAfterSuccess, 1_000)
+    return () => window.clearInterval(timer)
+  }, [room])
 
   return { room }
 }
@@ -353,6 +385,36 @@ export function useP2pCapability() {
   useEffect(() => {
     let cancelled = false
     void probeP2pCapability().then(result => {
+      if (!cancelled) setCapability(result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [attempt])
+
+  return { capability, retry }
+}
+
+const CHECKING_TURN: TurnCapability = {
+  status: 'checking',
+  detail: 'Checking TURN relay allocation…',
+  transports: [],
+}
+
+export function useTurnCapability(env: Env) {
+  const [capability, setCapability] = useState<TurnCapability>(CHECKING_TURN)
+  const [attempt, setAttempt] = useState(0)
+  const envRef = useRef(env)
+  envRef.current = env
+
+  const retry = useCallback(() => {
+    setCapability(CHECKING_TURN)
+    setAttempt(value => value + 1)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void probeTurnCapability(envRef.current).then(result => {
       if (!cancelled) setCapability(result)
     })
     return () => {

@@ -25,7 +25,6 @@ import {
   rememberWorkspace,
   snapshotWorkspace,
   workspacesForEmail,
-  mostRecentlyOpenedWorkspace,
   type StoredWorkspace,
 } from './collab/workspaceStore'
 import {
@@ -170,7 +169,6 @@ function App() {
   // Reads localStorage each render (cheap: a small JSON parse + filter), so it
   // reflects joins/switches immediately without a reactive store.
   const railWorkspaces = identityEmail ? workspacesForEmail(identityEmail) : []
-  const recentWorkspace = mostRecentlyOpenedWorkspace(railWorkspaces)
 
   /** Close the active workspace, stay signed in, land on the home/DM view. */
   const goHome = () => {
@@ -307,10 +305,6 @@ function App() {
           onRemoveFriend={friendsApi.remove}
           pendingRing={pendingDmRing}
           onConsumeRing={() => setPendingDmRing(null)}
-          recentWorkspace={recentWorkspace}
-          onOpenWorkspace={workspace => void switchWorkspace(workspace)}
-          onCreateWorkspace={createWorkspace}
-          onJoinWorkspace={() => navigate({ screen: 'picker', tab: 'join' })}
         />
       ) : undefined}
     />
@@ -342,6 +336,7 @@ function App() {
           onDevicesSelect={() => navigate({ screen: 'devices' })}
           onSyncSelect={() => navigate({ screen: 'sync' })}
           onAccountSelect={() => navigate({ screen: 'account' })}
+          onJoinWorkspace={() => navigate({ screen: 'picker', tab: 'join' })}
           onCreateWorkspace={createWorkspace}
         />
         <div className="min-w-0 flex-1 overflow-hidden">{content}</div>
