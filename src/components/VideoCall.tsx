@@ -103,7 +103,7 @@ function VideoTile({
     let cancelled = false
     let running = false
     let timer: number | undefined
-    // Same streak policy as HeyHubs: flag on first NSFW hit, auto-clear after
+    // Shared streak policy: flag on first NSFW hit, auto-clear after
     // consecutive clean frames; back off while long-clean.
     let scan: NsfwScreenScanState = INITIAL_NSFW_SCAN_STATE
     let cleanRuns = 0

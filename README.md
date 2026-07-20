@@ -274,8 +274,8 @@ primitives, browser-side OIDC verification, room media, attention helpers, and
 shared avatar/IDB utilities — lives in [`packages/core`](packages/core) and is
 published to npm as [`@peerly/core`](packages/core/README.md) (see that README
 for the API surface; do not pin a version in prose here). The app consumes it
-from source via a Vite/tsconfig alias; other apps (e.g. HeyHubs) consume the
-published package. Workspace semantics — creator-signed allow-lists, peer
+from source via a Vite/tsconfig alias; consumer apps use the published package.
+Workspace semantics — creator-signed allow-lists, peer
 handshakes, history sanitization — deliberately stay in the app, not the
 package. Releases run through the `release-core.yml` workflow: manual trigger,
 npm Trusted Publishing with provenance, automatic version bump via release PR.

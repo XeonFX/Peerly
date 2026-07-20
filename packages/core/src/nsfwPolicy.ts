@@ -1,5 +1,5 @@
 /**
- * Pure NSFW screening policy shared by Peerly / HeyHubs.
+ * Pure NSFW screening policy shared by consumer apps.
  *
  * Does NOT load NSFWJS or TensorFlow — apps own the model dependency and
  * inject classify(). This module is thresholds, concurrency, canvas downsample,
@@ -15,7 +15,7 @@ export const NSFW_SUGGESTIVE_THRESHOLD = 0.85
 
 /**
  * Max concurrent classify jobs. 3 balances multi-tile latency vs GPU thrash
- * (HeyHubs default; Peerly used to serialize).
+ * while avoiding excessive GPU contention.
  */
 export const NSFW_MAX_CONCURRENT_INFERENCES = 3
 
@@ -121,7 +121,7 @@ export const INITIAL_NSFW_SCAN_STATE: NsfwScreenScanState = {
 
 /**
  * Pure policy: one classification → next blur/streak state.
- * Shared by HeyHubs ScreenedVideo and Peerly call tiles.
+ * Shared by consumer video components and Peerly call tiles.
  */
 export function applyNsfwScanResult(
   state: NsfwScreenScanState,

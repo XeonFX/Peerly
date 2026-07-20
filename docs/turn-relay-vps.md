@@ -1,9 +1,9 @@
 # Shared relay and TURN on one IPv4 address
 
-The production VPS serves these names from one address:
+The production VPS serves these Peerly names from one address:
 
-- `relay.peerly.cc` and `relay.heyhubs.app`: HTTPS/WSS signaling
-- `turn.peerly.cc` and `turn.heyhubs.app`: TURN
+- `relay.peerly.cc`: HTTPS/WSS signaling
+- `turn.peerly.cc`: TURN
 
 Strict networks often allow only TLS on TCP 443. nginx therefore owns public
 TCP 443 and uses TLS SNI prereading (without decrypting) to route `turn.*` to
@@ -22,7 +22,6 @@ The top-level nginx configuration contains:
 stream {
     map $ssl_preread_server_name $tls_backend {
         turn.peerly.cc    127.0.0.1:5349;
-        turn.heyhubs.app  127.0.0.1:5349;
         default           127.0.0.1:8443;
     }
 
@@ -39,7 +38,7 @@ stream {
 
 The HTTP relay virtual host listens on `127.0.0.1:8443 ssl`; port 80 remains
 public for redirects and ACME HTTP challenges. coturn retains UDP/TCP 3478 and
-TLS 5349. Its certificate must cover all four DNS names. The firewall permits:
+TLS 5349. Its certificate must cover the Peerly DNS names. The firewall permits:
 
 - TCP 80 and 443
 - UDP/TCP 3478

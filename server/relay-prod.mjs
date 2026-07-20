@@ -1,18 +1,18 @@
 import { createWsRelayServer } from '@trystero-p2p/ws-relay/server'
 
-// Production signaling relay shared by Peerly and HeyHubs.
+// Production signaling relay for Peerly and authorized consumer apps.
 //
 // This is the deployed counterpart to the dev-only relay.mjs. It runs on the
-// shared VPS (codefusion-vps) as a systemd service behind nginx (which
-// terminates TLS on relay.peerly.cc / relay.heyhubs.app), listening only on
-// localhost. Unlike a public Nostr relay, access is restricted to the two apps:
+// shared VPS as a systemd service behind nginx (which terminates TLS on the
+// configured relay hostnames), listening only on localhost. Unlike a public
+// Nostr relay, access is restricted to configured apps:
 // every WebSocket upgrade must present the per-app token in a `?token=` query
 // param, matched against the Host header. Apps point at it with
 // VITE_SIGNALING=ws-relay + VITE_RELAY_HOST/VITE_RELAY_TOKEN (see @peerly/core
 // relays.ts, added in 1.2.1).
 //
 // Deploy: copy to /opt/relay/relay-server.mjs on the VPS, `npm install`, run
-// under the peerly-heyhubs-relay systemd unit with RELAY_TOKENS / RELAY_PORT in
+// under the configured relay systemd unit with RELAY_TOKENS / RELAY_PORT in
 // the environment.
 
 // Which hosts are served, and the token each requires, come entirely from the

@@ -6,14 +6,14 @@ import type { DeviceSigner } from './textChatSigning.js'
 /**
  * Signed personal lists of people (block, friend, …) for serverless apps.
  *
- * Generalized from HeyHubs' blocklist: each entry is a device-key-signed
+ * Each entry is a device-key-signed
  * attestation about a subject `userId`, stored locally, optionally exported
  * as a shareable code. Apps own the scheme string and storage keys so wire
  * formats stay stable.
  *
  * Peerly friends may carry a verified `email` (from the workspace handshake)
- * so the creator can pre-fill workspace invites. HeyHubs friends typically
- * leave email empty — strangers never exchange addresses.
+ * so the creator can pre-fill workspace invites. Consumer apps may leave
+ * email empty so strangers never exchange addresses.
  */
 
 export type PeopleListKind = 'block' | 'friend'

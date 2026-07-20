@@ -230,10 +230,10 @@ const entry = await createPeopleAttestation(signer, SCHEME, {
 })
 ```
 
-HeyHubs uses the same primitive for blocks (and friends without email).
-Invite-to-workspace needs a verified email, which only Peerly's handshake
-exposes — so cross-app “add friend on HeyHubs → invite on Peerly” works only
-when the friend later connects in Peerly and shares email via handshake.
+Consumer apps can use the same primitive for blocks and friends without email.
+Inviting someone to a Peerly workspace needs a verified email, which only
+Peerly's handshake exposes; an email-less external friend becomes invitable
+only after connecting in Peerly and sharing email through that handshake.
 
 ## What this package is not
 
