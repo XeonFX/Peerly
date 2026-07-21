@@ -201,7 +201,7 @@ Output goes to `dist/`. The build runs a bundle guard that fails if E2E test key
 
 ### Cloudflare Workers Static Assets (recommended)
 
-The committed [`wrangler.jsonc`](wrangler.jsonc) deploys `dist/` as an assets-only Worker and returns `index.html` for SPA navigation routes. No server-side Worker code runs for requests.
+The committed [`wrangler.jsonc`](wrangler.jsonc) deploys `dist/` with an SPA fallback and runs `worker/index.mjs` first for `/api/*` requests. All other requests keep the static-assets-first path.
 
 | Setting | Value |
 |---------|--------|
@@ -311,7 +311,7 @@ npm Trusted Publishing with provenance, automatic version bump via release PR.
 ├── .nvmrc                  Node 24.18.0 (npm 11.16.0 / CI alignment)
 ├── playwright.config.ts
 ├── vite.config.ts
-├── wrangler.jsonc          Cloudflare assets-only SPA deployment
+├── wrangler.jsonc          Cloudflare SPA assets and API routing
 └── vitest.config.ts
 ```
 
