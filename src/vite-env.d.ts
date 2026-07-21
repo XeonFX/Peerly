@@ -15,6 +15,7 @@ interface ImportMetaEnv {
   readonly VITE_TURN_USERNAME: string
   readonly VITE_TURN_CREDENTIAL: string
   readonly VITE_GOOGLE_CLIENT_ID: string
+  readonly VITE_GOOGLE_AUTH_BRIDGE_ORIGIN: string
   readonly VITE_MICROSOFT_CLIENT_ID: string
   readonly VITE_MICROSOFT_TENANT_ID: string
   readonly VITE_APPLE_CLIENT_ID: string

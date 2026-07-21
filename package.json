@@ -32,6 +32,7 @@
     "dev:app": "vite --host",
     "stop": "lsof -ti :8080 -ti :5173 -ti :5174 -ti :17273 2>/dev/null | xargs kill -9 2>/dev/null || true",
     "build": "tsc -b && vite build && npm run guard:bundle",
+    "postbuild": "node scripts/configure-auth-bridge.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
