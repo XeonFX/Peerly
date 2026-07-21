@@ -223,32 +223,32 @@ VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 
 Add TURN, signaling overrides, or other providers as needed (see `.env.example`).
 
-Register the production origin (`https://peerly.cc`) in each OAuth provider's allowed JavaScript origins / redirect URIs. Add the direct `workers.dev` address too if you use it for testing.
+Register the production origin (`https://peerly.cc`) in each OAuth provider's allowed JavaScript origins / redirect URIs.
 
 Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v<version> · <commit>`.
 
 Cloudflare Pages also works: use `npm run build`, publish `dist/`, and set the same build-time environment variables.
 
-### Testing branches with Google sign-in (preview worker)
+### Testing branches with Google sign-in
 
-Google OAuth requires **exact** JavaScript origins — no wildcards — so
-per-branch preview URLs (`<branch>-peerly.<subdomain>.workers.dev`) can never
-complete sign-in. Instead, deploy whatever branch you want to test to the one
-stable staging worker:
+Google OAuth requires exact JavaScript origins and does not accept a wildcard
+for Cloudflare's per-branch URLs. Set `VITE_GOOGLE_AUTH_BRIDGE_ORIGIN` on
+preview builds to render the Google button through your stable auth hostname.
+The bridge returns the ID token directly to the requesting preview with an
+origin-locked `postMessage`; the preview still verifies the token and its
+device-key nonce locally. If the variable is absent, regular direct Google
+sign-in is used.
 
-```bash
-git checkout <branch-to-test>
-npm run build
-npx wrangler deploy --env preview   # → https://peerly-preview.<subdomain>.workers.dev
-```
+One-time setup:
 
-One-time setup: add that origin to the OAuth client's authorized JavaScript
-origins (next to the production origin) — or, cleaner, create a second OAuth
-client just for previews and build with its id
-(`VITE_GOOGLE_CLIENT_ID=<preview-client-id> npm run build`), so experiments
-never touch the production client. The build-time env comes from your local
-`.env`, so a preview deploy uses whatever providers/relays you have configured
-there.
+1. Attach a stable custom domain to this Worker in Cloudflare. Domain routing
+   is intentionally kept out of the repository.
+2. Add the same `VITE_GOOGLE_CLIENT_ID` value as a Worker runtime variable.
+   Cloudflare build variables are not exposed to Worker code at runtime.
+3. Add your stable auth origin to the Google web client's **Authorized
+   JavaScript origins**. No redirect URI is needed.
+4. Set `VITE_GOOGLE_AUTH_BRIDGE_ORIGIN` and `VITE_GOOGLE_CLIENT_ID` for
+   Cloudflare preview builds.
 
 ### Other hosts
 
