@@ -11,6 +11,8 @@ import { IDENTITY_DENIED_PREFIX } from '../collab/identityHandshake'
 const ERROR_TEXT = {
   'password-mismatch': () =>
     'A peer tried to join with a different workspace password. If you cannot connect, check that your password matches exactly.',
+  'ice-failed': () =>
+    'Found your teammate, but the connection was interrupted. Waiting for them to reconnect.',
   'needs-turn': () =>
     'Found your teammate but could not open a direct connection — one of you is on a network that blocks peer-to-peer (strict NAT or firewall). A TURN server is needed; see VITE_TURN_URLS in the README.',
   'relay-failed': (raw: string) =>

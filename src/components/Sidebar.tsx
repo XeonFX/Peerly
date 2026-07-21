@@ -159,7 +159,7 @@ export function Sidebar({
 
   return (
     <aside
-      className={`sidebar flex w-65 min-w-65 flex-col border-r border-base-300/70 bg-base-200/75 backdrop-blur-xl max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:w-68 max-lg:min-w-68 max-lg:transition-transform max-lg:duration-200 motion-reduce:max-lg:transition-none ${
+      className={`sidebar flex w-65 min-w-65 flex-col border-r border-base-300/70 bg-base-200/75 backdrop-blur-xl max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:w-68 max-lg:min-w-68 max-lg:transition-transform max-lg:duration-200 max-sm:bottom-16 motion-reduce:max-lg:transition-none ${
         open ? 'max-lg:translate-x-0 max-lg:shadow-2xl' : 'max-lg:-translate-x-full'
       }`}
     >

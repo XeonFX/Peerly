@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Friend } from '../collab/friendsStore'
 import { friendDmDeviceKey, friendDmSecret } from '../collab/friendsStore'
 import { dmRoomCode } from '../collab/dmCode'
@@ -88,6 +88,7 @@ export function HomeView({
   const [roomCode, setRoomCode] = useState<string | null>(null)
   const [ringBanner, setRingBanner] = useState<DmRingPayload | null>(null)
   const [query, setQuery] = useState('')
+  const [mobileFriendsOpen, setMobileFriendsOpen] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth)
   const resizeCleanupRef = useRef<(() => void) | null>(null)
 
@@ -123,6 +124,7 @@ export function HomeView({
   const openFriend = useCallback(
     async (friend: Friend) => {
       onSectionChange('friends')
+      setMobileFriendsOpen(false)
       setActiveFriend(friend)
       const secret = friendDmSecret(friend)
       if (!secret) {
@@ -183,8 +185,34 @@ export function HomeView({
     setActiveFriend(null)
     setRoomCode(null)
     setQuery('')
+    setMobileFriendsOpen(next === 'friends')
     onSectionChange(next)
   }
+
+  const backToMobileNavigation = () => {
+    setActiveFriend(null)
+    setRoomCode(null)
+    setQuery('')
+    setMobileFriendsOpen(false)
+    onSectionChange('friends')
+  }
+
+  const mobileDetailOpen = Boolean(activeFriend) || section !== 'friends' || mobileFriendsOpen
+  const sidebarStyle = {
+    '--home-sidebar-width': `${sidebarWidth}px`,
+  } as CSSProperties
+
+  const mobileBack = (
+    <button
+      type="button"
+      className="btn btn-ghost btn-sm md:hidden"
+      data-testid="home-mobile-back"
+      onClick={backToMobileNavigation}
+    >
+      <span aria-hidden>←</span>
+      {tr('Back to navigation')}
+    </button>
+  )
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 bg-base-100" data-testid="home-view">
@@ -226,8 +254,8 @@ export function HomeView({
       )}
 
       <aside
-        className="relative flex h-full shrink-0 flex-col border-r border-base-300/80 bg-base-200/65"
-        style={{ width: sidebarWidth }}
+        className={`home-sidebar relative h-full shrink-0 flex-col border-r border-base-300/80 bg-base-200/65 ${mobileDetailOpen ? 'hidden md:flex' : 'flex'}`}
+        style={sidebarStyle}
         aria-label={tr('Direct messages')}
         data-testid="home-sidebar"
       >
@@ -321,7 +349,7 @@ export function HomeView({
         </button>
       </aside>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden bg-base-100">
+      <div className={`${mobileDetailOpen ? 'block' : 'hidden md:block'} min-h-0 min-w-0 flex-1 overflow-hidden bg-base-100`}>
           {section === 'friends' && activeFriend && roomCode ? (
             <GlobalDmChat
               friendName={activeFriend.subjectName}
@@ -343,10 +371,12 @@ export function HomeView({
               onClose={() => {
                 setActiveFriend(null)
                 setRoomCode(null)
+                setMobileFriendsOpen(false)
               }}
             />
           ) : section === 'friends' ? (
             <main className="h-full overflow-y-auto bg-base-100">
+              <div className="border-b border-base-300 bg-base-100 px-4 py-2 md:hidden">{mobileBack}</div>
               <header className="sticky top-0 z-10 flex h-[3.65rem] items-center border-b border-base-300/70 bg-base-100/95 px-5 backdrop-blur">
                 <Icon name="user" size={18} className="mr-2 text-base-content/55" />
                 <h1 className="font-semibold">{tr('Friends')}</h1>
@@ -367,9 +397,20 @@ export function HomeView({
                 />
               </div>
             </main>
-          ) : section === 'devices' ? devicesPanel : section === 'account' ? accountPanel : (
+          ) : section === 'devices' ? (
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="shrink-0 border-b border-base-300 bg-base-100 px-4 py-2 md:hidden">{mobileBack}</div>
+              <div className="min-h-0 flex-1">{devicesPanel}</div>
+            </div>
+          ) : section === 'account' ? (
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="shrink-0 border-b border-base-300 bg-base-100 px-4 py-2 md:hidden">{mobileBack}</div>
+              <div className="min-h-0 flex-1">{accountPanel}</div>
+            </div>
+          ) : (
             <main className="h-full overflow-y-auto bg-base-200 p-6 sm:p-10" data-testid="browser-storage-page">
               <div className="mx-auto max-w-3xl">
+                <div className="mb-3 md:hidden">{mobileBack}</div>
                 <h1 className="text-2xl font-bold">{tr('Browser storage')}</h1>
                 <p className="mt-2 text-sm text-base-content/65">{tr('Manage files and data kept locally by this browser.')}</p>
                 <div className="mt-6">

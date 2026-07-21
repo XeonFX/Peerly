@@ -10,12 +10,12 @@ describe('classifyJoinError', () => {
     expect(classifyJoinError('incorrect room password')).toBe('password-mismatch')
   })
 
-  it('detects post-SDP ICE failure (TURN advice path)', () => {
+  it('does not diagnose a generic post-SDP failure as missing TURN', () => {
     expect(
       classifyJoinError(
         'could not connect to peer abc after exchanging SDP; check that your TURN server URLs and credentials are reachable by both peers'
       )
-    ).toBe('needs-turn')
+    ).toBe('ice-failed')
   })
 
   it('detects handshake timeout separately from TURN', () => {
@@ -41,6 +41,7 @@ describe('isRecoverableJoinError', () => {
   it('rejoins local wedges without rebuilding a room for one unreachable peer', () => {
     expect(isRecoverableJoinError('handshake-timeout')).toBe(true)
     expect(isRecoverableJoinError('sdp-collision')).toBe(true)
+    expect(isRecoverableJoinError('ice-failed')).toBe(false)
     expect(isRecoverableJoinError('needs-turn')).toBe(false)
     expect(isRecoverableJoinError('password-mismatch')).toBe(false)
     expect(isRecoverableJoinError('unknown')).toBe(false)

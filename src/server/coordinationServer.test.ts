@@ -51,6 +51,12 @@ function send(socket, action, fields = {}) {
   socket.send(JSON.stringify({ v: 1, type: 'coord', action, ...fields }))
 }
 
+async function enableSeekAcknowledgements(socket) {
+  const ready = next(socket, 'ready')
+  send(socket, 'hello', { capabilities: ['seek-ack'] })
+  await ready
+}
+
 describe('coordination relay extension', () => {
   it('broadcasts presence independently of WebRTC', async () => {
     const url = await setup()
@@ -81,6 +87,56 @@ describe('coordination relay extension', () => {
     const statsP = next(watcher, 'seek.stats', message => message.total === 0)
     send(watcher, 'seek.watch', { pool: 'random' })
     await expect(statsP).resolves.toMatchObject({ total: 0, tags: {} })
+  })
+
+  it('commits a v2 match only after both seekers acknowledge the proposal', async () => {
+    const url = await setup()
+    const a = await client(url)
+    const b = await client(url)
+    await Promise.all([enableSeekAcknowledgements(a), enableSeekAcknowledgements(b)])
+
+    send(a, 'seek.set', { pool: 'random', memberId: 'a', tags: ['music'], data: 'a' })
+    const proposalA = next(a, 'seek.proposal')
+    const proposalB = next(b, 'seek.proposal')
+    send(b, 'seek.set', { pool: 'random', memberId: 'b', tags: ['music'], data: 'b' })
+    const [leftProposal, rightProposal] = await Promise.all([proposalA, proposalB])
+    expect(leftProposal.matchId).toBe(rightProposal.matchId)
+
+    const committed = []
+    const collect = data => {
+      const message = JSON.parse(data.toString()).payload
+      if (message?.type === 'seek.match') committed.push(message)
+    }
+    a.on('message', collect)
+    b.on('message', collect)
+    send(a, 'seek.ack', { pool: 'random', matchId: leftProposal.matchId })
+    await new Promise(resolve => setTimeout(resolve, 25))
+    expect(committed).toHaveLength(0)
+
+    const matchA = next(a, 'seek.match')
+    const matchB = next(b, 'seek.match')
+    send(b, 'seek.ack', { pool: 'random', matchId: leftProposal.matchId })
+    const [left, right] = await Promise.all([matchA, matchB])
+    expect(left.roomCode).toBe(right.roomCode)
+    expect(left.initiator).not.toBe(right.initiator)
+  })
+
+  it('returns the live seeker to the pool when its proposed partner disconnects', async () => {
+    const url = await setup()
+    const watcher = await client(url)
+    const a = await client(url)
+    const b = await client(url)
+    await Promise.all([enableSeekAcknowledgements(a), enableSeekAcknowledgements(b)])
+    send(watcher, 'seek.watch', { pool: 'random' })
+    send(a, 'seek.set', { pool: 'random', memberId: 'a', tags: ['music'], data: 'a' })
+    const proposalA = next(a, 'seek.proposal')
+    const proposalB = next(b, 'seek.proposal')
+    send(b, 'seek.set', { pool: 'random', memberId: 'b', tags: ['music'], data: 'b' })
+    await Promise.all([proposalA, proposalB])
+
+    const restored = next(watcher, 'seek.stats', message => message.total === 1)
+    b.close()
+    await expect(restored).resolves.toMatchObject({ total: 1, tags: { music: 1 } })
   })
 
   it('does not match users excluded by either seeker', async () => {
