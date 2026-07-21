@@ -341,7 +341,7 @@ function App() {
 
   return (
     <>
-      <div className="flex h-dvh min-h-0">
+      <div className="flex h-dvh min-h-0 max-sm:flex-col-reverse">
         <WorkspaceRail
           workspaces={railWorkspaces}
           activeWorkspaceId={session?.workspaceId}
@@ -352,7 +352,7 @@ function App() {
           onSyncSelect={() => navigate({ screen: 'sync' })}
           onCreateWorkspace={createWorkspace}
         />
-        <div className="min-w-0 flex-1 overflow-hidden">{content}</div>
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{content}</div>
       </div>
       {consentBanner}
       {friendInviteNotice && (

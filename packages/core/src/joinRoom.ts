@@ -21,7 +21,11 @@ export type Room = ReturnType<typeof joinNostrRoom>
  */
 const PASSWORD_MISMATCH_PATTERN = /incorrect room password/i
 
-/** Trystero found the peer and exchanged SDP, but no media path could be opened. */
+/**
+ * Trystero found the peer and exchanged SDP, but the connection did not open.
+ * This is deliberately not called `needs-turn`: the same diagnostic is emitted
+ * when a remote tab refreshes, closes, or loses its network after SDP exchange.
+ */
 const SDP_EXCHANGE_FAILURE_PATTERN = /after exchanging SDP/i
 
 /** Data-channel password/handshake never completed (often slow ICE via TURN). */
@@ -43,7 +47,9 @@ export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 25_000
 
 export type JoinErrorKind =
   | 'password-mismatch'
+  /** @deprecated `classifyJoinError` now returns `ice-failed`; kept for source compatibility. */
   | 'needs-turn'
+  | 'ice-failed'
   | 'handshake-timeout'
   | 'sdp-collision'
   | 'unknown'
@@ -59,7 +65,7 @@ export function classifyJoinError(message: string): JoinErrorKind {
   if (PASSWORD_MISMATCH_PATTERN.test(message)) return 'password-mismatch'
   if (HANDSHAKE_TIMEOUT_PATTERN.test(message)) return 'handshake-timeout'
   if (SDP_COLLISION_PATTERN.test(message)) return 'sdp-collision'
-  if (SDP_EXCHANGE_FAILURE_PATTERN.test(message)) return 'needs-turn'
+  if (SDP_EXCHANGE_FAILURE_PATTERN.test(message)) return 'ice-failed'
   return 'unknown'
 }
 

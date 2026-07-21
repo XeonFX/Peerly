@@ -19,6 +19,11 @@ export type RelayCoordinationEvent =
   | { type: 'presence.snapshot'; scope: string; members: RelayPresenceMember[] }
   | { type: 'seek.stats'; pool: string; total: number; tags: Record<string, number> }
   | {
+      type: 'seek.proposal'
+      pool: string
+      matchId: string
+    }
+  | {
       type: 'seek.match'
       pool: string
       matchId: string
@@ -36,6 +41,8 @@ export type RelayCoordinator = {
   unwatchSeek(pool: string): void
   setSeek(pool: string, memberId: string, tags: string[], data: string, excluded?: string[]): void
   clearSeek(pool: string): void
+  /** Acknowledge a v2 match proposal; the relay commits only after both peers ack. */
+  acknowledgeSeekMatch(pool: string, matchId: string): void
   watchRooms(directory: string): void
   unwatchRooms(directory: string): void
   setRoom(directory: string, roomId: string, data: string): void
@@ -80,7 +87,7 @@ export function createRelayCoordinator(
 
   const accepts = (message: Record<string, unknown>) => {
     if (message.type === 'presence.snapshot') return desired.has(`presence:${message.scope}`)
-    if (message.type === 'seek.stats' || message.type === 'seek.match') {
+    if (message.type === 'seek.stats' || message.type === 'seek.proposal' || message.type === 'seek.match') {
       return desired.has(`seek-watch:${message.pool}`) || desired.has(`seek:${message.pool}`)
     }
     if (message.type === 'room.snapshot') return desired.has(`room-watch:${message.directory}`)
@@ -125,7 +132,12 @@ export function createRelayCoordinator(
     if (!next) return
     socket = next
     socket.addEventListener('message', onMessage)
-    socket.send(JSON.stringify({ v: 1, type: 'coord', action: 'hello' }))
+    socket.send(JSON.stringify({
+      v: 1,
+      type: 'coord',
+      action: 'hello',
+      capabilities: ['seek-ack'],
+    }))
   }
 
   void (async () => {
@@ -158,6 +170,9 @@ export function createRelayCoordinator(
     }),
     clearSeek: pool => forget(`seek:${pool}`, {
       v: 1, type: 'coord', action: 'seek.clear', pool,
+    }),
+    acknowledgeSeekMatch: (pool, matchId) => send({
+      v: 1, type: 'coord', action: 'seek.ack', pool, matchId,
     }),
     watchRooms: directory => remember(`room-watch:${directory}`, {
       v: 1, type: 'coord', action: 'room.watch', directory,

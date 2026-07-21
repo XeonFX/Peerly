@@ -226,7 +226,7 @@ function WorkspaceShell({
       {sidebarOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-30 cursor-pointer bg-black/55 lg:hidden"
+          className="fixed inset-0 z-30 cursor-pointer bg-black/55 max-sm:bottom-16 lg:hidden"
           aria-label={tr('Close workspace menu')}
           onClick={() => onSidebarOpenChange(false)}
         />

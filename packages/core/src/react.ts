@@ -14,7 +14,7 @@ import {
   joinRoomByCode,
   type Room,
 } from './joinRoom.js'
-import { getSupabaseRoomConfig, resolveRelayUrls } from './relays.js'
+import { getIceServers, getSupabaseRoomConfig, resolveRelayUrls } from './relays.js'
 import { resolveSignalingStrategy } from './signaling.js'
 import {
   createRoomMedia,
@@ -28,6 +28,7 @@ import { createSpeakingDetector, type SpeakingDetector } from './speaking.js'
 
 export type RoomErrorKind =
   | 'password-mismatch'
+  | 'ice-failed'
   | 'needs-turn'
   | 'relay-failed'
   | 'supabase-config'
@@ -36,12 +37,29 @@ export type RoomErrorKind =
 const DEFAULT_ERROR_TEXT: Record<RoomErrorKind, (raw: string) => string> = {
   'password-mismatch': () =>
     'A peer tried to join with a different room code. If you cannot connect, check that your code matches exactly.',
+  'ice-failed': () =>
+    'Found the other peer, but the connection was interrupted. Waiting for them to reconnect.',
   'needs-turn': () =>
     'Found the other peer but could not open a direct connection — one of you is on a network that blocks peer-to-peer (strict NAT or firewall). Check TURN reachability (UDP/TCP, external-ip, credentials).',
   'relay-failed': raw => `Connection failed: ${raw}. Ensure the local relay is running.`,
   'supabase-config': () =>
     'Supabase signaling is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
   generic: raw => `Connection failed: ${raw}. Check your network or try again.`,
+}
+
+/**
+ * TURN advice is only actionable when this build has no TURN configuration.
+ * A generic post-SDP failure with TURN configured is commonly refresh/network
+ * churn and must not claim that the TURN service is missing or unreachable.
+ */
+export function roomErrorKindForJoinError(
+  kind: ReturnType<typeof classifyJoinError>,
+  turnConfigured: boolean
+): RoomErrorKind {
+  if (kind === 'password-mismatch') return 'password-mismatch'
+  if (kind === 'needs-turn') return 'needs-turn'
+  if (kind === 'ice-failed') return turnConfigured ? 'ice-failed' : 'needs-turn'
+  return 'generic'
 }
 
 /** Max automatic leave+rejoin cycles per room before surfacing the error. */
@@ -207,15 +225,13 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
           }
           if (isRecoverableJoinError(kind)) {
             scheduleRecovery(kind)
-            // Only surface TURN advice after recovery budget is exhausted.
-            const recovery = recoveryRef.current
-            if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS && kind === 'needs-turn') {
-              reportRef.current('needs-turn', msg)
-            }
             return
           }
-          if (kind === 'needs-turn') {
-            reportRef.current('needs-turn', msg)
+          if (kind === 'ice-failed') {
+            reportRef.current(
+              roomErrorKindForJoinError(kind, Boolean(getIceServers(envRef.current))),
+              msg
+            )
             return
           }
           if (strategy === 'ws-relay') {

@@ -39,7 +39,7 @@ export function WorkspaceRail({
 
   return (
     <nav
-      className="workspace-rail flex w-16 shrink-0 flex-col items-center gap-2 border-r border-base-300/70 bg-base-300/40 py-3"
+      className="workspace-rail flex w-16 shrink-0 flex-col items-center gap-2 border-r border-base-300/70 bg-base-300/40 py-3 max-sm:h-16 max-sm:w-full max-sm:flex-row max-sm:border-r-0 max-sm:border-t max-sm:px-2 max-sm:py-2"
       aria-label={tr('Workspaces')}
       data-testid="workspace-rail"
     >
@@ -61,7 +61,7 @@ export function WorkspaceRail({
         <Icon name="refresh" size={21} />
       </RailButton>
 
-      <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto max-sm:min-w-0 max-sm:flex-row max-sm:overflow-x-auto max-sm:overflow-y-hidden">
         {workspaces.map(workspace => (
           <RailButton
             key={workspace.workspaceId}
@@ -106,11 +106,11 @@ function RailButton({
   testId: string
 }) {
   return (
-    <div className="group relative flex w-full items-center justify-center">
+    <div className="group relative flex w-full items-center justify-center max-sm:w-auto max-sm:shrink-0">
       {/* Discord-style active/hover pill on the left edge. */}
       <span
-        className={`absolute left-0 w-1 rounded-r-full bg-primary transition-all ${
-          active ? 'h-8' : 'h-0 group-hover:h-4'
+        className={`absolute left-0 w-1 rounded-r-full bg-primary transition-all max-sm:bottom-[-0.5rem] max-sm:left-1/2 max-sm:h-1 max-sm:-translate-x-1/2 max-sm:rounded-t-full ${
+          active ? 'h-8 max-sm:w-8' : 'h-0 group-hover:h-4 max-sm:w-0 max-sm:group-hover:h-1 max-sm:group-hover:w-4'
         }`}
         aria-hidden
       />

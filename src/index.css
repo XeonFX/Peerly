@@ -200,6 +200,10 @@
     box-shadow: 0 18px 55px rgb(58 51 107 / 0.07);
   }
 
+  .home-sidebar {
+    width: var(--home-sidebar-width, 17.5rem);
+  }
+
   .storage-pressure-pill {
     @apply rounded-full border px-3 py-1 text-xs font-semibold;
   }
@@ -284,5 +288,11 @@
   .join-auth-layout {
     display: block;
     max-width: 30rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .home-sidebar {
+    width: 100%;
   }
 }

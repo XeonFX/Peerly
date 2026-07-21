@@ -25,6 +25,10 @@ describe('relay coordination client', () => {
       { getSockets: () => ({ 'ws://127.0.0.1:8080': socket as unknown as WebSocket }) }
     )
     await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
+    expect(JSON.parse(socket.sent[0])).toMatchObject({
+      action: 'hello',
+      capabilities: ['seek-ack'],
+    })
     coordinator.setPresence('scope', 'member', 'ciphertext')
     expect(socket.sent).toHaveLength(1)
 
@@ -33,6 +37,26 @@ describe('relay coordination client', () => {
     }))
     await vi.waitFor(() => expect(socket.sent).toHaveLength(2))
     expect(JSON.parse(socket.sent[1])).toMatchObject({ action: 'presence.set', scope: 'scope' })
+    coordinator.close()
+  })
+
+  it('acknowledges v2 proposals without storing them as desired state', async () => {
+    vi.stubGlobal('WebSocket', { OPEN: 1 })
+    const socket = new FakeSocket()
+    const coordinator = createRelayCoordinator(
+      { VITE_RELAY_PORT: '8080' },
+      { getSockets: () => ({ 'ws://127.0.0.1:8080': socket as unknown as WebSocket }) }
+    )
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
+    socket.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ topic: '__relay_coord_v1__', payload: { v: 1, type: 'ready' } }),
+    }))
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
+
+    coordinator.acknowledgeSeekMatch('random', 'match-1')
+    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
+      action: 'seek.ack', pool: 'random', matchId: 'match-1',
+    })
     coordinator.close()
   })
 

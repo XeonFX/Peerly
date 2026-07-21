@@ -12,6 +12,7 @@ const MAX_TAGS = 12
 const MAX_TAG_LENGTH = 96
 const MAX_EXCLUDED_MEMBERS = 100
 const MAX_COMMANDS_PER_MINUTE = 240
+const MATCH_PROPOSAL_TTL_MS = 12_000
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const validText = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max
@@ -39,6 +40,8 @@ export function attachCoordinationServer(wss) {
   const seekWatchers = new Map()
   const rooms = new Map()
   const roomWatchers = new Map()
+  const pendingMatches = new Map()
+  const pendingMatchBySocket = new Map()
   const socketState = new WeakMap()
 
   const mapFor = (root, scope) => {
@@ -62,6 +65,7 @@ export function attachCoordinationServer(wss) {
         watchedDirectories: new Set(),
         rateStartedAt: now(),
         rateCount: 0,
+        capabilities: new Set(),
       }
       socketState.set(socket, value)
     }
@@ -118,6 +122,44 @@ export function attachCoordinationServer(wss) {
     if (entries?.size === 0) seekers.delete(pool)
   }
 
+  const sendMatch = (socket, match, side) => {
+    const other = match.sides[side === 0 ? 1 : 0]
+    direct(socket, 'seek.match', {
+      pool: match.pool,
+      matchId: match.matchId,
+      roomCode: match.roomCode,
+      initiator: side === 0,
+      partner: { memberId: other.entry.memberId, data: other.entry.data },
+    })
+  }
+
+  const restorePendingSide = (match, side) => {
+    const item = match.sides[side]
+    if (item.socket.readyState !== 1 || !socketState.has(item.socket)) return
+    mapFor(seekers, match.pool).set(item.socket, { ...item.entry, seenAt: now() })
+    stateFor(item.socket).seekPools.add(match.pool)
+  }
+
+  const cancelPendingMatch = (matchId, exceptSocket) => {
+    const match = pendingMatches.get(matchId)
+    if (!match) return
+    pendingMatches.delete(matchId)
+    const restoredSockets = []
+    for (let side = 0; side < match.sides.length; side += 1) {
+      const socket = match.sides[side].socket
+      pendingMatchBySocket.delete(socket)
+      if (socket !== exceptSocket) {
+        restorePendingSide(match, side)
+        restoredSockets.push(socket)
+      }
+    }
+    sendSeekStats(match.pool)
+    // setSeek is durable client intent, not a polling heartbeat. Retry matching
+    // restored seekers now; otherwise a missed proposal acknowledgement would
+    // leave both sides parked forever until one reconnects.
+    for (const socket of restoredSockets) tryMatch(match.pool, socket)
+  }
+
   const tryMatch = (pool, socket) => {
     const entries = seekers.get(pool)
     const mine = entries?.get(socket)
@@ -132,20 +174,30 @@ export function attachCoordinationServer(wss) {
       stateFor(otherSocket).seekPools.delete(pool)
       const matchId = randomUUID()
       const roomCode = randomBytes(16).toString('hex')
-      direct(socket, 'seek.match', {
+      const supportsAck = stateFor(socket).capabilities.has('seek-ack') &&
+        stateFor(otherSocket).capabilities.has('seek-ack')
+      const match = {
         pool,
         matchId,
         roomCode,
-        initiator: true,
-        partner: { memberId: other.memberId, data: other.data },
-      })
-      direct(otherSocket, 'seek.match', {
-        pool,
-        matchId,
-        roomCode,
-        initiator: false,
-        partner: { memberId: mine.memberId, data: mine.data },
-      })
+        sides: [
+          { socket, entry: mine },
+          { socket: otherSocket, entry: other },
+        ],
+        acknowledgements: new Set(),
+        expiresAt: now() + MATCH_PROPOSAL_TTL_MS,
+      }
+      if (supportsAck) {
+        pendingMatches.set(matchId, match)
+        pendingMatchBySocket.set(socket, matchId)
+        pendingMatchBySocket.set(otherSocket, matchId)
+        direct(socket, 'seek.proposal', { pool, matchId })
+        direct(otherSocket, 'seek.proposal', { pool, matchId })
+      } else {
+        // Rolling-deploy fallback: old clients do not understand proposals.
+        sendMatch(socket, match, 0)
+        sendMatch(otherSocket, match, 1)
+      }
       sendSeekStats(pool)
       return true
     }
@@ -167,6 +219,8 @@ export function attachCoordinationServer(wss) {
   const removeSocket = socket => {
     const state = socketState.get(socket)
     if (!state) return
+    const pendingMatchId = pendingMatchBySocket.get(socket)
+    if (pendingMatchId) cancelPendingMatch(pendingMatchId, socket)
     for (const scope of state.presenceScopes) {
       presence.get(scope)?.delete(socket)
       sendPresence(scope)
@@ -200,6 +254,10 @@ export function attachCoordinationServer(wss) {
     const timestamp = now()
 
     if (command.action === 'hello') {
+      const capabilities = Array.isArray(command.capabilities)
+        ? command.capabilities.filter(value => typeof value === 'string' && value.length <= 40)
+        : []
+      state.capabilities = new Set(capabilities)
       direct(socket, 'ready', { connectionId: state.id })
       return
     }
@@ -237,6 +295,7 @@ export function attachCoordinationServer(wss) {
           .slice(0, MAX_EXCLUDED_MEMBERS)
         : []
       if (tags.length === 0) return
+      if (pendingMatchBySocket.has(socket)) return
       mapFor(seekers, command.pool).set(socket, {
         memberId: command.memberId,
         tags,
@@ -264,9 +323,26 @@ export function attachCoordinationServer(wss) {
     }
 
     if (command.action === 'seek.clear' && validText(command.pool, MAX_SCOPE_LENGTH)) {
+      const pendingMatchId = pendingMatchBySocket.get(socket)
+      const pendingMatch = pendingMatchId ? pendingMatches.get(pendingMatchId) : undefined
+      if (pendingMatch?.pool === command.pool) cancelPendingMatch(pendingMatchId, socket)
       seekers.get(command.pool)?.delete(socket)
       state.seekPools.delete(command.pool)
       sendSeekStats(command.pool)
+      return
+    }
+
+    if (command.action === 'seek.ack' &&
+        validText(command.pool, MAX_SCOPE_LENGTH) &&
+        validText(command.matchId, MAX_MEMBER_LENGTH)) {
+      const match = pendingMatches.get(command.matchId)
+      if (!match || match.pool !== command.pool || !match.sides.some(side => side.socket === socket)) return
+      match.acknowledgements.add(socket)
+      if (match.acknowledgements.size !== 2) return
+      pendingMatches.delete(match.matchId)
+      match.sides.forEach(side => pendingMatchBySocket.delete(side.socket))
+      sendMatch(match.sides[0].socket, match, 0)
+      sendMatch(match.sides[1].socket, match, 1)
       return
     }
 
@@ -322,6 +398,9 @@ export function attachCoordinationServer(wss) {
     for (const [scope, entries] of presence) if (pruneMap(entries, PRESENCE_TTL_MS)) sendPresence(scope)
     for (const [pool, entries] of seekers) if (pruneMap(entries, SEEK_TTL_MS)) sendSeekStats(pool)
     for (const [directory, entries] of rooms) if (pruneMap(entries, ROOM_TTL_MS)) sendRooms(directory)
+    for (const [matchId, match] of pendingMatches) {
+      if (match.expiresAt <= now()) cancelPendingMatch(matchId)
+    }
   }, SWEEP_MS)
   sweep.unref()
 
@@ -333,6 +412,8 @@ export function attachCoordinationServer(wss) {
       seekWatchers.clear()
       rooms.clear()
       roomWatchers.clear()
+      pendingMatches.clear()
+      pendingMatchBySocket.clear()
     },
   }
 }
