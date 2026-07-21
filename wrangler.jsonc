@@ -6,7 +6,8 @@
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
   },
   "env": {
     // A single, stable staging worker for testing any branch with real Google
@@ -20,7 +21,8 @@
       "assets": {
         "binding": "ASSETS",
         "directory": "./dist",
-        "not_found_handling": "single-page-application"
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*"]
       }
     }
   }
