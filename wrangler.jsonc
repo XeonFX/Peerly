@@ -3,6 +3,11 @@
   "name": "peerly",
   "main": "worker/index.mjs",
   "compatibility_date": "2026-07-16",
+  "vars": {
+    // The auth bridge executes in the Worker runtime, where Cloudflare's
+    // build-time VITE_* variables are not available automatically.
+    "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com"
+  },
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
