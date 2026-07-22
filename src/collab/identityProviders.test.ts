@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getConfiguredIdentityProviders,
+  getIdentityProvider,
   identityConfigurationError,
   isIdentityConfigured,
   resetIdentityProviderCache,
 } from './identityProviders'
+import { E2E_GOOGLE_CLIENT_ID } from './e2eAuth'
 
 beforeEach(() => {
   resetIdentityProviderCache()
@@ -23,6 +25,19 @@ afterEach(() => {
 })
 
 describe('identityProviders', () => {
+  it('registers the fake Google provider for E2E auth bypass', async () => {
+    vi.stubEnv('VITE_E2E_AUTH_BYPASS', 'true')
+    resetIdentityProviderCache()
+
+    const provider = getIdentityProvider('google')
+    expect(provider?.clientId).toBe(E2E_GOOGLE_CLIENT_ID)
+    expect(provider?.fetchJwks).toBeTypeOf('function')
+    await expect(provider!.fetchJwks!()).resolves.toMatchObject({
+      keys: [expect.objectContaining({ kid: 'e2e-google' })],
+    })
+    expect(isIdentityConfigured()).toBe(true)
+  })
+
   it('reports configured when Google client id is set', () => {
     vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'abc.apps.googleusercontent.com')
     resetIdentityProviderCache()

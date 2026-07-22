@@ -1,5 +1,5 @@
 import { GOOGLE_ISSUERS, GOOGLE_JWKS_URL } from '@peerly/core'
-import { isE2eAuthBypass } from './e2eAuth'
+import { E2E_GOOGLE_CLIENT_ID, getE2eJwksFetcher, isE2eAuthBypass } from './e2eAuth'
 import type { JwksFetcher } from './oidcIdToken'
 
 /**
@@ -36,6 +36,17 @@ function env(key: keyof ImportMetaEnv): string | undefined {
 }
 
 function googleProvider(): IdentityProvider | null {
+  if (isE2eAuthBypass()) {
+    return {
+      id: 'google',
+      label: 'Google',
+      clientId: E2E_GOOGLE_CLIENT_ID,
+      issuers: GOOGLE_ISSUERS,
+      jwksUrl: GOOGLE_JWKS_URL,
+      fetchJwks: getE2eJwksFetcher(),
+    }
+  }
+
   const clientId = env('VITE_GOOGLE_CLIENT_ID')
   if (!clientId) return null
   return {
