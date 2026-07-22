@@ -38,6 +38,7 @@ const payload = {
   dmSecret: '0123456789abcdef0123456789abcdef',
   ts: Date.now(),
   deviceKeyId: 'P-256:x:y',
+  attestation: { providerId: 'google', idToken: 'header.payload.signature' },
   sig: 'sig',
 } satisfies FriendInvitePayload
 

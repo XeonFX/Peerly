@@ -1,60 +1,111 @@
-import { createWsRelayServer } from '@trystero-p2p/ws-relay/server'
+import { createServer } from 'node:http'
+import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createBoundedRelayServer } from '../packages/core/server/boundedRelay.mjs'
 import { attachCoordinationServer } from './coordination.mjs'
 
 // Production signaling relay for Peerly and authorized consumer apps.
 //
-// This is the deployed counterpart to the dev-only relay.mjs. It runs on the
-// shared VPS as a systemd service behind nginx (which terminates TLS on the
-// configured relay hostnames), listening only on localhost. Unlike a public
-// Nostr relay, access is restricted to configured apps:
-// every WebSocket upgrade must present the per-app token in a `?token=` query
-// param, matched against the Host header. Apps point at it with
-// VITE_SIGNALING=ws-relay + VITE_RELAY_HOST/VITE_RELAY_TOKEN (see @peerly/core
-// relays.ts, added in 1.2.1).
+// Runs behind TLS-terminating nginx and listens only on loopback. Every
+// WebSocket upgrade must present a short-lived, audience-bound `?ticket=`
+// minted by the app worker after OIDC + live-device verification. Static
+// browser query tokens are deliberately unsupported.
 //
-// Deploy: copy to /opt/relay/relay-server.mjs on the VPS, `npm install`, run
-// under the configured relay systemd unit with RELAY_TOKENS / RELAY_PORT in
-// the environment.
+// Deploy with RELAY_TICKET_SECRETS="relay.example.com=secret" and RELAY_PORT.
 
-// Which hosts are served, and the token each requires, come entirely from the
-// environment so no deployment topology is baked into source. RELAY_TOKENS is a
-// comma-separated list of `host=token` pairs, e.g.
-//   RELAY_TOKENS="relay.example.com=s3cret,relay.other.app=hunter2"
-function parseTokens(raw) {
+function parsePairs(raw, label, required = true) {
   const map = new Map()
   for (const entry of (raw || '').split(',')) {
     const trimmed = entry.trim()
     if (!trimmed) continue
     const eq = trimmed.indexOf('=')
-    if (eq < 1) throw new Error(`RELAY_TOKENS entry is not host=token: "${trimmed}"`)
+    if (eq < 1) throw new Error(`${label} entry is not host=value: "${trimmed}"`)
     const host = trimmed.slice(0, eq).trim()
     const token = trimmed.slice(eq + 1).trim()
-    if (!host || !token) throw new Error(`RELAY_TOKENS entry has empty host or token: "${trimmed}"`)
-    map.set(host, token)
+    if (!host || !token) throw new Error(`${label} entry has empty host or value: "${trimmed}"`)
+    map.set(host.toLowerCase(), token)
   }
-  if (map.size === 0) throw new Error('RELAY_TOKENS is empty — set host=token pairs')
+  if (required && map.size === 0) throw new Error(`${label} is empty — set host=value pairs`)
   return map
 }
 
-const tokensByHost = parseTokens(process.env.RELAY_TOKENS)
+const ticketSecretsByHost = parsePairs(process.env.RELAY_TICKET_SECRETS, 'RELAY_TICKET_SECRETS')
 
 const port = Number(process.env.RELAY_PORT) || 8090
 
+function readTicket(ticket, host) {
+  try {
+    const [body, signature] = ticket.split('.')
+    if (!body || !signature) return null
+    const secret = ticketSecretsByHost.get(host)
+    if (!secret) return null
+    const expected = createHmac('sha256', secret).update(body).digest()
+    const received = Buffer.from(signature, 'base64url')
+    if (received.length !== expected.length || !timingSafeEqual(received, expected)) return null
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
+    const valid = payload.v === 1 && payload.aud === host &&
+      typeof payload.sub === 'string' && payload.sub.length > 0 && payload.sub.length <= 512 &&
+      typeof payload.exp === 'number' && payload.exp > Math.floor(Date.now() / 1000)
+    return valid ? payload : null
+  } catch {
+    return null
+  }
+}
+
 const verifyClient = (info, cb) => {
-  const host = (info.req.headers.host || '').split(':')[0]
-  const expected = tokensByHost.get(host)
-  if (!expected) return cb(false, 404, 'unknown host')
+  const host = (info.req.headers.host || '').split(':')[0].toLowerCase()
+  if (!ticketSecretsByHost.has(host)) return cb(false, 404, 'unknown host')
 
   const url = new URL(info.req.url, `http://${host}`)
-  const token = url.searchParams.get('token')
-  if (token !== expected) return cb(false, 401, 'unauthorized')
+  const ticket = url.searchParams.get('ticket') ?? ''
+  const payload = readTicket(ticket, host)
+  if (!payload) return cb(false, 401, 'unauthorized')
 
+  // Used by the bounded relay and coordinator for quotas that survive
+  // reconnects. The subject is an opaque digest minted by the Worker.
+  info.req.peerlySubject = payload.sub
+  info.req.peerlyClientKey = `${host}:${payload.sub}`
   cb(true)
 }
 
-const relay = await createWsRelayServer({ port, verifyClient, maxPayload: 256 * 1024 })
+const relay = createBoundedRelayServer({
+  host: '127.0.0.1',
+  port,
+  verifyClient,
+  clientKey: (_socket, request) => request.peerlyClientKey,
+  maxConnections: Number(process.env.RELAY_MAX_CONNECTIONS) || 5_000,
+  maxConnectionsPerClient: Number(process.env.RELAY_MAX_CONNECTIONS_PER_CLIENT) || 8,
+  maxMessagesPerClientPerMinute: Number(process.env.RELAY_MAX_MESSAGES_PER_CLIENT_MINUTE) || 1_200,
+  maxPayload: 256 * 1024,
+})
 await relay.ready
 const coordination = attachCoordinationServer(relay.wss)
+
+const healthPort = Number(process.env.RELAY_HEALTH_PORT) || 8091
+const health = createServer((request, response) => {
+  if (request.url === '/healthz' || request.url === '/readyz') {
+    const ok = relay.isReady()
+    response.writeHead(ok ? 200 : 503, {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+    })
+    response.end(JSON.stringify({ ok }))
+    return
+  }
+  if (request.url === '/metrics') {
+    const metrics = {
+      relay: relay.metrics(),
+      coordinator: coordination.metrics(),
+    }
+    response.writeHead(200, { 'content-type': 'text/plain; version=0.0.4', 'cache-control': 'no-store' })
+    response.end(Object.entries(metrics)
+      .flatMap(([component, values]) => Object.entries(values)
+        .map(([key, value]) => `peerly_${component}_${key} ${value}`))
+      .join('\n') + '\n')
+    return
+  }
+  response.writeHead(404).end()
+})
+health.listen(healthPort, '127.0.0.1')
 
 // ws never detects a half-open TCP connection on its own: a peer whose tab
 // crashed, slept, or dropped off wifi leaves a socket that stays "open" server
@@ -91,6 +142,7 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, async () => {
     clearInterval(heartbeat)
     coordination.close()
+    await new Promise(resolve => health.close(resolve))
     await relay.close()
     process.exit(0)
   })

@@ -2,12 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   createPresenceIndex,
   PRESENCE_INTERVAL_MS,
+  signControl,
   signDmRing,
+  verifySignedControl,
+  verifyOidcDeviceBinding,
+  type OidcDeviceAttestation,
   verifyDmRing,
   type PresencePayload,
+  type SignedControl,
 } from '@peerly/core'
-import { useLatest, useRoom } from '@peerly/core/react'
+import { useLatest, useRelayChannel } from '@peerly/core/react'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
+import { defaultJwksFetcher, getIdentityProvider } from '../collab/identityProviders'
 import {
   createFriendInvite,
   createFriendInviteResponse,
@@ -36,7 +42,7 @@ import {
   type DmRingPayload,
   type DmRingReason,
 } from '../collab/dmRing'
-import { LOBBY_APP_ID, LOBBY_ROOM_ID } from '../collab/mesh'
+import { LOBBY_ROOM_ID } from '../collab/mesh'
 import {
   addFriend,
   dmDeviceKeyForFriend,
@@ -46,6 +52,7 @@ import {
 } from '../collab/friendsStore'
 
 const DM_RING_SCHEME = 'peerly-dm-ring-v2'
+const PRESENCE_SCHEME = 'peerly-presence-v1'
 
 /** Re-send undelivered (or re-deliver) invites while the peer stays online. */
 const INVITE_RETRY_MS = 8_000
@@ -59,6 +66,8 @@ export type LobbyProfile = {
 export type PresenceLobbyOptions = {
   identity: DeviceIdentity | null
   profile: LobbyProfile | null
+  /** Fresh OIDC token bound to `identity` by its nonce. */
+  attestation: OidcDeviceAttestation | null
   /** Bump friends UI when an accept lands. */
   onFriendsChanged?: () => void
   /** Friend rang this device to open a global DM room. */
@@ -68,7 +77,7 @@ export type PresenceLobbyOptions = {
 }
 
 /**
- * Shared public lobby for friend presence + email invites.
+ * Relay-forwarded public lobby for friend presence + email invites.
  *
  * Presence carries only email hashes. Invites are signed with the device key
  * and delivered directed when a matching peer is online. Offline targets stay
@@ -77,12 +86,14 @@ export type PresenceLobbyOptions = {
 export function usePresenceLobby({
   identity,
   profile,
+  attestation,
   onFriendsChanged,
   onDmRing,
   onFriendInvite,
 }: PresenceLobbyOptions) {
   const profileRef = useLatest(profile)
   const identityRef = useLatest(identity)
+  const attestationRef = useLatest(attestation)
   const onFriendsChangedRef = useLatest(onFriendsChanged)
   const onDmRingRef = useLatest(onDmRing)
   const onFriendInviteRef = useLatest(onFriendInvite)
@@ -98,16 +109,15 @@ export function usePresenceLobby({
   const myEmailHashRef = useRef<string>('')
 
   const sendersRef = useRef<{
-    presence: (msg: PresencePayload, to?: string) => void
     invite: (msg: FriendInvitePayload, to: string) => void
     inviteResp: (msg: FriendInviteResponsePayload, to: string) => void
     dmRing: (msg: DmRingPayload, to: string) => void
   } | null>(null)
 
-  const roomEnabled = Boolean(profile?.userId && profile.email && identity)
-  const { room } = useRoom({
-    appId: LOBBY_APP_ID,
-    roomId: roomEnabled ? LOBBY_ROOM_ID : '',
+  const roomEnabled = Boolean(profile?.userId && profile.email && identity && attestation)
+  const { room } = useRelayChannel({
+    channel: roomEnabled ? `peerly:presence:${LOBBY_ROOM_ID}` : '',
+    memberId: roomEnabled ? profile?.userId ?? '' : '',
     env: import.meta.env,
     onError: message => {
       if (connectedPeersRef.current === 0) setLobbyError(message)
@@ -133,7 +143,37 @@ export function usePresenceLobby({
 
     const presence = presenceIndexRef.current
 
-    const presenceAction = room.makeAction<PresencePayload>('pres')
+    const verifyAttestedPeer = async (value: {
+      attestation: OidcDeviceAttestation
+      deviceKeyId: string
+      fromUserId: string
+      fromEmail?: string
+    }) => {
+      const provider = getIdentityProvider(value.attestation.providerId)
+      if (!provider) return null
+      const binding = await verifyOidcDeviceBinding(
+        value.attestation,
+        {
+          providerId: provider.id,
+          deviceKeyId: value.deviceKeyId,
+          userId: value.fromUserId,
+        },
+        {
+          expectedAudience: provider.clientId,
+          issuers: provider.issuers,
+          fetchJwks: provider.fetchJwks ?? defaultJwksFetcher(provider.jwksUrl),
+          jwksCacheKey: provider.id,
+          emailVerifiedClaim: provider.emailVerifiedClaim,
+        }
+      )
+      if (!binding) return null
+      if (value.fromEmail && normalizeEmail(binding.claims.email) !== normalizeEmail(value.fromEmail)) {
+        return null
+      }
+      return binding
+    }
+
+    const presenceAction = room.makeAction<SignedControl<PresencePayload>>('pres')
     const inviteAction = room.makeAction<FriendInvitePayload>('finv')
     const inviteRespAction = room.makeAction<FriendInviteResponsePayload>('finvr')
     const dmRingAction = room.makeAction<DmRingPayload>('dmring')
@@ -141,13 +181,17 @@ export function usePresenceLobby({
     const announcePresence = (to?: string) => {
       const me = profileRef.current
       const hash = myEmailHashRef.current
-      if (!me || !hash) return
+      const id = identityRef.current
+      const proof = attestationRef.current
+      if (!me || !hash || !id || !proof) return
       const payload: PresencePayload = {
         userId: me.userId,
         name: me.name,
         emailHash: hash,
       }
-      void presenceAction.send(payload, to ? { target: to } : undefined)
+      void signControl(id, PRESENCE_SCHEME, 'presence', me.userId, payload, {
+        attestation: proof,
+      }).then(message => presenceAction.send(message, to ? { target: to } : undefined))
     }
 
     const recordPresence = (peerId: string, parsed: PresencePayload) => {
@@ -190,7 +234,6 @@ export function usePresenceLobby({
     }
 
     sendersRef.current = {
-      presence: (msg, to) => void presenceAction.send(msg, to ? { target: to } : undefined),
       invite: (msg, to) => void inviteAction.send(msg, { target: to }),
       inviteResp: (msg, to) => void inviteRespAction.send(msg, { target: to }),
       dmRing: (msg, to) => void dmRingAction.send(msg, { target: to }),
@@ -203,12 +246,26 @@ export function usePresenceLobby({
       if (peers > 0) setLobbyError(null)
     }
 
-    presenceAction.onMessage = (msg, { peerId }) => {
-      const parsed = parsePresencePayload(msg)
-      if (!parsed) return
-      recordPresence(peerId, parsed)
-      // New peer might match a pending invite.
-      deliverPendingInvites()
+    presenceAction.onMessage = (raw, { peerId }) => {
+      void (async () => {
+        const message = await verifySignedControl<PresencePayload>(
+          raw,
+          PRESENCE_SCHEME,
+          'presence'
+        )
+        if (!message || !message.attestation) return
+        const parsed = parsePresencePayload(message.payload)
+        if (!parsed || parsed.userId !== message.userId) return
+        const binding = await verifyAttestedPeer({
+          attestation: message.attestation,
+          deviceKeyId: message.deviceKeyId,
+          fromUserId: message.userId,
+        })
+        if (!binding || await hashEmail(binding.claims.email) !== parsed.emailHash) return
+        recordPresence(peerId, parsed)
+        // New verified peer might match a pending invite.
+        deliverPendingInvites()
+      })()
     }
 
     dmRingAction.onMessage = (msg, { peerId }) => {
@@ -234,6 +291,7 @@ export function usePresenceLobby({
         const parsed = parseFriendInvitePayload(msg)
         if (!parsed) return
         if (!(await verifyFriendInvite(parsed))) return
+        if (!(await verifyAttestedPeer(parsed))) return
         const me = profileRef.current
         const myHash = myEmailHashRef.current
         if (!me || !myHash || parsed.toEmailHash !== myHash) return
@@ -241,7 +299,8 @@ export function usePresenceLobby({
         // Already friends — auto-ack so their outgoing queue clears.
         if (isFriend(loadFriends(), parsed.fromUserId)) {
           const id = identityRef.current
-          if (id) {
+          const proof = attestationRef.current
+          if (id && proof) {
             try {
               await addFriend(loadFriends(), id, {
                 ownerUserId: me.userId,
@@ -259,6 +318,7 @@ export function usePresenceLobby({
                 fromEmail: me.email,
                 toUserId: parsed.fromUserId,
                 dmSecret: parsed.dmSecret,
+                attestation: proof,
               })
               void inviteRespAction.send(resp, { target: peerId })
             } catch {
@@ -291,6 +351,8 @@ export function usePresenceLobby({
         const parsed = parseFriendInviteResponsePayload(msg)
         if (!parsed) return
         if (!(await verifyFriendInviteResponse(parsed))) return
+        const verified = await verifyAttestedPeer(parsed)
+        if (!verified) return
         const me = profileRef.current
         const id = identityRef.current
         if (!me || !id) return
@@ -299,6 +361,7 @@ export function usePresenceLobby({
         // Capture typed target email before removing the pending row.
         const out = loadOutgoingInvites().find(o => o.inviteId === parsed.inviteId)
         if (!out || presence.get(peerId)?.userId !== parsed.fromUserId) return
+        if (normalizeEmail(verified.claims.email) !== normalizeEmail(out.toEmail)) return
         setOutgoing(prev => removeOutgoingInvite(prev, parsed.inviteId))
 
         if (!parsed.accept) return
@@ -365,13 +428,14 @@ export function usePresenceLobby({
       connectedPeersRef.current = 0
       setOnlineCount(0)
     }
-  }, [room, roomEnabled, profileRef, identityRef, onFriendsChangedRef, onDmRingRef, onFriendInviteRef])
+  }, [room, roomEnabled, profileRef, identityRef, attestationRef, onFriendsChangedRef, onDmRingRef, onFriendInviteRef])
 
   const inviteByEmail = useCallback(
     async (toEmail: string): Promise<{ ok: true } | { ok: false; error: string }> => {
       const me = profileRef.current
       const id = identityRef.current
-      if (!me || !id) return { ok: false, error: 'Not signed in' }
+      const proof = attestationRef.current
+      if (!me || !id || !proof) return { ok: false, error: 'Sign in again before inviting' }
       if (!isPlausibleEmail(toEmail)) return { ok: false, error: 'Enter a valid email' }
       const normalized = normalizeEmail(toEmail)
       if (normalized === normalizeEmail(me.email)) {
@@ -400,6 +464,7 @@ export function usePresenceLobby({
           fromName: me.name,
           fromEmail: me.email,
           toEmail: normalized,
+          attestation: proof,
         })
         const entry: OutgoingFriendInvite = {
           inviteId,
@@ -427,14 +492,15 @@ export function usePresenceLobby({
         return { ok: false, error: e instanceof Error ? e.message : 'Could not create invite' }
       }
     },
-    [profileRef, identityRef]
+    [profileRef, identityRef, attestationRef]
   )
 
   const acceptInvite = useCallback(
     async (inviteId: string): Promise<boolean> => {
       const me = profileRef.current
       const id = identityRef.current
-      if (!me || !id) return false
+      const proof = attestationRef.current
+      if (!me || !id || !proof) return false
       const entry = loadIncomingInvites().find(i => i.inviteId === inviteId)
       if (!entry) return false
 
@@ -447,6 +513,7 @@ export function usePresenceLobby({
           fromEmail: me.email,
           toUserId: entry.fromUserId,
           dmSecret: entry.payload.dmSecret,
+          attestation: proof,
         })
         const peerIds = presenceIndexRef.current.peerIdsForUserId(entry.fromUserId)
         if (sendersRef.current) {
@@ -470,14 +537,15 @@ export function usePresenceLobby({
         return false
       }
     },
-    [profileRef, identityRef, onFriendsChangedRef]
+    [profileRef, identityRef, attestationRef, onFriendsChangedRef]
   )
 
   const declineInvite = useCallback(
     async (inviteId: string): Promise<boolean> => {
       const me = profileRef.current
       const id = identityRef.current
-      if (!me || !id) return false
+      const proof = attestationRef.current
+      if (!me || !id || !proof) return false
       const entry = loadIncomingInvites().find(i => i.inviteId === inviteId)
       if (!entry) return false
       try {
@@ -488,6 +556,7 @@ export function usePresenceLobby({
           fromName: me.name,
           fromEmail: me.email,
           toUserId: entry.fromUserId,
+          attestation: proof,
         })
         const peerIds = presenceIndexRef.current.peerIdsForUserId(entry.fromUserId)
         if (sendersRef.current) {
@@ -499,7 +568,7 @@ export function usePresenceLobby({
         return false
       }
     },
-    [profileRef, identityRef]
+    [profileRef, identityRef, attestationRef]
   )
 
   const cancelOutgoing = useCallback((inviteId: string) => {

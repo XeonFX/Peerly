@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { configureRuntimeAuthCredentialProvider } from '@peerly/core'
 import { isE2eAuthBypass } from './collab/e2eAuth'
 import { DeviceIdentity } from './collab/deviceIdentity'
 import { loadStoredProfile } from './collab/profileStore'
@@ -6,13 +7,8 @@ import { WorkspaceAuthManager } from './collab/workspaceAuth'
 import { ConsentBanner } from './components/ConsentBanner'
 import { HomeView } from './components/HomeView'
 import { JoinScreen } from './components/JoinScreen'
-import { MyDevicesPage } from './components/MyDevicesPage'
-import { SyncActivityPage } from './components/SyncActivityPage'
 import type { DmRingPayload } from './collab/dmRing'
-import { LegalPage } from './legal/LegalPage'
-import { Workspace } from './components/Workspace'
 import { WorkspaceRail } from './components/WorkspaceRail'
-import { AccountPreferencesPage } from './components/AccountPreferencesPage'
 import { acceptCurrentLegal, hasAcceptedCurrentLegal } from './consent'
 import { defaultWorkspaceRoute } from './routing'
 import { useAppRouting } from './hooks/useAppRouting'
@@ -32,6 +28,7 @@ import {
   clearIdCredentials,
   hydrateSessionAvatar,
   loadIdentityEmail,
+  loadIdentityProvider,
   loadIdentityUserId,
   loadIdToken,
   loadSession,
@@ -43,6 +40,20 @@ import {
 } from './session'
 import type { IncomingFriendInvite } from './collab/friendInviteStore'
 import { loadDmNotificationsEnabled } from './collab/notificationPreference'
+
+const MyDevicesPage = lazy(() => import('./components/MyDevicesPage').then(module => ({ default: module.MyDevicesPage })))
+const SyncActivityPage = lazy(() => import('./components/SyncActivityPage').then(module => ({ default: module.SyncActivityPage })))
+const LegalPage = lazy(() => import('./legal/LegalPage').then(module => ({ default: module.LegalPage })))
+const Workspace = lazy(() => import('./components/Workspace').then(module => ({ default: module.Workspace })))
+const AccountPreferencesPage = lazy(() => import('./components/AccountPreferencesPage').then(module => ({ default: module.AccountPreferencesPage })))
+
+const deviceIdentity = new DeviceIdentity()
+
+configureRuntimeAuthCredentialProvider(() => {
+  const token = loadIdToken()
+  const providerId = loadIdentityProvider()
+  return token && providerId ? { token, providerId, signer: deviceIdentity } : null
+})
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -57,7 +68,6 @@ function App() {
     setLegalAccepted(true)
   }
 
-  const deviceIdentity = useMemo(() => new DeviceIdentity(), [])
   // Friends outlive the open workspace — use durable identity userId on home too.
   const ownerUserId = session?.identityUserId ?? loadIdentityUserId() ?? undefined
   const friendsApi = useFriends(deviceIdentity, ownerUserId)
@@ -107,6 +117,11 @@ function App() {
   const presence = usePresenceLobby({
     identity: lobbyProfile ? deviceIdentity : null,
     profile: lobbyProfile,
+    attestation: (() => {
+      const idToken = loadIdToken()
+      const providerId = loadIdentityProvider()
+      return idToken && providerId ? { idToken, providerId } : null
+    })(),
     onFriendsChanged: friendsApi.reload,
     onDmRing: ring => setPendingDmRing(ring),
     onFriendInvite: notifyFriendInvite,
@@ -333,7 +348,9 @@ function App() {
   if (!identityEmail) {
     return (
       <>
-        {content}
+        <Suspense fallback={<div className="flex h-full items-center justify-center" role="status">Loading…</div>}>
+          {content}
+        </Suspense>
         {consentBanner}
       </>
     )
@@ -352,12 +369,16 @@ function App() {
           onSyncSelect={() => navigate({ screen: 'sync' })}
           onCreateWorkspace={createWorkspace}
         />
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{content}</div>
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <Suspense fallback={<div className="flex h-full items-center justify-center" role="status">Loading…</div>}>
+            {content}
+          </Suspense>
+        </div>
       </div>
       {consentBanner}
       {friendInviteNotice && (
         <div className="toast toast-end toast-top z-50" data-testid="friend-request-notification">
-          <div className="alert alert-info shadow-lg">
+          <div className="alert alert-info shadow-lg" role="status" aria-live="polite">
             <span><strong>{friendInviteNotice.fromName}</strong> sent you a friend request.</span>
             <button type="button" className="btn btn-sm" onClick={() => { navigate({ screen: 'home' }); setFriendInviteNotice(null) }}>Open</button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFriendInviteNotice(null)}>Dismiss</button>

@@ -14,8 +14,13 @@ export type RelayPresenceMember = {
   data: string
 }
 
+export type RelayChannelMember = {
+  connectionId: string
+  memberId: string
+}
+
 export type RelayCoordinationEvent =
-  | { type: 'status'; available: boolean }
+  | { type: 'status'; available: boolean; connectionId?: string }
   | { type: 'presence.snapshot'; scope: string; members: RelayPresenceMember[] }
   | { type: 'seek.stats'; pool: string; total: number; tags: Record<string, number> }
   | {
@@ -32,6 +37,16 @@ export type RelayCoordinationEvent =
       partner: { memberId: string; data: string }
     }
   | { type: 'room.snapshot'; directory: string; rooms: Array<{ roomId: string; data: string }> }
+  | { type: 'channel.snapshot'; channel: string; members: RelayChannelMember[] }
+  | {
+      type: 'channel.message'
+      channel: string
+      event: string
+      messageId: string
+      senderConnectionId: string
+      senderMemberId: string
+      data: string
+    }
   | { type: 'error'; code: string }
 
 export type RelayCoordinator = {
@@ -47,6 +62,15 @@ export type RelayCoordinator = {
   unwatchRooms(directory: string): void
   setRoom(directory: string, roomId: string, data: string): void
   clearRoom(directory: string): void
+  watchChannel(channel: string, memberId: string): void
+  unwatchChannel(channel: string): void
+  publishChannel(
+    channel: string,
+    event: string,
+    messageId: string,
+    data: string,
+    targetConnectionId?: string
+  ): void
   subscribe(listener: (event: RelayCoordinationEvent) => void): () => void
   close(): void
 }
@@ -68,6 +92,7 @@ export function createRelayCoordinator(
   let getSockets = options?.getSockets
   let socket: WebSocket | null = null
   let available = false
+  let connectionId: string | undefined
   let closed = false
 
   const emit = (event: RelayCoordinationEvent) => listeners.forEach(listener => listener(event))
@@ -91,6 +116,9 @@ export function createRelayCoordinator(
       return desired.has(`seek-watch:${message.pool}`) || desired.has(`seek:${message.pool}`)
     }
     if (message.type === 'room.snapshot') return desired.has(`room-watch:${message.directory}`)
+    if (message.type === 'channel.snapshot' || message.type === 'channel.message') {
+      return desired.has(`channel-watch:${message.channel}`)
+    }
     return message.type === 'error'
   }
 
@@ -101,9 +129,10 @@ export function createRelayCoordinator(
       const message = envelope.payload as Record<string, unknown>
       if (message.v !== 1 || typeof message.type !== 'string') return
       if (message.type === 'ready') {
+        connectionId = typeof message.connectionId === 'string' ? message.connectionId : undefined
         if (!available) {
           available = true
-          emit({ type: 'status', available: true })
+          emit({ type: 'status', available: true, connectionId })
         }
         flush()
         return
@@ -117,6 +146,7 @@ export function createRelayCoordinator(
   const detach = () => {
     if (socket) socket.removeEventListener('message', onMessage)
     socket = null
+    connectionId = undefined
     if (available) {
       available = false
       emit({ type: 'status', available: false })
@@ -150,7 +180,18 @@ export function createRelayCoordinator(
   })()
 
   const socketPoll = globalThis.setInterval(pollSocket, SOCKET_POLL_MS)
-  const refresh = globalThis.setInterval(flush, REFRESH_MS)
+  // Only TTL-backed state needs a heartbeat. Watch commands are socket-scoped
+  // and replayed by `flush()` after reconnect; repeating them generated full
+  // directory snapshots and inflated command/fanout volume every ten seconds.
+  const refresh = globalThis.setInterval(() => {
+    desired.forEach(command => {
+      if (
+        command.action === 'presence.set' ||
+        command.action === 'seek.set' ||
+        command.action === 'room.set'
+      ) send(command)
+    })
+  }, REFRESH_MS)
 
   return {
     setPresence: (scope, memberId, data) => remember(`presence:${scope}`, {
@@ -186,9 +227,25 @@ export function createRelayCoordinator(
     clearRoom: directory => forget(`room:${directory}`, {
       v: 1, type: 'coord', action: 'room.clear', directory,
     }),
+    watchChannel: (channel, memberId) => remember(`channel-watch:${channel}`, {
+      v: 1, type: 'coord', action: 'channel.watch', channel, memberId,
+    }),
+    unwatchChannel: channel => forget(`channel-watch:${channel}`, {
+      v: 1, type: 'coord', action: 'channel.unwatch', channel,
+    }),
+    publishChannel: (channel, event, messageId, data, targetConnectionId) => send({
+      v: 1,
+      type: 'coord',
+      action: 'channel.publish',
+      channel,
+      event,
+      messageId,
+      data,
+      ...(targetConnectionId ? { targetConnectionId } : {}),
+    }),
     subscribe(listener) {
       listeners.add(listener)
-      listener({ type: 'status', available })
+      listener({ type: 'status', available, connectionId })
       return () => listeners.delete(listener)
     },
     close() {
@@ -199,6 +256,7 @@ export function createRelayCoordinator(
         const clearAction = command.action === 'presence.set' ? 'presence.clear'
           : command.action === 'seek.set' ? 'seek.clear'
             : command.action === 'room.set' ? 'room.clear'
+              : command.action === 'channel.watch' ? 'channel.unwatch'
               : null
         if (clearAction) send({ ...command, action: clearAction })
       }

@@ -2,7 +2,7 @@ import type { PeerHandshake } from '@trystero-p2p/core'
 import type { joinRoom as joinNostrRoom } from '@trystero-p2p/nostr'
 import type { Env } from './env.js'
 import type { SignalingStrategy } from './signaling.js'
-import { getIceServers, getNostrRelayConfig, getSupabaseRoomConfig } from './relays.js'
+import { getNostrRelayConfig, getSupabaseRoomConfig, resolveIceServers } from './relays.js'
 
 export type Room = ReturnType<typeof joinNostrRoom>
 
@@ -122,7 +122,7 @@ export async function joinRoomByCode(options: JoinRoomOptions): Promise<Room> {
   } = options
   const env = options.env ?? {}
 
-  const iceServers = getIceServers(env)
+  const iceServers = await resolveIceServers(env)
   const baseConfig = {
     ...(password ? { password } : {}),
     rtcConfig: {

@@ -310,14 +310,14 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
   // that cannot be submitted only invites people to fill them in and fail.
   if (!signedIn) {
     return (
-      <div className="join-screen flex min-h-full items-center justify-center p-4 sm:p-6">
+      <main className="join-screen flex min-h-full items-center justify-center p-4 sm:p-6">
         <div className="fixed right-4 top-4 z-20"><ThemeToggle compact /></div>
         <div className="join-auth-layout w-full max-w-5xl overflow-hidden rounded-[2rem] border border-base-300/70 bg-base-100/80 shadow-2xl shadow-violet-950/10 backdrop-blur-xl">
           <section className="brand-showcase hidden lg:flex">
             <img src={peerlyBrand} alt={tr('Serverless team collaboration — chat, video, and files, peer-to-peer.')} className="brand-showcase-image" />
             <div className="brand-showcase-copy">
               <span className="brand-kicker">{tr('Private by design')}</span>
-              <h2>{tr('Your team space, directly between your devices.')}</h2>
+              <p className="brand-showcase-heading">{tr('Your team space, directly between your devices.')}</p>
               <p>{tr('No message or file server in the middle. Invite-only workspaces connect through verified identities.')}</p>
             </div>
           </section>
@@ -375,12 +375,12 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
           <LegalLinks />
           </div>
         </div>
-      </div>
+      </main>
     )
   }
 
   return (
-    <div className="join-screen h-full overflow-y-auto p-4">
+    <main className="join-screen h-full overflow-y-auto p-4">
       <div className="fixed right-4 top-4 z-20"><ThemeToggle compact /></div>
       <div className="join-card mx-auto w-full max-w-2xl space-y-5 py-2">
         <header className="space-y-2 text-center">
@@ -629,6 +629,6 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
         </p>
         <LegalLinks />
       </div>
-    </div>
+    </main>
   )
 }

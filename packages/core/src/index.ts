@@ -12,6 +12,7 @@ export {
   DEFAULT_NOSTR_RELAYS,
   expandTurnUrls,
   getIceServers,
+  resolveIceServers,
   getNostrRelayConfig,
   getSupabaseRoomConfig,
   getTurnConfig,
@@ -19,6 +20,14 @@ export {
   resolveRelayUrls,
   type TurnServer,
 } from './relays.js'
+export {
+  clearRuntimeNetworkCredentials,
+  configureRuntimeAuthCredentialProvider,
+  configureRuntimeAuthTokenProvider,
+  getRuntimeNetworkCredentials,
+  type RuntimeAuthCredential,
+  type RuntimeNetworkCredentials,
+} from './runtimeCredentials.js'
 export {
   classifyJoinError,
   DEFAULT_HANDSHAKE_TIMEOUT_MS,
@@ -41,8 +50,21 @@ export {
 } from './deviceIdentity.js'
 export { deriveUserId } from './userId.js'
 export {
+  parseOidcDeviceAttestation,
+  verifyGoogleDeviceBinding,
+  verifyOidcDeviceBinding,
+  type OidcDeviceAttestation,
+  type VerifiedDeviceBinding,
+} from './oidcDeviceBinding.js'
+export {
+  createPeerIdentityHandshake,
+  type PeerIdentityAttestation,
+  type PeerIdentityHandshakeDeps,
+} from './peerIdentityHandshake.js'
+export {
   DEFAULT_EMAIL_VERIFIED_CLAIM,
   extractEmailClaim,
+  oidcTokenExpiryMs,
   resetOidcJwksCache,
   verifyOidcIdToken,
   type JwksFetcher,
@@ -52,6 +74,10 @@ export {
 } from './oidcIdToken.js'
 export { renderGoogleSignInButton } from './googleSignIn.js'
 export {
+  normalizeGoogleAuthBridgeOrigin,
+  renderGoogleSignInBridgeButton,
+} from './googleAuthBridge.js'
+export {
   coordinationMemberId,
   coordinationScope,
   createRelayCoordinator,
@@ -59,8 +85,16 @@ export {
   sealCoordinationData,
   type RelayCoordinationEvent,
   type RelayCoordinator,
+  type RelayChannelMember,
   type RelayPresenceMember,
 } from './coordination.js'
+export {
+  createRelayChannel,
+  type RelayChannelAction,
+  type RelayChannelPeer,
+  type RelayChannelPeers,
+  type RelayChannelRoom,
+} from './relayChannel.js'
 export {
   GOOGLE_ISSUERS,
   GOOGLE_JWKS_URL,
@@ -72,6 +106,10 @@ export {
 } from './googleIdToken.js'
 export { avatarInitial, getPeerColor, PEER_COLORS } from './identicon.js'
 export { formatClockTime } from './format.js'
+export {
+  applyDocumentLocaleMetadata,
+  type DocumentLocaleMetadata,
+} from './documentMetadata.js'
 export {
   createRoomMedia,
   type RoomMediaController,
@@ -94,6 +132,13 @@ export {
   utf8ToBase64Url,
 } from './base64url.js'
 export { encodeCanonicalLines } from './canonical.js'
+export {
+  createSignedControlReplayGuard,
+  signControl,
+  SIGNED_CONTROL_MAX_AGE_MS,
+  verifySignedControl,
+  type SignedControl,
+} from './signedControl.js'
 export {
   applyToggleReaction,
   isAcceptableRevision,
