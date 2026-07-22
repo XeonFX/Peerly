@@ -60,6 +60,7 @@ async function enableSeekAcknowledgements(socket) {
 describe('coordination relay extension', () => {
   it('broadcasts presence independently of WebRTC', async () => {
     const url = await setup()
+    const coordination = openServers.at(-1).coordination
     const a = await client(url)
     const b = await client(url)
     const firstP = next(a, 'presence.snapshot')
@@ -69,6 +70,14 @@ describe('coordination relay extension', () => {
     send(b, 'presence.set', { scope: 'workspace', memberId: 'b', data: 'encrypted-b' })
     const snapshot = await snapshotP
     expect(snapshot.members.map(member => member.memberId).sort()).toEqual(['a', 'b'])
+    expect(coordination.metrics()).toMatchObject({
+      connectionsTotal: 2,
+      commandsTotal: 2,
+      presenceUpdatesTotal: 2,
+      activeConnections: 2,
+      activePresenceScopes: 1,
+      activePresenceEntries: 2,
+    })
   })
 
   it('atomically matches compatible seekers and reports distinct-user counts', async () => {
@@ -76,17 +85,52 @@ describe('coordination relay extension', () => {
     const watcher = await client(url)
     const a = await client(url)
     const b = await client(url)
+    const watching = next(watcher, 'seek.stats', message => message.total === 0)
     send(watcher, 'seek.watch', { pool: 'random' })
+    await watching
     send(a, 'seek.set', { pool: 'random', memberId: 'a', tags: ['music'], data: 'a' })
     const matchA = next(a, 'seek.match')
     const matchB = next(b, 'seek.match')
+    const statsP = next(watcher, 'seek.stats', message => message.total === 0)
     send(b, 'seek.set', { pool: 'random', memberId: 'b', tags: ['music'], data: 'b' })
     const [left, right] = await Promise.all([matchA, matchB])
     expect(left.roomCode).toBe(right.roomCode)
     expect(left.initiator).not.toBe(right.initiator)
-    const statsP = next(watcher, 'seek.stats', message => message.total === 0)
-    send(watcher, 'seek.watch', { pool: 'random' })
     await expect(statsP).resolves.toMatchObject({ total: 0, tags: {} })
+  })
+
+  it('forwards channel messages only to subscribed peers', async () => {
+    const url = await setup()
+    const coordination = openServers.at(-1).coordination
+    const a = await client(url)
+    const b = await client(url)
+    const outsider = await client(url)
+    const joinedA = next(a, 'channel.snapshot', message => message.members.length === 1)
+    send(a, 'channel.watch', { channel: 'lobby', memberId: 'a' })
+    await joinedA
+    const joinedBoth = next(a, 'channel.snapshot', message => message.members.length === 2)
+    send(b, 'channel.watch', { channel: 'lobby', memberId: 'b' })
+    await joinedBoth
+
+    let outsiderReceived = false
+    outsider.on('message', data => {
+      if (JSON.parse(data.toString()).payload?.type === 'channel.message') outsiderReceived = true
+    })
+    const delivered = next(b, 'channel.message', message => message.event === 'presence')
+    send(a, 'channel.publish', {
+      channel: 'lobby', event: 'presence', data: 'signed-payload', messageId: 'message-1',
+    })
+    await expect(delivered).resolves.toMatchObject({
+      channel: 'lobby', event: 'presence', data: 'signed-payload', messageId: 'message-1',
+    })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(outsiderReceived).toBe(false)
+    expect(coordination.metrics()).toMatchObject({
+      channelMessagesTotal: 1,
+      channelDeliveriesTotal: 1,
+      activeChannels: 1,
+      activeChannelMembers: 2,
+    })
   })
 
   it('commits a v2 match only after both seekers acknowledge the proposal', async () => {

@@ -1,6 +1,6 @@
 import { DEFAULT_USER_COLOR } from './config'
+import { oidcTokenExpiryMs } from '@peerly/core'
 import { loadStoredProfile } from './collab/profileStore'
-import { base64UrlToUtf8 } from './utils/base64url'
 import { migrateLegacyAvatarDataUrl, resolveAvatarPreview } from './collab/avatarService'
 import type { SignedAllowList } from './collab/allowList'
 import type { DeviceKeyId } from './collab/deviceIdentity'
@@ -114,14 +114,7 @@ export function loadPersistedSession(): PersistedSession | null {
  * rejected, exactly as if we hadn't checked. Never use this to make an
  * authorization decision; use verifyOidcIdToken.
  */
-export function idTokenExpiryMs(token: string): number | null {
-  try {
-    const payload = JSON.parse(base64UrlToUtf8(token.split('.')[1])) as { exp?: unknown }
-    return typeof payload.exp === 'number' ? payload.exp * 1000 : null
-  } catch {
-    return null
-  }
-}
+export const idTokenExpiryMs = oidcTokenExpiryMs
 
 /**
  * ID tokens live about an hour. An expired token is treated as no token, but

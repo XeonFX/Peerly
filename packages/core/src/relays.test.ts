@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { expandTurnUrls, getIceServers, getTurnConfig } from './relays.js'
+import { buildRelayUrls, expandTurnUrls, getIceServers, getTurnConfig } from './relays.js'
 
 describe('getIceServers', () => {
   it('returns undefined without TURN so Trystero keeps its own defaults', () => {
@@ -40,5 +40,20 @@ describe('getIceServers', () => {
     expect(expandTurnUrls(['turns:[2001:db8::1]:9443?transport=tcp'])).toEqual([
       'turns:[2001:db8::1]:9443?transport=tcp',
     ])
+  })
+})
+
+
+describe('buildRelayUrls', () => {
+  it('never puts a static VITE relay token into the browser URL', () => {
+    expect(buildRelayUrls('443', {
+      VITE_RELAY_HOST: 'relay.example.com',
+      VITE_RELAY_TOKEN: 'must-not-leak',
+    })).toEqual(['wss://relay.example.com:443'])
+  })
+
+  it('uses only a short-lived runtime ticket for remote relay authentication', () => {
+    expect(buildRelayUrls('443', { VITE_RELAY_HOST: 'relay.example.com' }, 'ticket.value'))
+      .toEqual(['wss://relay.example.com:443?ticket=ticket.value'])
   })
 })

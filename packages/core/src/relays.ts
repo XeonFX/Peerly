@@ -1,4 +1,5 @@
 import type { Env } from './env.js'
+import { getRuntimeNetworkCredentials } from './runtimeCredentials.js'
 
 function relayHost(): string {
   return typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1'
@@ -17,13 +18,13 @@ function relayScheme(): 'ws' | 'wss' {
  * `VITE_RELAY_HOST` points at a relay that isn't the app's own origin (e.g. a
  * shared production relay) — it always requires wss and skips the same-machine
  * `127.0.0.1` fallback, since that fallback only makes sense when the relay
- * runs alongside the dev server. `VITE_RELAY_TOKEN`, if set, is appended as a
- * query param for relays that gate connections on it.
+ * runs alongside the dev server. Remote production relays require a short-lived
+ * runtime ticket; static VITE_* query tokens are intentionally unsupported.
  */
-export function buildRelayUrls(port: string, env: Env = {}): string[] {
+export function buildRelayUrls(port: string, env: Env = {}, runtimeTicket?: string): string[] {
   const host = env.VITE_RELAY_HOST || relayHost()
   const scheme = env.VITE_RELAY_HOST ? 'wss' : relayScheme()
-  const query = env.VITE_RELAY_TOKEN ? `?token=${encodeURIComponent(env.VITE_RELAY_TOKEN)}` : ''
+  const query = runtimeTicket ? `?ticket=${encodeURIComponent(runtimeTicket)}` : ''
   const urls = [`${scheme}://${host}:${port}${query}`]
   if (!env.VITE_RELAY_HOST && scheme === 'ws') urls.push(`ws://127.0.0.1:${port}${query}`)
   return urls
@@ -49,7 +50,8 @@ export async function resolveRelayPort(env: Env): Promise<string> {
 
 export async function resolveRelayUrls(env: Env): Promise<string[]> {
   const port = await resolveRelayPort(env)
-  return buildRelayUrls(port, env)
+  const runtime = await getRuntimeNetworkCredentials()
+  return buildRelayUrls(port, env, runtime?.relayTicket)
 }
 
 /**
@@ -209,6 +211,12 @@ export function getIceServers(env: Env): TurnServer[] | undefined {
   const turn = getTurnConfig(env)
   if (!turn) return undefined
   return [{ urls: [FALLBACK_STUN_URL] }, ...turn]
+}
+
+/** Resolve short-lived TURN REST credentials. Static browser credentials are not used. */
+export async function resolveIceServers(_env: Env): Promise<TurnServer[] | undefined> {
+  const runtime = await getRuntimeNetworkCredentials()
+  return runtime?.iceServers?.length ? runtime.iceServers : undefined
 }
 
 export function getSupabaseRoomConfig(env: Env):

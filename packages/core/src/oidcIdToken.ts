@@ -14,6 +14,23 @@ export type OidcIdTokenClaims = {
   iat: number
 }
 
+/**
+ * Read a token's expiry for local credential lifecycle decisions only. This
+ * does not verify the token and must never be used for authorization.
+ */
+export function oidcTokenExpiryMs(token: string): number | null {
+  try {
+    const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(token.split('.')[1]))) as {
+      exp?: unknown
+    }
+    return typeof payload.exp === 'number' && Number.isFinite(payload.exp)
+      ? payload.exp * 1000
+      : null
+  } catch {
+    return null
+  }
+}
+
 export type JwkWithKid = JsonWebKey & { kid?: string }
 
 export type JwksFetcher = () => Promise<{ keys: JwkWithKid[] }>
@@ -170,6 +187,12 @@ export async function verifyOidcIdToken(
   }
   if (typeof payload.exp !== 'number' || payload.exp * 1000 < now) {
     throw new Error('Token expired')
+  }
+  if (typeof payload.iat !== 'number' || payload.iat * 1000 > now + 60_000) {
+    throw new Error('Token issuance time is invalid')
+  }
+  if (typeof payload.nbf === 'number' && payload.nbf * 1000 > now + 60_000) {
+    throw new Error('Token is not active yet')
   }
   if (payload.nonce !== options.expectedNonce) {
     throw new Error('Token nonce does not match the presenting device key')

@@ -4,6 +4,7 @@ import {
   isValidDmSecret,
   parsePresencePayload as coreParsePresence,
   type DeviceSigner,
+  type OidcDeviceAttestation,
   type PresencePayload,
 } from '@peerly/core'
 import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity'
@@ -18,8 +19,8 @@ export type { PresencePayload }
  * that email-hash is online, a signed invite is sent directed. No mailbox.
  */
 
-export const FRIEND_INVITE_SCHEME = 'peerly-friend-invite-v2'
-export const FRIEND_INVITE_RESPONSE_SCHEME = 'peerly-friend-invite-resp-v2'
+export const FRIEND_INVITE_SCHEME = 'peerly-friend-invite-v3'
+export const FRIEND_INVITE_RESPONSE_SCHEME = 'peerly-friend-invite-resp-v3'
 
 const MAX_NAME = 80
 const HEX64 = /^[0-9a-f]{64}$/i
@@ -41,6 +42,7 @@ export type FriendInvitePayload = {
   dmSecret: string
   ts: number
   deviceKeyId: DeviceKeyId
+  attestation: OidcDeviceAttestation
   sig: string
 }
 
@@ -59,6 +61,7 @@ export type FriendInviteResponsePayload = {
   toUserId: string
   ts: number
   deviceKeyId: DeviceKeyId
+  attestation: OidcDeviceAttestation
   sig: string
 }
 
@@ -77,6 +80,8 @@ export function friendInviteBytes(
     invite.dmSecret,
     String(invite.ts),
     invite.deviceKeyId,
+    invite.attestation.providerId,
+    invite.attestation.idToken,
   ])
 }
 
@@ -95,6 +100,8 @@ export function friendInviteResponseBytes(
     response.toUserId,
     String(response.ts),
     response.deviceKeyId,
+    response.attestation.providerId,
+    response.attestation.idToken,
   ])
 }
 
@@ -106,6 +113,7 @@ export async function createFriendInvite(
     fromName: string
     fromEmail: string
     toEmail: string
+    attestation: OidcDeviceAttestation
   }
 ): Promise<FriendInvitePayload> {
   if (!isPlausibleEmail(input.fromEmail) || !isPlausibleEmail(input.toEmail)) {
@@ -125,6 +133,7 @@ export async function createFriendInvite(
     dmSecret: generateDmSecret(),
     ts: Date.now(),
     deviceKeyId: await signer.publicKeyId(),
+    attestation: input.attestation,
   }
   const sig = await signer.sign(friendInviteBytes(base))
   return { ...base, sig }
@@ -140,6 +149,7 @@ export async function createFriendInviteResponse(
     fromEmail: string
     toUserId: string
     dmSecret?: string
+    attestation: OidcDeviceAttestation
   }
 ): Promise<FriendInviteResponsePayload> {
   if (input.accept && !isPlausibleEmail(input.fromEmail)) {
@@ -156,6 +166,7 @@ export async function createFriendInviteResponse(
     toUserId: input.toUserId,
     ts: Date.now(),
     deviceKeyId: await signer.publicKeyId(),
+    attestation: input.attestation,
   }
   const sig = await signer.sign(friendInviteResponseBytes(base))
   return { ...base, sig }
@@ -182,6 +193,8 @@ function inviteShapeOk(msg: Partial<FriendInvitePayload>): msg is FriendInvitePa
     Number.isFinite(msg.ts) &&
     typeof msg.deviceKeyId === 'string' &&
     !!msg.deviceKeyId &&
+    typeof msg.attestation?.providerId === 'string' &&
+    typeof msg.attestation?.idToken === 'string' &&
     typeof msg.sig === 'string' &&
     !!msg.sig
   )
@@ -210,6 +223,8 @@ function responseShapeOk(
     Number.isFinite(msg.ts) &&
     typeof msg.deviceKeyId === 'string' &&
     !!msg.deviceKeyId &&
+    typeof msg.attestation?.providerId === 'string' &&
+    typeof msg.attestation?.idToken === 'string' &&
     typeof msg.sig === 'string' &&
     !!msg.sig
   )
@@ -261,6 +276,10 @@ export function parseFriendInvitePayload(raw: unknown): FriendInvitePayload | nu
     dmSecret: msg.dmSecret.toLowerCase(),
     ts: msg.ts,
     deviceKeyId: msg.deviceKeyId,
+    attestation: {
+      providerId: msg.attestation.providerId,
+      idToken: msg.attestation.idToken,
+    },
     sig: msg.sig,
   }
 }
@@ -282,6 +301,10 @@ export function parseFriendInviteResponsePayload(
     toUserId: msg.toUserId.trim(),
     ts: msg.ts,
     deviceKeyId: msg.deviceKeyId,
+    attestation: {
+      providerId: msg.attestation.providerId,
+      idToken: msg.attestation.idToken,
+    },
     sig: msg.sig,
   }
 }

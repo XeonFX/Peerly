@@ -7,6 +7,66 @@ export function useLatest<T>(value: T) {
   ref.current = value
   return ref
 }
+
+const DIALOG_FOCUSABLE = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+/** Focus trap, Escape close, scroll lock, and focus restoration for modals. */
+export function useAccessibleDialog(open: boolean, onClose: () => void) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const onCloseRef = useLatest(onClose)
+  useEffect(() => {
+    if (!open) return
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const focusable = () => [...dialog.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE)]
+      .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+    ;(focusable()[0] ?? dialog).focus()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const items = focusable()
+      if (items.length === 0) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+      const first = items[0]
+      const last = items.at(-1)!
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = previousOverflow
+      previousFocus?.focus()
+    }
+  }, [open, onCloseRef])
+  return dialogRef
+}
 import type { Env } from './env.js'
 import {
   classifyJoinError,
@@ -25,6 +85,61 @@ import {
 import { probeP2pCapability, type P2pCapability } from './p2pCapability.js'
 import { probeTurnCapability, type TurnCapability } from './turnCapability.js'
 import { createSpeakingDetector, type SpeakingDetector } from './speaking.js'
+import { createRelayCoordinator } from './coordination.js'
+import { createRelayChannel, type RelayChannelRoom } from './relayChannel.js'
+
+export type UseRelayChannelOptions = {
+  /** Empty means do not connect. */
+  channel: string
+  /** Opaque application member id; never used as an authorization claim. */
+  memberId: string
+  env: Env
+  onError?: (message: string) => void
+  /** Time without a coordinator acknowledgement before surfacing an error. */
+  connectTimeoutMs?: number
+}
+
+/**
+ * Server-forwarded public lobby transport. It intentionally mirrors the small
+ * Room surface used by both apps while avoiding a WebRTC connection to every
+ * signed-in stranger.
+ */
+export function useRelayChannel(
+  options: UseRelayChannelOptions
+): { room: RelayChannelRoom | null } {
+  const { channel, memberId, env, onError, connectTimeoutMs = 10_000 } = options
+  const [room, setRoom] = useState<RelayChannelRoom | null>(null)
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+  const envRef = useRef(env)
+  envRef.current = env
+
+  useEffect(() => {
+    if (!channel || !memberId) {
+      setRoom(null)
+      return
+    }
+    const coordinator = createRelayCoordinator(envRef.current)
+    const relayRoom = createRelayChannel(coordinator, channel, memberId)
+    let available = false
+    const unsubscribe = coordinator.subscribe(event => {
+      if (event.type === 'status') available = event.available
+    })
+    const timeout = window.setTimeout(() => {
+      if (!available) onErrorRef.current?.('The public relay is not responding. Retrying…')
+    }, connectTimeoutMs)
+    setRoom(relayRoom)
+    return () => {
+      window.clearTimeout(timeout)
+      unsubscribe()
+      relayRoom.leave()
+      coordinator.close()
+      setRoom(null)
+    }
+  }, [channel, memberId, connectTimeoutMs])
+
+  return { room }
+}
 
 export type RoomErrorKind =
   | 'password-mismatch'

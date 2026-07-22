@@ -20,10 +20,25 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"
+    },
+    "./server/bounded-relay": {
+      "default": "./server/boundedRelay.mjs"
+    },
+    "./worker/network-credentials": {
+      "default": "./worker/networkCredentials.mjs"
+    },
+    "./worker/google-auth": {
+      "default": "./worker/googleAuth.mjs"
+    },
+    "./server/coordination": {
+      "default": "./server/coordination.mjs"
     }
   },
   "files": [
     "dist",
+    "server",
+    "worker",
+    "scripts/check-vite-bundle.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -33,7 +48,8 @@
   },
   "dependencies": {
     "@trystero-p2p/core": "^0.25.3",
-    "@trystero-p2p/nostr": "^0.25.3"
+    "@trystero-p2p/nostr": "^0.25.3",
+    "ws": "^8.18.3"
   },
   "peerDependencies": {
     "@trystero-p2p/supabase": "^0.25.3",

@@ -187,11 +187,11 @@
     @apply text-primary/70;
   }
 
-  .brand-showcase-copy h2 {
+  .brand-showcase-copy .brand-showcase-heading {
     @apply mt-3 text-3xl font-semibold leading-tight tracking-tight;
   }
 
-  .brand-showcase-copy p {
+  .brand-showcase-copy p:not(.brand-showcase-heading) {
     @apply mt-3 text-sm leading-relaxed text-white/75;
   }
 

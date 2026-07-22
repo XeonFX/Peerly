@@ -15,6 +15,7 @@ const identity = {
   publicKeyId: async () => '',
   sign: async (_bytes: Uint8Array) => '',
 }
+const attestation = { providerId: 'google', idToken: 'header.payload.signature' }
 
 beforeAll(async () => {
   const key = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
@@ -41,6 +42,7 @@ describe('friendInvite protocol', () => {
       fromName: 'Alice',
       fromEmail: 'alice@example.com',
       toEmail: 'bob@example.com',
+      attestation,
     })
     expect(invite.toEmailHash).toBe(await hashEmail('bob@example.com'))
     expect(await verifyFriendInvite(invite)).toBe(true)
@@ -54,6 +56,7 @@ describe('friendInvite protocol', () => {
       fromName: 'Alice',
       fromEmail: 'alice@example.com',
       toEmail: 'bob@example.com',
+      attestation,
     })
     const tampered = { ...invite, fromName: 'Eve' }
     expect(await verifyFriendInvite(tampered)).toBe(false)
@@ -68,6 +71,7 @@ describe('friendInvite protocol', () => {
       fromEmail: 'bob@example.com',
       toUserId: 'alice',
       dmSecret: '0123456789abcdef0123456789abcdef',
+      attestation,
     })
     expect(await verifyFriendInviteResponse(accept)).toBe(true)
     expect(parseFriendInviteResponsePayload(accept)?.fromEmail).toBe('bob@example.com')
@@ -79,6 +83,7 @@ describe('friendInvite protocol', () => {
       fromName: 'Bob',
       fromEmail: 'bob@example.com',
       toUserId: 'alice',
+      attestation,
     })
     expect(decline.fromEmail).toBeUndefined()
     expect(await verifyFriendInviteResponse(decline)).toBe(true)
