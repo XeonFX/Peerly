@@ -36,7 +36,14 @@ export type RelayCoordinationEvent =
       initiator: boolean
       partner: { memberId: string; data: string }
     }
-  | { type: 'room.snapshot'; directory: string; rooms: Array<{ roomId: string; data: string }> }
+  | {
+      type: 'room.snapshot'
+      directory: string
+      rooms: Array<{ roomId: string; data: string }>
+      cursor?: number
+      nextCursor?: number
+      total?: number
+    }
   | { type: 'channel.snapshot'; channel: string; members: RelayChannelMember[] }
   | {
       type: 'channel.message'
@@ -58,7 +65,7 @@ export type RelayCoordinator = {
   clearSeek(pool: string): void
   /** Acknowledge a v2 match proposal; the relay commits only after both peers ack. */
   acknowledgeSeekMatch(pool: string, matchId: string): void
-  watchRooms(directory: string): void
+  watchRooms(directory: string, page?: { cursor?: number; limit?: number }): void
   unwatchRooms(directory: string): void
   setRoom(directory: string, roomId: string, data: string): void
   clearRoom(directory: string): void
@@ -84,13 +91,23 @@ type RelaySocketMap = Record<string, WebSocket>
  */
 export function createRelayCoordinator(
   env: Env,
-  options?: { getSockets?: () => RelaySocketMap }
+  options?: {
+    getSockets?: () => RelaySocketMap
+    createSocket?: (url: string) => WebSocket
+    reconnectMs?: number
+  }
 ): RelayCoordinator {
   const listeners = new Set<(event: RelayCoordinationEvent) => void>()
   const desired = new Map<string, Command>()
   let urls: string[] = []
   let getSockets = options?.getSockets
   let socket: WebSocket | null = null
+  let ownedSocket: WebSocket | null = null
+  let ownedConnecting = false
+  let reconnectTimer: ReturnType<typeof globalThis.setTimeout> | undefined
+  let reconnectAttempt = 0
+  let ownedUrl = ''
+  const endpointFailures = new Map<string, { count: number; retryAt: number }>()
   let available = false
   let connectionId: string | undefined
   let closed = false
@@ -129,6 +146,8 @@ export function createRelayCoordinator(
       const message = envelope.payload as Record<string, unknown>
       if (message.v !== 1 || typeof message.type !== 'string') return
       if (message.type === 'ready') {
+        reconnectAttempt = 0
+        if (ownedUrl) endpointFailures.delete(new URL(ownedUrl).host)
         connectionId = typeof message.connectionId === 'string' ? message.connectionId : undefined
         if (!available) {
           available = true
@@ -153,16 +172,8 @@ export function createRelayCoordinator(
     }
   }
 
-  const pollSocket = () => {
-    if (closed || !getSockets) return
-    const sockets = getSockets()
-    const next = urls.map(url => sockets[url]).find(candidate => candidate?.readyState === WebSocket.OPEN)
-    if (next === socket) return
-    detach()
-    if (!next) return
-    socket = next
-    socket.addEventListener('message', onMessage)
-    socket.send(JSON.stringify({
+  const sendHello = (target: WebSocket) => {
+    target.send(JSON.stringify({
       v: 1,
       type: 'coord',
       action: 'hello',
@@ -170,13 +181,97 @@ export function createRelayCoordinator(
     }))
   }
 
-  void (async () => {
-    urls = await resolveRelayUrls(env)
-    if (!getSockets) {
-      const relay = await import('@trystero-p2p/ws-relay')
-      getSockets = relay.getRelaySockets as () => RelaySocketMap
+  const attach = (next: WebSocket) => {
+    if (next === socket) return
+    detach()
+    socket = next
+    socket.addEventListener('message', onMessage)
+    sendHello(socket)
+  }
+
+  const pollSocket = () => {
+    if (closed || !getSockets) return
+    const sockets = getSockets()
+    const next = urls.map(url => sockets[url]).find(candidate => candidate?.readyState === WebSocket.OPEN)
+    if (!next) {
+      if (socket) detach()
+      return
     }
-    pollSocket()
+    attach(next)
+  }
+
+  const scheduleOwnedReconnect = () => {
+    if (closed || reconnectTimer !== undefined) return
+    const base = options?.reconnectMs ?? 1_000
+    const delay = Math.min(30_000, base * 2 ** Math.min(reconnectAttempt, 5))
+    reconnectAttempt += 1
+    reconnectTimer = globalThis.setTimeout(() => {
+      reconnectTimer = undefined
+      void connectOwnedSocket()
+    }, delay)
+  }
+
+  const connectOwnedSocket = async () => {
+    if (closed || getSockets || ownedSocket || ownedConnecting) return
+    ownedConnecting = true
+    try {
+      // Resolve again on every reconnect so an expired relay ticket is replaced.
+      urls = await resolveRelayUrls(env)
+      if (closed || urls.length === 0) return
+      const timestamp = Date.now()
+      const ranked = urls
+        .map((url, offset) => ({
+          url,
+          offset,
+          failure: endpointFailures.get(new URL(url).host),
+        }))
+        .sort((left, right) => {
+          const leftCooling = (left.failure?.retryAt ?? 0) > timestamp
+          const rightCooling = (right.failure?.retryAt ?? 0) > timestamp
+          if (leftCooling !== rightCooling) return leftCooling ? 1 : -1
+          return (left.failure?.count ?? 0) - (right.failure?.count ?? 0) || left.offset - right.offset
+        })
+      const url = ranked[0].url
+      const next = options?.createSocket ? options.createSocket(url) : new WebSocket(url)
+      ownedSocket = next
+      ownedUrl = url
+      next.addEventListener('open', () => {
+        if (closed || ownedSocket !== next) return
+        attach(next)
+      })
+      next.addEventListener('close', () => {
+        const host = new URL(url).host
+        const prior = endpointFailures.get(host)?.count ?? 0
+        const count = prior + 1
+        endpointFailures.set(host, {
+          count,
+          retryAt: Date.now() + Math.min(60_000, (options?.reconnectMs ?? 1_000) * 2 ** Math.min(count, 6)),
+        })
+        if (ownedSocket === next) ownedSocket = null
+        if (socket === next) detach()
+        scheduleOwnedReconnect()
+      })
+      next.addEventListener('error', () => {
+        try {
+          next.close()
+        } catch {
+          // The close handler owns reconnect scheduling.
+        }
+      })
+    } catch {
+      scheduleOwnedReconnect()
+    } finally {
+      ownedConnecting = false
+    }
+  }
+
+  void (async () => {
+    if (getSockets) {
+      urls = await resolveRelayUrls(env)
+      pollSocket()
+    } else {
+      void connectOwnedSocket()
+    }
   })()
 
   const socketPoll = globalThis.setInterval(pollSocket, SOCKET_POLL_MS)
@@ -215,8 +310,13 @@ export function createRelayCoordinator(
     acknowledgeSeekMatch: (pool, matchId) => send({
       v: 1, type: 'coord', action: 'seek.ack', pool, matchId,
     }),
-    watchRooms: directory => remember(`room-watch:${directory}`, {
-      v: 1, type: 'coord', action: 'room.watch', directory,
+    watchRooms: (directory, page) => remember(`room-watch:${directory}`, {
+      v: 1,
+      type: 'coord',
+      action: 'room.watch',
+      directory,
+      ...(page?.cursor !== undefined ? { cursor: page.cursor } : {}),
+      ...(page?.limit !== undefined ? { limit: page.limit } : {}),
     }),
     unwatchRooms: directory => forget(`room-watch:${directory}`, {
       v: 1, type: 'coord', action: 'room.unwatch', directory,
@@ -263,7 +363,19 @@ export function createRelayCoordinator(
       desired.clear()
       globalThis.clearInterval(socketPoll)
       globalThis.clearInterval(refresh)
+      if (reconnectTimer !== undefined) globalThis.clearTimeout(reconnectTimer)
+      reconnectTimer = undefined
+      const owned = ownedSocket
+      ownedSocket = null
+      ownedUrl = ''
       detach()
+      if (owned && owned.readyState !== WebSocket.CLOSED) {
+        try {
+          owned.close(1000, 'coordinator closed')
+        } catch {
+          // Already closed.
+        }
+      }
       listeners.clear()
     },
   }

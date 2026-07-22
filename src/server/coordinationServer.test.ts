@@ -133,6 +133,29 @@ describe('coordination relay extension', () => {
     })
   })
 
+  it('paginates room directories and caps the requested page size', async () => {
+    const url = await setup()
+    const publishers = await Promise.all([client(url), client(url), client(url)])
+    publishers.forEach((socket, index) => send(socket, 'room.set', {
+      directory: 'public', roomId: `room-${index}`, data: `encrypted-${index}`,
+    }))
+    await new Promise(resolve => setTimeout(resolve, 25))
+
+    const watcher = await client(url)
+    const firstPageP = next(watcher, 'room.snapshot')
+    send(watcher, 'room.watch', { directory: 'public', cursor: 0, limit: 2 })
+    const firstPage = await firstPageP
+    expect(firstPage).toMatchObject({ cursor: 0, nextCursor: 2, total: 3 })
+    expect(firstPage.rooms).toHaveLength(2)
+
+    const secondPageP = next(watcher, 'room.snapshot')
+    send(watcher, 'room.watch', { directory: 'public', cursor: firstPage.nextCursor, limit: 9999 })
+    const secondPage = await secondPageP
+    expect(secondPage).toMatchObject({ cursor: 2, total: 3 })
+    expect(secondPage.nextCursor).toBeUndefined()
+    expect(secondPage.rooms).toHaveLength(1)
+  })
+
   it('commits a v2 match only after both seekers acknowledge the proposal', async () => {
     const url = await setup()
     const a = await client(url)

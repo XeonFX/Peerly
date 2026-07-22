@@ -22,6 +22,7 @@ import {
   type GlobalDmReaction,
 } from '../collab/globalDmHistory'
 import type { LobbyProfile } from './usePresenceLobby'
+import { PUBLIC_NETWORK_ENV } from '../config'
 import { findAuthorizingDeviceGrant, findDeviceGrant, grantAuthorizes, verifyDeviceGrant } from '../collab/deviceAuthorization'
 import { MAX_FILE_BYTES, FILE_TOO_LARGE_ERROR } from '../collab/constants'
 import { hashFileBytes, fileContentMatchesId } from '../utils/fileHash'
@@ -159,7 +160,7 @@ export function useGlobalDmChat({
     appId: LOBBY_APP_ID,
     roomId: roomCode ?? '',
     password: roomCode ?? '',
-    env: import.meta.env,
+    env: PUBLIC_NETWORK_ENV,
     onError: message => setError(message),
   })
 

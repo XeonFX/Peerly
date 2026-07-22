@@ -13,6 +13,8 @@ export type PresenceEntry = {
   name: string
   /** Optional privacy-preserving email match (Peerly friend invites). */
   emailHash?: string
+  /** Deployment-keyed capability; safe to announce because it cannot be publicly precomputed. */
+  rendezvousId?: string
   seenAt: number
 }
 
@@ -25,6 +27,7 @@ export type PresenceIndex = {
   peerIdsForUserId: (userId: string) => string[]
   peerIdForEmailHash: (emailHash: string) => string | undefined
   peerIdsForEmailHash: (emailHash: string) => string[]
+  peerIdsForRendezvousId: (rendezvousId: string) => string[]
   get: (peerId: string) => PresenceEntry | undefined
   clear: () => void
   /** For tests / diagnostics. */
@@ -39,6 +42,7 @@ export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIn
   const byPeer = new Map<string, PresenceEntry>()
   const peersByUserId = new Map<string, Set<string>>()
   const peersByEmailHash = new Map<string, Set<string>>()
+  const peersByRendezvousId = new Map<string, Set<string>>()
 
   const removeFromIndex = (index: Map<string, Set<string>>, key: string, peerId: string) => {
     const peers = index.get(key)
@@ -60,6 +64,7 @@ export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIn
     byPeer.delete(peerId)
     removeFromIndex(peersByUserId, entry.userId, peerId)
     if (entry.emailHash) removeFromIndex(peersByEmailHash, entry.emailHash, peerId)
+    if (entry.rendezvousId) removeFromIndex(peersByRendezvousId, entry.rendezvousId, peerId)
   }
 
   return {
@@ -78,15 +83,21 @@ export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIn
         typeof raw.emailHash === 'string' && raw.emailHash
           ? raw.emailHash.toLowerCase()
           : undefined
+      const rendezvousId =
+        typeof raw.rendezvousId === 'string' && raw.rendezvousId
+          ? raw.rendezvousId
+          : undefined
       const entry: PresenceEntry = {
         userId,
         name,
         ...(emailHash ? { emailHash } : {}),
+        ...(rendezvousId ? { rendezvousId } : {}),
         seenAt: Number.isFinite(raw.seenAt) ? raw.seenAt! : Date.now(),
       }
       byPeer.set(peerId, entry)
       addToIndex(peersByUserId, userId, peerId)
       if (emailHash) addToIndex(peersByEmailHash, emailHash, peerId)
+      if (rendezvousId) addToIndex(peersByRendezvousId, rendezvousId, peerId)
     },
     drop,
     prune: (now = Date.now()) => {
@@ -109,11 +120,13 @@ export function createPresenceIndex(ttlMs: number = PRESENCE_TTL_MS): PresenceIn
     peerIdsForUserId: userId => [...(peersByUserId.get(userId) ?? [])],
     peerIdForEmailHash: emailHash => [...(peersByEmailHash.get(emailHash.toLowerCase()) ?? [])].at(-1),
     peerIdsForEmailHash: emailHash => [...(peersByEmailHash.get(emailHash.toLowerCase()) ?? [])],
+    peerIdsForRendezvousId: rendezvousId => [...(peersByRendezvousId.get(rendezvousId) ?? [])],
     get: peerId => byPeer.get(peerId),
     clear: () => {
       byPeer.clear()
       peersByUserId.clear()
       peersByEmailHash.clear()
+      peersByRendezvousId.clear()
     },
     size: () => byPeer.size,
   }
@@ -123,14 +136,17 @@ export type PresencePayload = {
   userId: string
   name: string
   emailHash?: string
+  rendezvousId?: string
 }
 
 export type ParsePresenceOptions = {
   /** When true, require a 64-char hex email hash (Peerly lobby). */
   requireEmailHash?: boolean
+  requireRendezvousId?: boolean
 }
 
 const HEX64 = /^[0-9a-f]{64}$/i
+const CAPABILITY = /^[A-Za-z0-9_-]{32,128}$/
 
 /** Validate an untrusted lobby presence blob. */
 export function parsePresencePayload(
@@ -145,6 +161,11 @@ export function parsePresencePayload(
   } else if (msg.emailHash !== undefined) {
     if (typeof msg.emailHash !== 'string' || !HEX64.test(msg.emailHash)) return null
   }
+  if (options.requireRendezvousId) {
+    if (typeof msg.rendezvousId !== 'string' || !CAPABILITY.test(msg.rendezvousId)) return null
+  } else if (msg.rendezvousId !== undefined) {
+    if (typeof msg.rendezvousId !== 'string' || !CAPABILITY.test(msg.rendezvousId)) return null
+  }
   const name =
     typeof msg.name === 'string' && msg.name.trim()
       ? msg.name.trim().slice(0, 80)
@@ -154,6 +175,9 @@ export function parsePresencePayload(
     name,
     ...(typeof msg.emailHash === 'string' && HEX64.test(msg.emailHash)
       ? { emailHash: msg.emailHash.toLowerCase() }
+      : {}),
+    ...(typeof msg.rendezvousId === 'string' && CAPABILITY.test(msg.rendezvousId)
+      ? { rendezvousId: msg.rendezvousId }
       : {}),
   }
 }

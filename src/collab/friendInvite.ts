@@ -255,9 +255,9 @@ export async function verifyFriendInviteResponse(
   )
 }
 
-/** Peerly lobby presence requires email hash for invite matching. */
+/** Peerly lobby presence requires a deployment-keyed rendezvous capability. */
 export function parsePresencePayload(raw: unknown): PresencePayload | null {
-  return coreParsePresence(raw, { requireEmailHash: true })
+  return coreParsePresence(raw, { requireRendezvousId: true })
 }
 
 /** Validate an untrusted invite wire blob (shape only — verify signature separately). */

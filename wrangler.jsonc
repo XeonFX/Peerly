@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "peerly",
   "main": "worker/index.mjs",
-  "compatibility_date": "2026-07-16",
+  "compatibility_date": "2026-07-22",
   "vars": {
     // The auth bridge executes in the Worker runtime, where Cloudflare's
     // build-time VITE_* variables are not available automatically.
@@ -14,6 +14,14 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  "ratelimits": [
+    {
+      "name": "RENDEZVOUS_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 30, "period": 60 }
+    }
+  ],
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
   "env": {
     // A single, stable staging worker for testing any branch with real Google
     // sign-in. Google OAuth requires exact JavaScript origins (no wildcards),
@@ -28,7 +36,14 @@
         "directory": "./dist",
         "not_found_handling": "single-page-application",
         "run_worker_first": ["/api/*"]
-      }
+      },
+      "ratelimits": [
+        {
+          "name": "RENDEZVOUS_RATE_LIMITER",
+          "namespace_id": "1002",
+          "simple": { "limit": 60, "period": 60 }
+        }
+      ]
     }
   }
 }

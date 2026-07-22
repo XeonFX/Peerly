@@ -19,6 +19,9 @@ const MAX_CHANNELS_PER_SOCKET = 4
 const MAX_CHANNEL_EVENT_LENGTH = 48
 const MAX_CHANNEL_DATA_LENGTH = 220_000
 const MAX_MESSAGE_ID_LENGTH = 96
+const MAX_ENTRIES_PER_SCOPE = 1_000
+const DEFAULT_ROOM_PAGE_SIZE = 100
+const MAX_ROOM_PAGE_SIZE = 200
 
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const validText = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max
@@ -120,7 +123,7 @@ export function attachCoordinationServer(wss) {
     const entries = presence.get(scope)
     if (!entries) return
     pruneMap(entries, PRESENCE_TTL_MS)
-    const members = [...entries.values()].map(entry => ({
+    const members = [...entries.values()].slice(0, MAX_ENTRIES_PER_SCOPE).map(entry => ({
       connectionId: entry.connectionId,
       memberId: entry.memberId,
       data: entry.data,
@@ -245,8 +248,19 @@ export function attachCoordinationServer(wss) {
     const listing = entries
       ? [...entries.values()].map(entry => ({ roomId: entry.roomId, data: entry.data }))
       : []
-    for (const socket of roomWatchers.get(directory) ?? []) {
-      direct(socket, 'room.snapshot', { directory, rooms: listing })
+    for (const [socket, page] of roomWatchers.get(directory) ?? []) {
+      const cursor = Math.min(page.cursor, listing.length)
+      const roomsPage = listing.slice(cursor, cursor + page.limit)
+      const nextCursor = cursor + roomsPage.length < listing.length
+        ? cursor + roomsPage.length
+        : undefined
+      direct(socket, 'room.snapshot', {
+        directory,
+        rooms: roomsPage,
+        cursor,
+        nextCursor,
+        total: listing.length,
+      })
     }
     if (entries?.size === 0) rooms.delete(directory)
   }
@@ -333,7 +347,13 @@ export function attachCoordinationServer(wss) {
         direct(socket, 'error', { code: 'presence-scope-limit' })
         return
       }
-      mapFor(presence, command.scope).set(socket, {
+      const entries = mapFor(presence, command.scope)
+      if (!entries.has(socket) && entries.size >= MAX_ENTRIES_PER_SCOPE) {
+        metrics.rejectedCommandsTotal += 1
+        direct(socket, 'error', { code: 'presence-capacity' })
+        return
+      }
+      entries.set(socket, {
         connectionId: state.id,
         memberId: command.memberId,
         data: command.data,
@@ -370,7 +390,13 @@ export function attachCoordinationServer(wss) {
         return
       }
       if (pendingMatchBySocket.has(socket)) return
-      mapFor(seekers, command.pool).set(socket, {
+      const entries = mapFor(seekers, command.pool)
+      if (!entries.has(socket) && entries.size >= MAX_ENTRIES_PER_SCOPE) {
+        metrics.rejectedCommandsTotal += 1
+        direct(socket, 'error', { code: 'seek-capacity' })
+        return
+      }
+      entries.set(socket, {
         memberId: command.memberId,
         tags,
         excluded,
@@ -437,10 +463,16 @@ export function attachCoordinationServer(wss) {
         return
       }
       const watchers = mapFor(roomWatchers, command.directory)
-      const isNew = !watchers.has(socket)
-      watchers.set(socket, true)
+      const previousPage = watchers.get(socket)
+      const cursor = Number.isSafeInteger(command.cursor) && command.cursor >= 0 ? command.cursor : 0
+      const limit = Number.isSafeInteger(command.limit) && command.limit > 0
+        ? Math.min(command.limit, MAX_ROOM_PAGE_SIZE)
+        : DEFAULT_ROOM_PAGE_SIZE
+      watchers.set(socket, { cursor, limit })
       state.watchedDirectories.add(command.directory)
-      if (isNew) sendRooms(command.directory)
+      if (!previousPage || previousPage.cursor !== cursor || previousPage.limit !== limit) {
+        sendRooms(command.directory)
+      }
       return
     }
 
@@ -460,7 +492,13 @@ export function attachCoordinationServer(wss) {
         direct(socket, 'error', { code: 'room-directory-limit' })
         return
       }
-      mapFor(rooms, command.directory).set(socket, {
+      const entries = mapFor(rooms, command.directory)
+      if (!entries.has(socket) && entries.size >= MAX_ENTRIES_PER_SCOPE) {
+        metrics.rejectedCommandsTotal += 1
+        direct(socket, 'error', { code: 'room-capacity' })
+        return
+      }
+      entries.set(socket, {
         roomId: command.roomId,
         data: command.data,
         seenAt: timestamp,

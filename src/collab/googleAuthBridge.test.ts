@@ -13,4 +13,9 @@ describe('getGoogleAuthBridgeOrigin', () => {
     vi.stubEnv('VITE_GOOGLE_AUTH_BRIDGE_ORIGIN', '')
     expect(getGoogleAuthBridgeOrigin()).toBeUndefined()
   })
+
+  it('keeps production sign-in direct when the configured bridge is the current origin', () => {
+    vi.stubEnv('VITE_GOOGLE_AUTH_BRIDGE_ORIGIN', 'https://peerly.cc')
+    expect(getGoogleAuthBridgeOrigin('https://peerly.cc')).toBeUndefined()
+  })
 })

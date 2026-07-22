@@ -89,13 +89,13 @@ describe('friendInvite protocol', () => {
     expect(await verifyFriendInviteResponse(decline)).toBe(true)
   })
 
-  it('parses presence with email hash only', () => {
-    expect(parsePresencePayload({ userId: 'u1', name: 'Ada', emailHash: 'ab' })).toBeNull()
-    const hash = 'a'.repeat(64)
-    expect(parsePresencePayload({ userId: 'u1', name: 'Ada', emailHash: hash })).toEqual({
+  it('parses presence with an opaque rendezvous capability only', () => {
+    expect(parsePresencePayload({ userId: 'u1', name: 'Ada', rendezvousId: 'short' })).toBeNull()
+    const rendezvousId = 'AbCdEf0123456789_opaque-capability-value'
+    expect(parsePresencePayload({ userId: 'u1', name: 'Ada', rendezvousId })).toEqual({
       userId: 'u1',
       name: 'Ada',
-      emailHash: hash,
+      rendezvousId,
     })
   })
 })

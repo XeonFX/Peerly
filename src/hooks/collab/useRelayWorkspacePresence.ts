@@ -8,6 +8,7 @@ import {
 import { useEffect, useState } from 'react'
 import type { Peer, UserProfile } from '../../types'
 import { sanitizePeerProfile } from '../../utils/profileSanitize'
+import { PUBLIC_NETWORK_ENV } from '../../config'
 
 type PresenceData = UserProfile & { userId: string }
 
@@ -29,7 +30,7 @@ export function useRelayWorkspacePresence(options: {
     let cancelled = false
     let activeScope = ''
     let activeMemberId = ''
-    const coordinator = createRelayCoordinator(import.meta.env)
+    const coordinator = createRelayCoordinator(PUBLIC_NETWORK_ENV)
     const unsubscribe = coordinator.subscribe(event => {
       if (event.type !== 'presence.snapshot' || event.scope !== activeScope) return
       void (async () => {

@@ -13,6 +13,8 @@ export type OutgoingFriendInvite = {
   inviteId: string
   toEmail: string
   toEmailHash: string
+  /** Opaque Worker-issued lookup capability; never derived from email in the browser. */
+  toRendezvousId?: string
   /** Full signed payload ready to re-send when the peer appears. */
   payload: FriendInvitePayload
   createdAt: number

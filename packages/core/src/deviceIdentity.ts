@@ -34,12 +34,29 @@ export type DeviceKeyId = string
 export class DeviceIdentity {
   private readonly store: KvStore<CryptoKeyPair>
   private cached: CryptoKeyPair | null = null
+  private pending: Promise<CryptoKeyPair> | null = null
 
   constructor(store: KvStore<CryptoKeyPair> = createKvStore('peerly-identity', 'keys')) {
     this.store = store
   }
 
   private async keyPair(): Promise<CryptoKeyPair> {
+    if (this.cached) return this.cached
+
+    // React Strict Mode and concurrent startup consumers can request the key
+    // before the first IndexedDB read/write completes. Without a shared
+    // in-flight promise, both calls generate a keypair and the later write can
+    // replace the key an OIDC nonce was already bound to.
+    if (this.pending) return this.pending
+    this.pending = this.loadOrCreateKeyPair()
+    try {
+      return await this.pending
+    } finally {
+      this.pending = null
+    }
+  }
+
+  private async loadOrCreateKeyPair(): Promise<CryptoKeyPair> {
     if (this.cached) return this.cached
 
     const stored = await this.store.get(STORE_KEY)

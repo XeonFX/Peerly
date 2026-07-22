@@ -5,6 +5,7 @@ import {
   resolveRelayPort as corePort,
   resolveRelayUrls as coreUrls,
   type TurnServer as CoreTurnServer,
+  type Env,
 } from '@peerly/core'
 
 export const APP_NAME = 'Peerly'
@@ -25,6 +26,18 @@ export function appBuildLabel(): string {
 }
 
 export const APP_ID = 'peerly-collab-v1'
+
+/** Explicit public allowlist: never embed the complete hosting environment. */
+export const PUBLIC_NETWORK_ENV: Env = {
+  VITE_SIGNALING: import.meta.env.VITE_SIGNALING,
+  VITE_RELAY_HOST: import.meta.env.VITE_RELAY_HOST,
+  VITE_RELAY_HOSTS: import.meta.env.VITE_RELAY_HOSTS,
+  VITE_RELAY_PORT: import.meta.env.VITE_RELAY_PORT,
+  VITE_NOSTR_RELAYS: import.meta.env.VITE_NOSTR_RELAYS,
+  VITE_TURN_URLS: import.meta.env.VITE_TURN_URLS,
+  VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
+  VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
+}
 
 export const DEFAULT_USER_COLOR = '#36c5f0'
 
@@ -48,11 +61,11 @@ export function buildRoomId(workspaceId: string): string {
 
 /** Used when VITE_SIGNALING=ws-relay (E2E / local relay). */
 export async function resolveRelayPort(): Promise<string> {
-  return corePort(import.meta.env)
+  return corePort(PUBLIC_NETWORK_ENV)
 }
 
 export async function resolveRelayUrls(): Promise<string[]> {
-  return coreUrls(import.meta.env)
+  return coreUrls(PUBLIC_NETWORK_ENV)
 }
 
 import type { SignalingStrategy } from './collab/signaling'
@@ -65,17 +78,17 @@ export { buildRelayUrls, DEFAULT_NOSTR_RELAYS, type TurnServer } from '@peerly/c
 
 /** Nostr relay URLs (wss://…). Override via VITE_NOSTR_RELAYS comma-separated env. */
 export function getNostrRelayConfig(): { urls: string[] } {
-  return coreNostrConfig(import.meta.env)
+  return coreNostrConfig(PUBLIC_NETWORK_ENV)
 }
 
 export function getTurnConfig(): CoreTurnServer[] | undefined {
-  return coreTurnConfig(import.meta.env)
+  return coreTurnConfig(PUBLIC_NETWORK_ENV)
 }
 
 export function getSupabaseRoomConfig():
   | { appId: string; relayConfig: { supabaseKey: string } }
   | null {
-  return coreSupabaseConfig(import.meta.env)
+  return coreSupabaseConfig(PUBLIC_NETWORK_ENV)
 }
 
 export function getRoomAppId(strategy: SignalingStrategy): string {

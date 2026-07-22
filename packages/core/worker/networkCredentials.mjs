@@ -184,6 +184,38 @@ export async function verifyDeviceRequest(headers, providerId, claims, now = Dat
   }
 }
 
+/** Verify a device-bound signature over an endpoint-specific canonical payload. */
+export async function verifyDevicePayload(headers, claims, payload, now = Date.now()) {
+  const deviceKeyId = headers.get('x-peerly-device-key') ?? ''
+  const timestamp = Number(headers.get('x-peerly-request-ts') ?? '')
+  const nonce = headers.get('x-peerly-request-nonce') ?? ''
+  const signature = headers.get('x-peerly-request-signature') ?? ''
+  if (!/^P-256:[A-Za-z0-9_-]{20,}:[A-Za-z0-9_-]{20,}$/.test(deviceKeyId)) return null
+  if (!Number.isSafeInteger(timestamp) || Math.abs(now - timestamp) > MAX_REQUEST_AGE_MS) return null
+  if (nonce.length < 16 || nonce.length > 128 || signature.length < 40 || signature.length > 256) return null
+  if (claims.nonce !== deviceKeyId) return null
+  const [curve, x, y] = deviceKeyId.split(':')
+  if (curve !== 'P-256' || !x || !y) return null
+  try {
+    const key = await crypto.subtle.importKey(
+      'jwk',
+      { kty: 'EC', crv: 'P-256', x, y, ext: true, key_ops: ['verify'] },
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify']
+    )
+    const valid = await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      key,
+      base64UrlBytes(signature),
+      payload
+    )
+    return valid ? { deviceKeyId, timestamp, nonce } : null
+  } catch {
+    return null
+  }
+}
+
 async function hmac(secret, algorithm, value) {
   const key = await crypto.subtle.importKey(
     'raw',
@@ -205,7 +237,9 @@ export async function issueNetworkCredentials(request, env) {
   const providerId = request.headers.get('x-peerly-provider') ?? ''
   if (!token || !providerId) return new Response('Unauthorized', { status: 401 })
   const provider = resolveOidcProvider(providerId, env)
-  if (!provider || !env.RELAY_TICKET_SECRET || !env.RELAY_TICKET_AUDIENCE ||
+  const relayAudiences = (env.RELAY_TICKET_AUDIENCES || env.RELAY_TICKET_AUDIENCE || '')
+    .split(',').map(value => value.trim().toLowerCase()).filter(Boolean)
+  if (!provider || !env.RELAY_TICKET_SECRET || relayAudiences.length === 0 ||
       !env.TURN_AUTH_SECRET || !env.TURN_URLS) {
     return new Response('Network credentials are not configured', { status: 503 })
   }
@@ -221,25 +255,32 @@ export async function issueNetworkCredentials(request, env) {
       new TextEncoder().encode(`${claims.iss}\n${claims.sub}\n${deviceProof.deviceKeyId}`)
     ))).slice(0, 32)
 
-    const ticketBody = textBase64Url(JSON.stringify({
-      v: 1,
-      aud: env.RELAY_TICKET_AUDIENCE,
-      sub: subjectDigest,
-      exp: expiresSeconds,
-    }))
-    const ticketSignature = bytesBase64Url(await hmac(env.RELAY_TICKET_SECRET, 'SHA-256', ticketBody))
+    const relayTickets = Object.fromEntries(await Promise.all([...new Set(relayAudiences)].map(async aud => {
+      const body = textBase64Url(JSON.stringify({ v: 1, aud, sub: subjectDigest, exp: expiresSeconds }))
+      const signature = bytesBase64Url(await hmac(env.RELAY_TICKET_SECRET, 'SHA-256', body))
+      return [aud, `${body}.${signature}`]
+    })))
     const turnUsername = `${expiresSeconds}:${subjectDigest}`
     const turnCredential = bytesBase64(await hmac(env.TURN_AUTH_SECRET, 'SHA-1', turnUsername))
     const urls = env.TURN_URLS.split(',').map(value => value.trim()).filter(Boolean)
     if (urls.length === 0) throw new Error('missing TURN urls')
 
+    const rendezvousId = env.RENDEZVOUS_SECRET && typeof claims.email === 'string'
+      ? bytesBase64Url(await hmac(
+          env.RENDEZVOUS_SECRET,
+          'SHA-256',
+          claims.email.trim().toLowerCase()
+        ))
+      : undefined
     return Response.json({
-      relayTicket: `${ticketBody}.${ticketSignature}`,
+      relayTicket: relayTickets[relayAudiences[0]],
+      relayTickets,
       iceServers: [
         { urls: ['stun:stun.l.google.com:19302'] },
         { urls, username: turnUsername, credential: turnCredential },
       ],
       expiresAt: expiresSeconds * 1000,
+      ...(rendezvousId ? { rendezvousId } : {}),
     }, {
       headers: {
         'cache-control': 'no-store',

@@ -15,7 +15,7 @@ import {
   importDeviceSyncSnapshot,
   type DeviceSyncSnapshot,
 } from '../collab/deviceSync'
-import { APP_ID } from '../config'
+import { APP_ID, PUBLIC_NETWORK_ENV } from '../config'
 
 type Role = 'source' | 'target'
 type Hello = {
@@ -65,7 +65,7 @@ export function useDevicePairing(options: {
     return () => { cancelled = true }
   }, [secret, role])
 
-  const { room } = useRoom({ appId: APP_ID, roomId, password: secret ?? '', env: import.meta.env })
+  const { room } = useRoom({ appId: APP_ID, roomId, password: secret ?? '', env: PUBLIC_NETWORK_ENV })
 
   useEffect(() => {
     setRemote(null); setSent(false); setReceived(null); setSynced(null)

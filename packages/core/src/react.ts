@@ -31,6 +31,27 @@ export function useAccessibleDialog(open: boolean, onClose: () => void) {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
 
+    // Make every sibling outside the dialog's ancestor chain unavailable to
+    // assistive technology and pointer/keyboard interaction. Setting only the
+    // body child would also inert a dialog rendered inside #root, so walk up
+    // the tree and inert siblings at each level instead.
+    const inerted: Array<{ element: HTMLElement; inert: boolean; ariaHidden: string | null }> = []
+    let active: HTMLElement = dialog
+    while (active.parentElement && active.parentElement !== document.body) {
+      const parent = active.parentElement
+      for (const sibling of parent.children) {
+        if (!(sibling instanceof HTMLElement) || sibling === active) continue
+        inerted.push({
+          element: sibling,
+          inert: sibling.inert,
+          ariaHidden: sibling.getAttribute('aria-hidden'),
+        })
+        sibling.inert = true
+        sibling.setAttribute('aria-hidden', 'true')
+      }
+      active = parent
+    }
+
     const focusable = () => [...dialog.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE)]
       .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
     ;(focusable()[0] ?? dialog).focus()
@@ -62,6 +83,11 @@ export function useAccessibleDialog(open: boolean, onClose: () => void) {
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       document.body.style.overflow = previousOverflow
+      for (const { element, inert, ariaHidden } of inerted) {
+        element.inert = inert
+        if (ariaHidden === null) element.removeAttribute('aria-hidden')
+        else element.setAttribute('aria-hidden', ariaHidden)
+      }
       previousFocus?.focus()
     }
   }, [open, onCloseRef])

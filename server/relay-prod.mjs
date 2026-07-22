@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
-import { createHmac, timingSafeEqual } from 'node:crypto'
 import { createBoundedRelayServer } from '../packages/core/server/boundedRelay.mjs'
 import { attachCoordinationServer } from './coordination.mjs'
+import { parseRelayTicketSecrets, verifyRelayTicket } from './relayTicket.mjs'
 
 // Production signaling relay for Peerly and authorized consumer apps.
 //
@@ -12,44 +12,9 @@ import { attachCoordinationServer } from './coordination.mjs'
 //
 // Deploy with RELAY_TICKET_SECRETS="relay.example.com=secret" and RELAY_PORT.
 
-function parsePairs(raw, label, required = true) {
-  const map = new Map()
-  for (const entry of (raw || '').split(',')) {
-    const trimmed = entry.trim()
-    if (!trimmed) continue
-    const eq = trimmed.indexOf('=')
-    if (eq < 1) throw new Error(`${label} entry is not host=value: "${trimmed}"`)
-    const host = trimmed.slice(0, eq).trim()
-    const token = trimmed.slice(eq + 1).trim()
-    if (!host || !token) throw new Error(`${label} entry has empty host or value: "${trimmed}"`)
-    map.set(host.toLowerCase(), token)
-  }
-  if (required && map.size === 0) throw new Error(`${label} is empty — set host=value pairs`)
-  return map
-}
-
-const ticketSecretsByHost = parsePairs(process.env.RELAY_TICKET_SECRETS, 'RELAY_TICKET_SECRETS')
+const ticketSecretsByHost = parseRelayTicketSecrets(process.env.RELAY_TICKET_SECRETS)
 
 const port = Number(process.env.RELAY_PORT) || 8090
-
-function readTicket(ticket, host) {
-  try {
-    const [body, signature] = ticket.split('.')
-    if (!body || !signature) return null
-    const secret = ticketSecretsByHost.get(host)
-    if (!secret) return null
-    const expected = createHmac('sha256', secret).update(body).digest()
-    const received = Buffer.from(signature, 'base64url')
-    if (received.length !== expected.length || !timingSafeEqual(received, expected)) return null
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
-    const valid = payload.v === 1 && payload.aud === host &&
-      typeof payload.sub === 'string' && payload.sub.length > 0 && payload.sub.length <= 512 &&
-      typeof payload.exp === 'number' && payload.exp > Math.floor(Date.now() / 1000)
-    return valid ? payload : null
-  } catch {
-    return null
-  }
-}
 
 const verifyClient = (info, cb) => {
   const host = (info.req.headers.host || '').split(':')[0].toLowerCase()
@@ -57,7 +22,7 @@ const verifyClient = (info, cb) => {
 
   const url = new URL(info.req.url, `http://${host}`)
   const ticket = url.searchParams.get('ticket') ?? ''
-  const payload = readTicket(ticket, host)
+  const payload = verifyRelayTicket(ticket, host, ticketSecretsByHost)
   if (!payload) return cb(false, 401, 'unauthorized')
 
   // Used by the bounded relay and coordinator for quotas that survive

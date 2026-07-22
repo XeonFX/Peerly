@@ -6,6 +6,7 @@ import {
   verifyDeviceRequest,
   verifyOidcToken,
 } from '../packages/core/worker/networkCredentials.mjs'
+import { lookupRendezvous } from '../packages/core/worker/rendezvous.mjs'
 
 const b64url = bytes => Buffer.from(bytes).toString('base64url')
 const jsonPart = value => b64url(new TextEncoder().encode(JSON.stringify(value)))
@@ -73,6 +74,7 @@ async function fixture() {
       'x-peerly-request-nonce': nonce,
       'x-peerly-request-signature': b64url(requestSig),
     },
+    devicePrivateKey: device.privateKey,
   }
 }
 
@@ -104,9 +106,10 @@ describe('network credential worker', () => {
     const env = {
       VITE_GOOGLE_CLIENT_ID: 'client-id',
       RELAY_TICKET_SECRET: 'relay-secret-at-least-long-enough',
-      RELAY_TICKET_AUDIENCE: 'relay.example.com',
+      RELAY_TICKET_AUDIENCES: 'relay-eu.example.com,relay-us.example.com',
       TURN_AUTH_SECRET: 'turn-secret-at-least-long-enough',
       TURN_URLS: 'turn:turn.example.com:3478,turns:turn.example.com:443?transport=tcp',
+      RENDEZVOUS_SECRET: 'rendezvous-secret-at-least-long-enough',
     }
     const response = await issueNetworkCredentials(new Request('https://app.example/api/network/credentials', {
       method: 'POST',
@@ -116,8 +119,10 @@ describe('network credential worker', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     const body = await response.json()
     expect(body.relayTicket).toMatch(/^[^.]+\.[^.]+$/)
+    expect(Object.keys(body.relayTickets)).toEqual(['relay-eu.example.com', 'relay-us.example.com'])
     expect(body.iceServers[1].username).toMatch(/^\d+:/)
     expect(body.expiresAt).toBeGreaterThan(Date.now())
+    expect(body.rendezvousId).toMatch(/^[A-Za-z0-9_-]{40,}$/)
 
     const forged = new Headers(headers)
     forged.set('x-peerly-request-signature', 'forged')
@@ -126,6 +131,44 @@ describe('network credential worker', () => {
       headers: forged,
     }), env)
     expect(denied.status).toBe(401)
+  })
+
+  it('returns stable opaque IDs only after device authentication and rate limiting', async () => {
+    const { rsaJwk, headers, devicePrivateKey } = await fixture()
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ keys: [rsaJwk] })))
+    const email = 'target@example.com'
+    const proof = new TextEncoder().encode([
+      'peerly-rendezvous-lookup-v1',
+      'google',
+      headers['x-peerly-device-key'],
+      headers['x-peerly-request-ts'],
+      headers['x-peerly-request-nonce'],
+      email,
+    ].join('\n'))
+    const signature = await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      devicePrivateKey,
+      proof
+    )
+    const signedHeaders = { ...headers, 'x-peerly-request-signature': b64url(signature) }
+    const env = {
+      VITE_GOOGLE_CLIENT_ID: 'client-id',
+      RENDEZVOUS_SECRET: 'rendezvous-secret-at-least-long-enough',
+      RENDEZVOUS_RATE_LIMITER: { limit: vi.fn(async () => ({ success: true })) },
+    }
+    const makeRequest = () => new Request('https://app.example/api/rendezvous/lookup', {
+      method: 'POST',
+      headers: { ...signedHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    const first = await lookupRendezvous(makeRequest(), env)
+    const second = await lookupRendezvous(makeRequest(), env)
+    expect(first.status).toBe(200)
+    expect(await first.json()).toEqual(await second.json())
+    expect(env.RENDEZVOUS_RATE_LIMITER.limit).toHaveBeenCalledTimes(2)
+
+    env.RENDEZVOUS_RATE_LIMITER.limit.mockResolvedValueOnce({ success: false })
+    await expect(lookupRendezvous(makeRequest(), env).then(response => response.status)).resolves.toBe(429)
   })
 
   it('uses a bounded last-good JWKS during a transient provider outage', async () => {

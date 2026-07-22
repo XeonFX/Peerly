@@ -9,9 +9,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
           package-manager-cache: false
@@ -25,13 +25,26 @@ jobs:
           node --version | grep -Eq '^v24\.' || (echo "need Node 24.x, got $(node --version)" && exit 1)
           npm --version | grep -Eq '^11\.' || (echo "need npm 11.x, got $(npm --version)" && exit 1)
 
-      - run: npm ci
+      # Dependencies are all prebuilt JS/native packages; suppress lifecycle
+      # scripts to avoid Sharp falling back to an unnecessary source build.
+      - run: npm ci --ignore-scripts
+
+      - run: npm run audit:production
 
       - run: npm run lint
 
       - run: npm test
 
-      - run: npm run build
+      - run: npm run test:coverage
+
+      - name: Build and prove retired static credentials cannot enter the bundle
+        run: npm run build
+        env:
+          VITE_RELAY_TOKEN: STATIC_RELAY_SECRET_MUST_NOT_SHIP
+          VITE_TURN_USERNAME: STATIC_TURN_USER_MUST_NOT_SHIP
+          VITE_TURN_CREDENTIAL: STATIC_TURN_SECRET_MUST_NOT_SHIP
+
+      - run: npm run worker:check
 
       - run: npx playwright install --with-deps chromium
 

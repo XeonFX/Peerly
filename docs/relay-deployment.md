@@ -4,7 +4,11 @@ The browser never receives a long-lived relay or TURN secret. `/api/network/cred
 
 ## Worker secrets
 
-Set `RELAY_TICKET_SECRET`, `RELAY_TICKET_AUDIENCE`, `TURN_AUTH_SECRET`, and `TURN_URLS`. Mirror the app's provider configuration in the Worker. For a generic provider, set `OIDC_JWKS_URL` when its keys are not at `<issuer>/.well-known/jwks.json`.
+Set `RELAY_TICKET_SECRET`, comma-separated `RELAY_TICKET_AUDIENCES`,
+`TURN_AUTH_SECRET`, `TURN_URLS`, and `RENDEZVOUS_SECRET`. Each relay hostname
+receives a distinct audience-bound ticket. Mirror the app's provider
+configuration in the Worker. For a generic provider, set `OIDC_JWKS_URL` when
+its keys are not at `<issuer>/.well-known/jwks.json`.
 
 ## Relay process
 
