@@ -9,7 +9,7 @@ import {
   loadAccountSyncSecret,
   type DeviceSyncSnapshot,
 } from '../collab/deviceSync'
-import { APP_ID } from '../config'
+import { APP_ID, PUBLIC_NETWORK_ENV } from '../config'
 
 type SyncHello = {
   v: 1
@@ -64,7 +64,7 @@ export function useApprovedDeviceSync(
     return () => { cancelled = true }
   }, [secret])
 
-  const { room } = useRoom({ appId: APP_ID, roomId, password: secret ?? '', env: import.meta.env })
+  const { room } = useRoom({ appId: APP_ID, roomId, password: secret ?? '', env: PUBLIC_NETWORK_ENV })
 
   useEffect(() => {
     if (!room || !userId) return

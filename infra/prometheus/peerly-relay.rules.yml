@@ -1,0 +1,24 @@
+groups:
+  - name: peerly-relay
+    rules:
+      - alert: PeerlyRelayDown
+        expr: up{job="peerly-relay"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "Peerly relay is unavailable" }
+      - alert: PeerlyRelayDrops
+        expr: rate(peerly_relay_droppedTotal[5m]) > 5
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Sustained relay drops or slow consumers" }
+      - alert: PeerlyRelayRateLimited
+        expr: rate(peerly_relay_rateLimitedTotal[5m]) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Sustained relay rate limiting" }
+      - alert: PeerlyPendingMatchesStuck
+        expr: peerly_coordinator_pendingMatches > 100
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Coordinator match acknowledgements are backing up" }
+

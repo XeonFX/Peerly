@@ -92,8 +92,9 @@ fails after SDP exchange (strict NAT / flaky path).
 Related helpers: `signalingLabel()`, `buildRelayUrls()`, `getNostrRelayConfig()`,
 `getSupabaseRoomConfig()`, `resolveRelayPort()`.
 
-TURN for strict NATs: `VITE_TURN_URLS`, `VITE_TURN_USERNAME`,
-`VITE_TURN_CREDENTIAL` (see `getTurnConfig`).
+TURN for strict NATs uses `VITE_TURN_URLS` plus short-lived credentials from
+`/api/network/credentials` (see `resolveIceServers`). Do not embed long-lived
+TURN credentials in `VITE_*` variables.
 
 ### Relay diagnostics
 

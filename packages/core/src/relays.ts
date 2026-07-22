@@ -21,12 +21,27 @@ function relayScheme(): 'ws' | 'wss' {
  * runs alongside the dev server. Remote production relays require a short-lived
  * runtime ticket; static VITE_* query tokens are intentionally unsupported.
  */
-export function buildRelayUrls(port: string, env: Env = {}, runtimeTicket?: string): string[] {
-  const host = env.VITE_RELAY_HOST || relayHost()
-  const scheme = env.VITE_RELAY_HOST ? 'wss' : relayScheme()
-  const query = runtimeTicket ? `?ticket=${encodeURIComponent(runtimeTicket)}` : ''
-  const urls = [`${scheme}://${host}:${port}${query}`]
-  if (!env.VITE_RELAY_HOST && scheme === 'ws') urls.push(`ws://127.0.0.1:${port}${query}`)
+export function buildRelayUrls(
+  port: string,
+  env: Env = {},
+  runtimeTicket?: string | Record<string, string>
+): string[] {
+  const configuredHosts = (env.VITE_RELAY_HOSTS || env.VITE_RELAY_HOST || '')
+    .split(',')
+    .map(host => host.trim())
+    .filter(Boolean)
+  const hosts = configuredHosts.length > 0 ? [...new Set(configuredHosts)] : [relayHost()]
+  const scheme = configuredHosts.length > 0 ? 'wss' : relayScheme()
+  const ticketFor = (host: string) => typeof runtimeTicket === 'string'
+    ? runtimeTicket
+    : runtimeTicket?.[host]
+  const urlFor = (host: string, urlScheme = scheme) => {
+    const ticket = ticketFor(host)
+    const query = ticket ? `?ticket=${encodeURIComponent(ticket)}` : ''
+    return `${urlScheme}://${host}:${port}${query}`
+  }
+  const urls = hosts.map(host => urlFor(host))
+  if (configuredHosts.length === 0 && scheme === 'ws') urls.push(urlFor('127.0.0.1', 'ws'))
   return urls
 }
 
@@ -51,7 +66,7 @@ export async function resolveRelayPort(env: Env): Promise<string> {
 export async function resolveRelayUrls(env: Env): Promise<string[]> {
   const port = await resolveRelayPort(env)
   const runtime = await getRuntimeNetworkCredentials()
-  return buildRelayUrls(port, env, runtime?.relayTicket)
+  return buildRelayUrls(port, env, runtime?.relayTickets ?? runtime?.relayTicket)
 }
 
 /**

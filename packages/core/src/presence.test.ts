@@ -16,6 +16,14 @@ describe('createPresenceIndex', () => {
     expect(idx.peerIdsForEmailHash(hash)).toEqual(['peer-1'])
   })
 
+  it('looks up opaque rendezvous capabilities without normalizing their entropy', () => {
+    const idx = createPresenceIndex()
+    const rendezvousId = 'AbCdEf0123456789_opaque-capability-value'
+    idx.record('peer-1', { userId: 'u1', name: 'Ada', rendezvousId })
+    expect(idx.peerIdsForRendezvousId(rendezvousId)).toEqual(['peer-1'])
+    expect(idx.peerIdsForRendezvousId(rendezvousId.toLowerCase())).toEqual([])
+  })
+
   it('prunes stale entries', () => {
     const idx = createPresenceIndex(1_000)
     idx.record('p', { userId: 'u', name: 'X', seenAt: Date.now() - 5_000 })
@@ -65,5 +73,17 @@ describe('parsePresencePayload', () => {
     expect(
       parsePresencePayload({ userId: 'u1', name: 'Sam', emailHash: hash }, { requireEmailHash: true })
     ).toEqual({ userId: 'u1', name: 'Sam', emailHash: hash })
+  })
+
+  it('requires an opaque rendezvous capability when asked', () => {
+    expect(parsePresencePayload(
+      { userId: 'u1', name: 'Sam' },
+      { requireRendezvousId: true }
+    )).toBeNull()
+    const rendezvousId = 'AbCdEf0123456789_opaque-capability-value'
+    expect(parsePresencePayload(
+      { userId: 'u1', name: 'Sam', rendezvousId },
+      { requireRendezvousId: true }
+    )).toEqual({ userId: 'u1', name: 'Sam', rendezvousId })
   })
 })

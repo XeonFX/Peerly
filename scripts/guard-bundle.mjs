@@ -19,6 +19,8 @@ const FORBIDDEN = [
   { label: 'E2E RSA private exponent (d)', needle: 'NqIymRvy3qsy_VGDrWFbp70XvKmt6c4Mc9r8aT1BoNtor' },
   { label: 'E2E RSA prime (p)', needle: '8p03H2OFkL4sVSwxfbQ_3LWa7QO1f9uJPD4k0sXwEDRny' },
   { label: 'E2E fake-Google public modulus (n)', needle: 'zrpA9xwzeaU2ZndxJNk7I3wH8scLSOW5UVgYqEl478G1MyGLsk0A6aQtZrJVky1uwbocZEDeYcRA48YM1W6wv8WOucjkd05yWse2uB' },
+  { label: 'static relay credential sentinel', needle: 'STATIC_RELAY_SECRET_MUST_NOT_SHIP' },
+  { label: 'static TURN credential sentinel', needle: 'STATIC_TURN_SECRET_MUST_NOT_SHIP' },
 ]
 
 function walk(dir) {
@@ -48,7 +50,7 @@ for (const file of files) {
 }
 
 if (violations.length > 0) {
-  console.error('guard:bundle FAILED — test-only key material is in the production bundle:\n')
+  console.error('guard:bundle FAILED — forbidden credential material is in the production bundle:\n')
   for (const violation of violations) console.error(`  - ${violation}`)
   console.error(
     '\nThe E2E auth fixtures must stay behind the dead-code guard in src/collab/e2eAuth.ts.\n' +
@@ -57,4 +59,4 @@ if (violations.length > 0) {
   process.exit(1)
 }
 
-console.log(`guard:bundle OK — no test key material in ${files.length} bundled files.`)
+console.log(`guard:bundle OK — no test key or static credential material in ${files.length} bundled files.`)

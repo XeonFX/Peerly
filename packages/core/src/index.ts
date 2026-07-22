@@ -25,6 +25,7 @@ export {
   configureRuntimeAuthCredentialProvider,
   configureRuntimeAuthTokenProvider,
   getRuntimeNetworkCredentials,
+  lookupRendezvousId,
   type RuntimeAuthCredential,
   type RuntimeNetworkCredentials,
 } from './runtimeCredentials.js'

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   createPresenceIndex,
+  lookupRendezvousId,
   PRESENCE_INTERVAL_MS,
   signControl,
   signDmRing,
@@ -12,6 +13,7 @@ import {
   type SignedControl,
 } from '@peerly/core'
 import { useLatest, useRelayChannel } from '@peerly/core/react'
+import { PUBLIC_NETWORK_ENV } from '../config'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
 import { defaultJwksFetcher, getIdentityProvider } from '../collab/identityProviders'
 import {
@@ -79,7 +81,7 @@ export type PresenceLobbyOptions = {
 /**
  * Relay-forwarded public lobby for friend presence + email invites.
  *
- * Presence carries only email hashes. Invites are signed with the device key
+ * Presence carries only Worker-issued opaque rendezvous capabilities. Invites are signed with the device key
  * and delivered directed when a matching peer is online. Offline targets stay
  * in the local outgoing queue until they show up (no server mailbox).
  */
@@ -106,7 +108,7 @@ export function usePresenceLobby({
 
   const presenceIndexRef = useRef(createPresenceIndex())
   const connectedPeersRef = useRef(0)
-  const myEmailHashRef = useRef<string>('')
+  const myRendezvousIdRef = useRef<string>('')
 
   const sendersRef = useRef<{
     invite: (msg: FriendInvitePayload, to: string) => void
@@ -118,22 +120,35 @@ export function usePresenceLobby({
   const { room } = useRelayChannel({
     channel: roomEnabled ? `peerly:presence:${LOBBY_ROOM_ID}` : '',
     memberId: roomEnabled ? profile?.userId ?? '' : '',
-    env: import.meta.env,
+    env: PUBLIC_NETWORK_ENV,
     onError: message => {
       if (connectedPeersRef.current === 0) setLobbyError(message)
     },
   })
 
-  // Keep my email hash in sync for inbound matching.
+  // The Worker derives this capability with a deployment secret after OIDC/device verification.
   useEffect(() => {
     if (!profile?.email) {
-      myEmailHashRef.current = ''
+      myRendezvousIdRef.current = ''
       return
     }
-    void hashEmail(profile.email).then(h => {
-      myEmailHashRef.current = h
+    void lookupRendezvousId(profile.email).then(rendezvousId => {
+      myRendezvousIdRef.current = rendezvousId ?? ''
     })
   }, [profile?.email])
+
+  // Migrate still-valid local queues created before opaque rendezvous IDs existed.
+  useEffect(() => {
+    if (!roomEnabled) return
+    void (async () => {
+      const migrated = await Promise.all(loadOutgoingInvites().map(async item => ({
+        ...item,
+        toRendezvousId: item.toRendezvousId ?? await lookupRendezvousId(item.toEmail) ?? undefined,
+      })))
+      saveOutgoingInvites(migrated)
+      setOutgoing(migrated)
+    })()
+  }, [roomEnabled])
 
   useEffect(() => {
     if (!room || !roomEnabled) {
@@ -180,14 +195,14 @@ export function usePresenceLobby({
 
     const announcePresence = (to?: string) => {
       const me = profileRef.current
-      const hash = myEmailHashRef.current
+      const rendezvousId = myRendezvousIdRef.current
       const id = identityRef.current
       const proof = attestationRef.current
-      if (!me || !hash || !id || !proof) return
+      if (!me || !rendezvousId || !id || !proof) return
       const payload: PresencePayload = {
         userId: me.userId,
         name: me.name,
-        emailHash: hash,
+        rendezvousId,
       }
       void signControl(id, PRESENCE_SCHEME, 'presence', me.userId, payload, {
         attestation: proof,
@@ -197,11 +212,11 @@ export function usePresenceLobby({
     const recordPresence = (peerId: string, parsed: PresencePayload) => {
       const me = profileRef.current
       if (me && parsed.userId === me.userId) return
-      if (!parsed.emailHash) return
+      if (!parsed.rendezvousId) return
       presence.record(peerId, {
         userId: parsed.userId,
         name: parsed.name,
-        emailHash: parsed.emailHash,
+        rendezvousId: parsed.rendezvousId,
       })
       setPresenceVersion(v => v + 1)
     }
@@ -221,7 +236,9 @@ export function usePresenceLobby({
       setOutgoing(prev => {
         let changed = false
         const next = prev.map(item => {
-          const peerIds = presence.peerIdsForEmailHash(item.toEmailHash)
+          const peerIds = item.toRendezvousId
+            ? presence.peerIdsForRendezvousId(item.toRendezvousId)
+            : []
           if (peerIds.length === 0) return item
           if (item.lastSentAt && now - item.lastSentAt < INVITE_RETRY_MS) return item
           for (const peerId of peerIds) void inviteAction.send(item.payload, { target: peerId })
@@ -261,7 +278,7 @@ export function usePresenceLobby({
           deviceKeyId: message.deviceKeyId,
           fromUserId: message.userId,
         })
-        if (!binding || await hashEmail(binding.claims.email) !== parsed.emailHash) return
+        if (!binding || await lookupRendezvousId(binding.claims.email) !== parsed.rendezvousId) return
         recordPresence(peerId, parsed)
         // New verified peer might match a pending invite.
         deliverPendingInvites()
@@ -293,8 +310,7 @@ export function usePresenceLobby({
         if (!(await verifyFriendInvite(parsed))) return
         if (!(await verifyAttestedPeer(parsed))) return
         const me = profileRef.current
-        const myHash = myEmailHashRef.current
-        if (!me || !myHash || parsed.toEmailHash !== myHash) return
+        if (!me || parsed.toEmailHash !== await hashEmail(me.email)) return
         if (parsed.fromUserId === me.userId) return
         // Already friends — auto-ack so their outgoing queue clears.
         if (isFriend(loadFriends(), parsed.fromUserId)) {
@@ -327,11 +343,6 @@ export function usePresenceLobby({
           }
           return
         }
-        recordPresence(peerId, {
-          userId: parsed.fromUserId,
-          name: parsed.fromName,
-          emailHash: parsed.fromEmailHash,
-        })
         const incomingInvite: IncomingFriendInvite = {
           inviteId: parsed.inviteId,
           fromUserId: parsed.fromUserId,
@@ -402,9 +413,9 @@ export function usePresenceLobby({
       refreshCounts()
     }
 
-    // Hash may still be computing on first join — announce once ready.
-    void hashEmail(profileRef.current?.email ?? '').then(h => {
-      myEmailHashRef.current = h
+    // Credentials may still be resolving on first join — announce once ready.
+    void lookupRendezvousId(profileRef.current?.email ?? '').then(rendezvousId => {
+      myRendezvousIdRef.current = rendezvousId ?? ''
       announcePresence()
     })
     refreshCounts()
@@ -458,6 +469,10 @@ export function usePresenceLobby({
           : `inv-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
       try {
+        const toRendezvousId = await lookupRendezvousId(normalized)
+        if (!toRendezvousId) {
+          return { ok: false, error: 'Private friend discovery is temporarily unavailable' }
+        }
         const payload = await createFriendInvite(id, {
           inviteId,
           fromUserId: me.userId,
@@ -470,13 +485,14 @@ export function usePresenceLobby({
           inviteId,
           toEmail: normalized,
           toEmailHash: payload.toEmailHash,
+          toRendezvousId,
           payload,
           createdAt: Date.now(),
           lastSentAt: 0,
         }
         setOutgoing(prev => upsertOutgoingInvite(prev, entry))
 
-        const peerIds = presenceIndexRef.current.peerIdsForEmailHash(payload.toEmailHash)
+        const peerIds = presenceIndexRef.current.peerIdsForRendezvousId(toRendezvousId)
         if (peerIds.length && sendersRef.current) {
           for (const peerId of peerIds) sendersRef.current.invite(payload, peerId)
           setOutgoing(prev => {

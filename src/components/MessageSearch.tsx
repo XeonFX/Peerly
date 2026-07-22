@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useAccessibleDialog } from '@peerly/core/react'
 import type { Channel, Message, Peer, UserProfile } from '../types'
 import { buildSenderDirectory, resolveSenderInfo } from '../utils/senderDirectory'
 import { formatTime } from '../utils/format'
@@ -40,21 +41,12 @@ export function MessageSearch({
 }: Props) {
   const { tr } = useI18n()
   const [query, setQuery] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useAccessibleDialog(open, onClose)
 
   useEffect(() => {
     if (!open) return
     setQuery('')
-    const frame = requestAnimationFrame(() => inputRef.current?.focus())
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      cancelAnimationFrame(frame)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open, onClose])
+  }, [open])
 
   const directory = useMemo(() => {
     if (!open) return {}
@@ -82,6 +74,7 @@ export function MessageSearch({
       onMouseDown={onClose}
     >
       <div
+        ref={dialogRef}
         className="flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-2xl"
         role="dialog"
         aria-modal="true"
@@ -91,7 +84,6 @@ export function MessageSearch({
         <div className="flex items-center gap-2 border-b border-base-300 px-4 py-3">
           <Icon name="search" size={18} className="text-base-content/50" />
           <input
-            ref={inputRef}
             type="text"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             placeholder={tr('Search messages')}

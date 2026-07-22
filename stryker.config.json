@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "mutate": [
+    "src/collab/googleIdToken.ts",
+    "src/collab/identityHandshake.ts",
+    "src/collab/friendInvite.ts"
+  ],
+  "reporters": ["clear-text", "progress"],
+  "coverageAnalysis": "perTest",
+  "thresholds": { "high": 60, "low": 45, "break": 45 }
+}

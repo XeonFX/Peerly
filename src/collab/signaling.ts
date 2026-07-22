@@ -1,4 +1,5 @@
 import { resolveSignalingStrategy, signalingLabel, type SignalingStrategy } from '@peerly/core'
+import { PUBLIC_NETWORK_ENV } from '../config'
 
 export type { SignalingStrategy }
 
@@ -8,7 +9,7 @@ export type { SignalingStrategy }
  * on our behalf — Vite replaces `import.meta.env` per bundle.
  */
 export function getSignalingStrategy(): SignalingStrategy {
-  return resolveSignalingStrategy(import.meta.env)
+  return resolveSignalingStrategy(PUBLIC_NETWORK_ENV)
 }
 
 export function getSignalingLabel(): string {

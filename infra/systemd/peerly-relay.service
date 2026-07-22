@@ -1,0 +1,34 @@
+[Unit]
+Description=Peerly authenticated signaling relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=peerly-relay
+Group=peerly-relay
+WorkingDirectory=/opt/peerly-relay
+EnvironmentFile=/etc/peerly/relay.env
+ExecStart=/usr/bin/node /opt/peerly-relay/server/relay-prod.mjs
+Restart=on-failure
+RestartSec=3s
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=512M
+TasksMax=256
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+

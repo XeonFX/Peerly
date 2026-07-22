@@ -175,12 +175,11 @@ Deployment owners can replace the curated Nostr set with the build-time `VITE_NO
 
 ### TURN (optional)
 
-For strict NAT / corporate firewalls, add your own TURN server:
+For strict NAT / corporate firewalls, configure your TURN URLs. The browser
+obtains short-lived REST credentials from `/api/network/credentials`:
 
 ```bash
 VITE_TURN_URLS=turn:your-turn.example:3478,turns:your-turn.example:5349 \
-VITE_TURN_USERNAME=user \
-VITE_TURN_CREDENTIAL=pass \
 npm run build
 ```
 

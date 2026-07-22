@@ -14,6 +14,18 @@ class FakeSocket extends EventTarget {
   }
 }
 
+class OwnedFakeSocket extends FakeSocket {
+  readyState = 0
+  close() {
+    this.readyState = 3
+    this.dispatchEvent(new Event('close'))
+  }
+  open() {
+    this.readyState = 1
+    this.dispatchEvent(new Event('open'))
+  }
+}
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('relay coordination client', () => {
@@ -57,6 +69,38 @@ describe('relay coordination client', () => {
     expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({
       action: 'seek.ack', pool: 'random', matchId: 'match-1',
     })
+    coordinator.close()
+  })
+
+  it('owns a dedicated coordination socket and refreshes desired state after it opens', async () => {
+    vi.stubGlobal('WebSocket', { CONNECTING: 0, OPEN: 1, CLOSED: 3 })
+    const created: Array<{ url: string; socket: OwnedFakeSocket }> = []
+    const coordinator = createRelayCoordinator(
+      { VITE_RELAY_HOSTS: 'relay-a.example,relay-b.example', VITE_RELAY_PORT: '443' },
+      {
+        createSocket: url => {
+          const socket = new OwnedFakeSocket()
+          created.push({ url, socket })
+          return socket as unknown as WebSocket
+        },
+        reconnectMs: 1,
+      }
+    )
+    coordinator.setPresence('scope', 'member', 'ciphertext')
+
+    await vi.waitFor(() => expect(created).toHaveLength(1))
+    expect(created[0].url).toBe('wss://relay-a.example:443')
+    created[0].socket.open()
+    expect(JSON.parse(created[0].socket.sent[0])).toMatchObject({ action: 'hello' })
+    created[0].socket.dispatchEvent(new MessageEvent('message', {
+      data: JSON.stringify({ topic: '__relay_coord_v1__', payload: { v: 1, type: 'ready' } }),
+    }))
+    await vi.waitFor(() => expect(created[0].socket.sent).toHaveLength(2))
+    expect(JSON.parse(created[0].socket.sent[1])).toMatchObject({ action: 'presence.set' })
+
+    created[0].socket.close()
+    await vi.waitFor(() => expect(created).toHaveLength(2))
+    expect(created[1].url).toBe('wss://relay-b.example:443')
     coordinator.close()
   })
 

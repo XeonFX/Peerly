@@ -30,8 +30,28 @@ export type IdentityProvider = {
 }
 
 
-function env(key: keyof ImportMetaEnv): string | undefined {
-  const value = import.meta.env[key]
+type IdentityEnvKey =
+  | 'VITE_GOOGLE_CLIENT_ID'
+  | 'VITE_MICROSOFT_CLIENT_ID'
+  | 'VITE_MICROSOFT_TENANT_ID'
+  | 'VITE_APPLE_CLIENT_ID'
+  | 'VITE_OIDC_CLIENT_ID'
+  | 'VITE_OIDC_ISSUER'
+  | 'VITE_OIDC_LABEL'
+
+function env(key: IdentityEnvKey): string | undefined {
+  // Keep each access static so Vite never expands the entire environment into
+  // the browser bundle. The switch also preserves vi.stubEnv-based tests.
+  let value: string | undefined
+  switch (key) {
+    case 'VITE_GOOGLE_CLIENT_ID': value = import.meta.env.VITE_GOOGLE_CLIENT_ID; break
+    case 'VITE_MICROSOFT_CLIENT_ID': value = import.meta.env.VITE_MICROSOFT_CLIENT_ID; break
+    case 'VITE_MICROSOFT_TENANT_ID': value = import.meta.env.VITE_MICROSOFT_TENANT_ID; break
+    case 'VITE_APPLE_CLIENT_ID': value = import.meta.env.VITE_APPLE_CLIENT_ID; break
+    case 'VITE_OIDC_CLIENT_ID': value = import.meta.env.VITE_OIDC_CLIENT_ID; break
+    case 'VITE_OIDC_ISSUER': value = import.meta.env.VITE_OIDC_ISSUER; break
+    case 'VITE_OIDC_LABEL': value = import.meta.env.VITE_OIDC_LABEL; break
+  }
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 

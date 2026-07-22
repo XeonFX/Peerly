@@ -56,4 +56,25 @@ describe('buildRelayUrls', () => {
     expect(buildRelayUrls('443', { VITE_RELAY_HOST: 'relay.example.com' }, 'ticket.value'))
       .toEqual(['wss://relay.example.com:443?ticket=ticket.value'])
   })
+
+  it('returns every configured relay endpoint for client failover', () => {
+    expect(buildRelayUrls('443', {
+      VITE_RELAY_HOSTS: 'relay-eu.example.com, relay-us.example.com,relay-eu.example.com',
+    }, 'short lived')).toEqual([
+      'wss://relay-eu.example.com:443?ticket=short%20lived',
+      'wss://relay-us.example.com:443?ticket=short%20lived',
+    ])
+  })
+
+  it('binds the correct short-lived ticket to each relay hostname', () => {
+    expect(buildRelayUrls('443', {
+      VITE_RELAY_HOSTS: 'relay-eu.example.com,relay-us.example.com',
+    }, {
+      'relay-eu.example.com': 'eu.ticket',
+      'relay-us.example.com': 'us.ticket',
+    })).toEqual([
+      'wss://relay-eu.example.com:443?ticket=eu.ticket',
+      'wss://relay-us.example.com:443?ticket=us.ticket',
+    ])
+  })
 })

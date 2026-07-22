@@ -6,6 +6,7 @@ declare const __APP_VERSION__: string
 declare const __APP_COMMIT__: string
 
 interface ImportMetaEnv {
+  readonly VITE_RELAY_HOSTS?: string
   readonly VITE_NOSTR_RELAYS: string
   readonly VITE_SIGNALING: 'ws-relay' | 'nostr' | 'supabase'
   readonly VITE_RELAY_PORT: string

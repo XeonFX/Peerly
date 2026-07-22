@@ -1,7 +1,7 @@
 {
   "name": "peerly",
   "private": false,
-  "version": "1.12.0",
+  "version": "1.13.1",
   "description": "Serverless P2P team collaboration — verified identity, invite-only workspaces, chat, files, and video via Trystero",
   "license": "MIT",
   "repository": {
@@ -36,6 +36,9 @@
     "test": "vitest run --maxWorkers=4",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:a11y": "playwright test e2e/accessibility.spec.ts",
+    "test:coverage": "vitest run --coverage --maxWorkers=4",
+    "test:mutation": "stryker run",
     "test:e2e:nostr": "E2E_SIGNALING=nostr playwright test -g \"two users connect and see each other|chat messages sync between peers|file sharing between peers|shared image preview survives page reload\"",
     "test:e2e:ui": "playwright test --ui",
     "lint": "oxlint",
@@ -44,6 +47,10 @@
     "guard:size": "node packages/core/scripts/check-vite-bundle.mjs dist/assets 700000",
     "check:csp": "node scripts/check-csp.mjs",
     "check:relays": "node scripts/check-relays.mjs",
+    "audit:production": "npm audit --omit=dev --audit-level=high",
+    "test:load:relay": "node scripts/load-relay.mjs",
+    "verify:production": "node scripts/verify-production.mjs",
+    "worker:check": "wrangler types --check && wrangler deploy --dry-run --env=''",
     "test:bump": "node --test scripts/bump-version.test.mjs"
   },
   "dependencies": {
@@ -56,9 +63,12 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@emnapi/core": "^1.11.2",
     "@emnapi/runtime": "^1.11.2",
     "@playwright/test": "^1.52.0",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@tailwindcss/vite": "^4.3.2",
     "@testing-library/react": "^16.3.2",
     "@trystero-p2p/ws-relay": "^0.25.3",
@@ -66,12 +76,14 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-v8": "^3.2.7",
     "daisyui": "^5.6.18",
     "jsdom": "^29.1.1",
     "oxlint": "^1.71.0",
     "tailwindcss": "^4.3.2",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.113.0"
   }
 }

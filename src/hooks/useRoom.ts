@@ -2,6 +2,7 @@ import type { PeerHandshake } from '@trystero-p2p/core'
 import type { Room } from '@peerly/core'
 import { useRoom as useCodeRoom } from '@peerly/core/react'
 import { IDENTITY_DENIED_PREFIX } from '../collab/identityHandshake'
+import { PUBLIC_NETWORK_ENV } from '../config'
 
 // The join/teardown machinery moved to @peerly/core (react.ts) — including the
 // leave/rejoin race handling and Trystero error classification. This wrapper
@@ -44,7 +45,7 @@ export function useRoom(
     appId,
     roomId,
     password,
-    env: import.meta.env,
+    env: PUBLIC_NETWORK_ENV,
     onError,
     onPeerHandshake,
     errorText: ERROR_TEXT,
