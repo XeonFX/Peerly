@@ -1,6 +1,7 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
 import type { joinRoom as joinNostrRoom } from '@trystero-p2p/nostr'
 import type { Env } from './env.js'
+import { requireAppId } from './env.js'
 import type { SignalingStrategy } from './signaling.js'
 import { getNostrRelayConfig, getSupabaseRoomConfig, resolveIceServers } from './relays.js'
 import { getDurableObjectsIceServers } from './realtime/runtime.js'
@@ -129,7 +130,7 @@ export async function joinRoomByCode(options: JoinRoomOptions): Promise<Room> {
   } = options
   const env = options.env ?? {}
 
-  const durableApp = appId.startsWith('heyhubs') ? 'heyhubs' : 'peerly'
+  const durableApp = strategy === 'durable-objects' ? requireAppId(env) : ''
   const iceServers = strategy === 'durable-objects'
     ? await getDurableObjectsIceServers(durableApp)
     : await resolveIceServers(env)

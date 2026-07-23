@@ -20,12 +20,13 @@
   // Vite replaces VITE_* values at build time; the runtime `vars` block below
   // does not populate the browser bundle.
   "build": {
-    "command": "VITE_GOOGLE_CLIENT_ID=724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com VITE_SIGNALING=durable-objects VITE_TURN_URLS=turn:turn.peerly.cc:3478,turns:turn.peerly.cc:5349 npm run build"
+    "command": "VITE_APP_ID=peerly VITE_GOOGLE_CLIENT_ID=724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com VITE_SIGNALING=durable-objects VITE_TURN_URLS=turn:turn.peerly.cc:3478,turns:turn.peerly.cc:5349 npm run build"
   },
   "routes": [
     { "pattern": "preview.peerly.cc", "custom_domain": true }
   ],
   "vars": {
+    "APP_ID": "peerly",
     "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com",
     "TURN_URLS": "turn:turn.peerly.cc:3478,turns:turn.peerly.cc:5349",
     "COORDINATION_BACKEND": "durable-objects"

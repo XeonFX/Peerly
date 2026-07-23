@@ -13,7 +13,7 @@ import {
   type SignedControl,
 } from '@peerly/core'
 import { useLatest, useRelayChannel } from '@peerly/core/react'
-import { PUBLIC_NETWORK_ENV } from '../config'
+import { NETWORK_APP_ID, PUBLIC_NETWORK_ENV } from '../config'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
 import { defaultJwksFetcher, getIdentityProvider } from '../collab/identityProviders'
 import {
@@ -118,6 +118,7 @@ export function usePresenceLobby({
 
   const roomEnabled = Boolean(profile?.userId && profile.email && identity && attestation)
   const { room } = useRelayChannel({
+    appId: `${NETWORK_APP_ID}-lobby-v1`,
     channel: roomEnabled ? `peerly:presence:${LOBBY_ROOM_ID}` : '',
     memberId: roomEnabled ? profile?.userId ?? '' : '',
     env: PUBLIC_NETWORK_ENV,

@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { LIMITS } from './limits.mjs'
 
 /**
- * One `InterestQueueDO` per normalized interest (HeyHubs only). Runs
+ * One `InterestQueueDO` per normalized interest. Runs
  * "any shared interest" matching via a two-phase gateway reservation so two
  * queues can never commit the same user twice. See
  * docs/DURABLE_OBJECTS_IMPLEMENTATION.md section 9.
@@ -46,7 +46,9 @@ export class InterestQueueDO extends DurableObject {
   }
 
   appName() {
-    return (this.ctx.id.name ?? '').split(':')[0] || 'heyhubs'
+    const app = this.env.APP_ID?.trim()
+    if (!app) throw new Error('APP_ID is required for InterestQueueDO')
+    return app
   }
 
   async runMatching() {

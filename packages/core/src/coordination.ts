@@ -1,5 +1,6 @@
 import { base64UrlToBytes, bytesToBase64Url } from './base64url.js'
 import type { Env } from './env.js'
+import { requireAppId } from './env.js'
 import { resolveRelayUrls } from './relays.js'
 import { getDurableObjectsTransport } from './realtime/runtime.js'
 
@@ -386,7 +387,7 @@ export function createRelayCoordinator(
 }
 
 function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
-  const app = env.VITE_APP_ID === 'heyhubs' ? 'heyhubs' : 'peerly'
+  const app = requireAppId(env)
   const transport = getDurableObjectsTransport(app)
   const listeners = new Set<(event: RelayCoordinationEvent) => void>()
   let available = false

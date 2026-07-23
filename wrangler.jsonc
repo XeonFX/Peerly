@@ -7,6 +7,7 @@
     // The auth bridge executes in the Worker runtime, where Cloudflare's
     // build-time VITE_* variables are not available automatically.
     "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com",
+    "APP_ID": "peerly",
     // Production stays on the legacy relay until the Durable Objects control
     // plane passes its seven-day exit criteria (see
     // docs/DURABLE_OBJECTS_ARCHITECTURE.md Phase 5).

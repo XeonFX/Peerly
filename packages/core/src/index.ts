@@ -1,6 +1,6 @@
 /** Single source for the Trystero peer id (must match the room connection id). */
 export { selfId } from '@trystero-p2p/core'
-export type { Env } from './env.js'
+export { requireAppId, type Env } from './env.js'
 export { generateRoomCode } from './roomCode.js'
 export {
   resolveSignalingStrategy,

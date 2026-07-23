@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { LIMITS } from './limits.mjs'
 
 /**
- * `PresenceStatsShardDO` (HeyHubs only) — best-effort online/interest
+ * `PresenceStatsShardDO` — best-effort online/interest
  * statistics outside the matching correctness path. Shard count starts at 1
  * (see docs/DURABLE_OBJECTS_IMPLEMENTATION.md section 10 for the request-
  * amplification math behind that choice); raise `LIMITS.shardCount` only

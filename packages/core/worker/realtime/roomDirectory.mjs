@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { LIMITS } from './limits.mjs'
 
 /**
- * `RoomDirectoryShardDO` (HeyHubs only) — signed, expiring, paginated
+ * `RoomDirectoryShardDO` — signed, expiring, paginated
  * public-room listings. Shard count starts at 1 (LIMITS.shardCount); rooms
  * expire on their own, so raising the shard constant later re-buckets
  * naturally without a migration. See

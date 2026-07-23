@@ -39,7 +39,7 @@ describe('capability tokens', () => {
   it('rejects a capability minted for a different app', async () => {
     const now = Date.now()
     const token = await mintCapability('secret-a', { app: 'peerly', uid: 'u1', deviceKeyId: 'dk1', sid: 's1', epoch: 0, now, ttlMs: 1000 })
-    const claims = await verifyCapability('secret-a', token, { app: 'heyhubs', now })
+    const claims = await verifyCapability('secret-a', token, { app: 'app-b', now })
     expect(claims).toBeNull()
   })
 
@@ -70,8 +70,8 @@ describe('capability tokens', () => {
 describe('network cookie', () => {
   it('mints and verifies a cookie', async () => {
     const now = Date.now()
-    const token = await mintCookie('secret-a', { app: 'heyhubs', uid: 'u1', deviceKeyId: 'dk1', sid: 's1', now, ttlMs: 600_000 })
-    const claims = await verifyCookie('secret-a', token, { app: 'heyhubs', now })
+    const token = await mintCookie('secret-a', { app: 'app-b', uid: 'u1', deviceKeyId: 'dk1', sid: 's1', now, ttlMs: 600_000 })
+    const claims = await verifyCookie('secret-a', token, { app: 'app-b', now })
     expect(claims).toMatchObject({ uid: 'u1', dk: 'dk1', sid: 's1' })
   })
 })
@@ -84,9 +84,9 @@ describe('opaque ids', () => {
   })
 
   it('differs across apps for the same subject', async () => {
-    const peerly = await deriveOpaqueUserId('secret', 'peerly', 'https://accounts.google.com', 'subject-1')
-    const heyhubs = await deriveOpaqueUserId('secret', 'heyhubs', 'https://accounts.google.com', 'subject-1')
-    expect(peerly).not.toBe(heyhubs)
+    const appA = await deriveOpaqueUserId('secret', 'app-a', 'https://accounts.google.com', 'subject-1')
+    const appB = await deriveOpaqueUserId('secret', 'app-b', 'https://accounts.google.com', 'subject-1')
+    expect(appA).not.toBe(appB)
   })
 
   it('scope route ids never reveal the input capability and are deterministic', async () => {

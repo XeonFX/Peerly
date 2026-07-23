@@ -115,6 +115,8 @@ import { createRelayCoordinator } from './coordination.js'
 import { createRelayChannel, type RelayChannelRoom } from './relayChannel.js'
 
 export type UseRelayChannelOptions = {
+  /** Stable P2P namespace owned by the host application. */
+  appId: string
   /** Empty means do not connect. */
   channel: string
   /** Opaque application member id; never used as an authorization claim. */
@@ -133,10 +135,10 @@ export type UseRelayChannelOptions = {
 export function useRelayChannel(
   options: UseRelayChannelOptions
 ): { room: RelayChannelRoom | null } {
-  const { channel, memberId, env, onError, connectTimeoutMs = 10_000 } = options
+  const { appId, channel, memberId, env, onError, connectTimeoutMs = 10_000 } = options
   const durableObjects = resolveSignalingStrategy(env) === 'durable-objects'
   const { room: durableRoom } = useRoom({
-    appId: channel.startsWith('heyhubs:') ? 'heyhubs-lobby-v1' : 'peerly-lobby-v1',
+    appId,
     roomId: durableObjects ? channel : '',
     password: channel,
     env,
