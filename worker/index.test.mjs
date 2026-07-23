@@ -4,6 +4,7 @@ import worker, { allowedAuthParent } from './index.mjs'
 describe('Peerly auth bridge parent validation', () => {
   it('accepts production and exact HTTPS Peerly branch preview origins', () => {
     expect(allowedAuthParent('https://peerly.cc')).toBe(true)
+    expect(allowedAuthParent('https://preview.peerly.cc')).toBe(true)
     expect(allowedAuthParent('https://fix-auth-peerly.codefusion.workers.dev')).toBe(true)
     expect(allowedAuthParent('https://fix-auth-peerly.codefusion.worker.dev')).toBe(true)
     expect(allowedAuthParent('http://fix-auth-peerly.codefusion.workers.dev')).toBe(false)

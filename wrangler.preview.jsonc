@@ -17,6 +17,9 @@
   "name": "peerly-preview",
   "main": "worker/index.mjs",
   "compatibility_date": "2026-07-22",
+  "routes": [
+    { "pattern": "preview.peerly.cc", "custom_domain": true }
+  ],
   "vars": {
     "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com",
     "COORDINATION_BACKEND": "durable-objects"
