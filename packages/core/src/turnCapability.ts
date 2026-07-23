@@ -1,5 +1,5 @@
 import type { Env } from './env.js'
-import { getTurnConfig } from './relays.js'
+import { getTurnConfig, resolveIceServers, type TurnServer } from './relays.js'
 
 export type TurnCapability = {
   status: 'not-configured' | 'checking' | 'available' | 'unavailable'
@@ -16,10 +16,10 @@ const TURN_PROBE_TIMEOUT_MS = 12_000
  */
 export async function probeTurnCapability(
   env: Env,
-  timeoutMs: number = TURN_PROBE_TIMEOUT_MS
+  timeoutMs: number = TURN_PROBE_TIMEOUT_MS,
+  resolveCredentials: (env: Env) => Promise<TurnServer[] | undefined> = resolveIceServers
 ): Promise<TurnCapability> {
-  const turn = getTurnConfig(env)
-  if (!turn) {
+  if (!getTurnConfig(env)) {
     return { status: 'not-configured', detail: 'TURN is not configured.', transports: [] }
   }
   if (typeof RTCPeerConnection === 'undefined') {
@@ -29,7 +29,9 @@ export async function probeTurnCapability(
   let connection: RTCPeerConnection | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    connection = new RTCPeerConnection({ iceServers: turn, iceTransportPolicy: 'relay' })
+    const iceServers = await resolveCredentials(env)
+    if (!iceServers?.length) throw new Error('TURN credentials are unavailable. Sign in again and retry.')
+    connection = new RTCPeerConnection({ iceServers, iceTransportPolicy: 'relay' })
     connection.createDataChannel('peerly-turn-check')
     const transports = new Set<string>()
     const candidateErrors = new Set<string>()

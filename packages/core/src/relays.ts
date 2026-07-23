@@ -66,7 +66,19 @@ export async function resolveRelayPort(env: Env): Promise<string> {
 export async function resolveRelayUrls(env: Env): Promise<string[]> {
   const port = await resolveRelayPort(env)
   const runtime = await getRuntimeNetworkCredentials()
-  return buildRelayUrls(port, env, runtime?.relayTickets ?? runtime?.relayTicket)
+  const runtimeTicket = runtime?.relayTickets ?? runtime?.relayTicket
+  const configuredHosts = (env.VITE_RELAY_HOSTS || env.VITE_RELAY_HOST || '')
+    .split(',')
+    .map(host => host.trim())
+    .filter(Boolean)
+
+  // A configured remote relay is protected in production. Returning an
+  // unticketed URL when the user is signed out (or their OIDC token expired)
+  // only creates a permanent 401/reconnect loop and noisy browser errors.
+  // Local same-origin relay development remains available without a ticket.
+  if (configuredHosts.length > 0 && !runtimeTicket) return []
+
+  return buildRelayUrls(port, env, runtimeTicket)
 }
 
 /**

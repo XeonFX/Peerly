@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildRelayUrls, expandTurnUrls, getIceServers, getTurnConfig } from './relays.js'
+import {
+  buildRelayUrls,
+  expandTurnUrls,
+  getIceServers,
+  getTurnConfig,
+  resolveRelayUrls,
+} from './relays.js'
 
 describe('getIceServers', () => {
   it('returns undefined without TURN so Trystero keeps its own defaults', () => {
@@ -76,5 +82,14 @@ describe('buildRelayUrls', () => {
       'wss://relay-eu.example.com:443?ticket=eu.ticket',
       'wss://relay-us.example.com:443?ticket=us.ticket',
     ])
+  })
+})
+
+describe('resolveRelayUrls', () => {
+  it('does not connect to a protected remote relay without a runtime ticket', async () => {
+    await expect(resolveRelayUrls({
+      VITE_RELAY_HOST: 'relay.example.com',
+      VITE_RELAY_PORT: '443',
+    })).resolves.toEqual([])
   })
 })
