@@ -40,6 +40,7 @@ export function useConnectionHealth(room: Room | null) {
     setConnectionStatus('connecting')
     setConnectionError(null)
     setConnectionNotice(null)
+    setRelayOnline(false)
     setRtcPeerCount(0)
     setRelayUrls([])
   }, [])

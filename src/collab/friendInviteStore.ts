@@ -6,15 +6,15 @@ import { normalizeEmail } from './emailHash'
  * envelopes). Not gossiped — only the live lobby wire delivers them.
  */
 
-const OUT_KEY = 'peerly-friend-invites-out-v1'
-const IN_KEY = 'peerly-friend-invites-in-v1'
+const OUT_KEY = 'peerly-friend-invites-out-v2'
+const IN_KEY = 'peerly-friend-invites-in-v2'
+const LEGACY_KEYS = ['peerly-friend-invites-out-v1', 'peerly-friend-invites-in-v1']
 
 export type OutgoingFriendInvite = {
   inviteId: string
   toEmail: string
-  toEmailHash: string
   /** Opaque Worker-issued lookup capability; never derived from email in the browser. */
-  toRendezvousId?: string
+  toRendezvousId: string
   /** Full signed payload ready to re-send when the peer appears. */
   payload: FriendInvitePayload
   createdAt: number
@@ -26,13 +26,13 @@ export type IncomingFriendInvite = {
   inviteId: string
   fromUserId: string
   fromName: string
-  fromEmailHash: string
   payload: FriendInvitePayload
   receivedAt: number
 }
 
 function readArray<T>(key: string): T[] {
   try {
+    for (const legacyKey of LEGACY_KEYS) localStorage.removeItem(legacyKey)
     const raw = localStorage.getItem(key)
     if (!raw) return []
     const parsed = JSON.parse(raw) as unknown
@@ -60,7 +60,7 @@ export function loadOutgoingInvites(now = Date.now()): OutgoingFriendInvite[] {
       item &&
       typeof item.inviteId === 'string' &&
       typeof item.toEmail === 'string' &&
-      typeof item.toEmailHash === 'string' &&
+      typeof item.toRendezvousId === 'string' &&
       item.payload &&
       notExpired(item.createdAt, now)
   )

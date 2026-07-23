@@ -1,6 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { canonicalizePublicKey } from './deviceIdentity'
-import { hashEmail } from './emailHash'
 import {
   createFriendInvite,
   createFriendInviteResponse,
@@ -16,6 +15,8 @@ const identity = {
   sign: async (_bytes: Uint8Array) => '',
 }
 const attestation = { providerId: 'google', idToken: 'header.payload.signature' }
+const bobRendezvousId = 'AbCdEf0123456789_bob-opaque-capability-value'
+const testDmSecret = '0'.repeat(32)
 
 beforeAll(async () => {
   const key = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
@@ -41,10 +42,11 @@ describe('friendInvite protocol', () => {
       fromUserId: 'alice',
       fromName: 'Alice',
       fromEmail: 'alice@example.com',
-      toEmail: 'bob@example.com',
+      toRendezvousId: bobRendezvousId,
       attestation,
     })
-    expect(invite.toEmailHash).toBe(await hashEmail('bob@example.com'))
+    expect(invite.toRendezvousId).toBe(bobRendezvousId)
+    expect(JSON.stringify(invite)).not.toMatch(/[0-9a-f]{64}/i)
     expect(await verifyFriendInvite(invite)).toBe(true)
     expect(parseFriendInvitePayload(invite)?.inviteId).toBe('inv-1')
   })
@@ -55,11 +57,51 @@ describe('friendInvite protocol', () => {
       fromUserId: 'alice',
       fromName: 'Alice',
       fromEmail: 'alice@example.com',
-      toEmail: 'bob@example.com',
+      toRendezvousId: bobRendezvousId,
       attestation,
     })
     const tampered = { ...invite, fromName: 'Eve' }
     expect(await verifyFriendInvite(tampered)).toBe(false)
+  })
+
+  it('rejects target substitution and expired invites', async () => {
+    const invite = await createFriendInvite(identity, {
+      inviteId: 'inv-target',
+      fromUserId: 'alice',
+      fromName: 'Alice',
+      fromEmail: 'alice@example.com',
+      toRendezvousId: bobRendezvousId,
+      attestation,
+    })
+    expect(await verifyFriendInvite({
+      ...invite,
+      toRendezvousId: 'AbCdEf0123456789_eve-opaque-capability-value',
+    })).toBe(false)
+    expect(await verifyFriendInvite({
+      ...invite,
+      ts: Date.now() - (8 * 24 * 60 * 60 * 1000),
+    })).toBe(false)
+    expect(await verifyFriendInvite({
+      ...invite,
+      ts: Date.now() + (10 * 60 * 1000),
+    })).toBe(false)
+  })
+
+  it('rejects legacy deterministic-email invite envelopes', () => {
+    expect(parseFriendInvitePayload({
+      v: 1,
+      inviteId: 'legacy',
+      fromUserId: 'alice',
+      fromName: 'Alice',
+      fromEmail: 'alice@example.com',
+      fromEmailHash: 'a'.repeat(64),
+      toEmailHash: 'b'.repeat(64),
+      dmSecret: testDmSecret,
+      ts: Date.now(),
+      deviceKeyId: 'P-256:x:y',
+      attestation,
+      sig: 'sig',
+    })).toBeNull()
   })
 
   it('creates and verifies accept/decline responses', async () => {
@@ -70,11 +112,12 @@ describe('friendInvite protocol', () => {
       fromName: 'Bob',
       fromEmail: 'bob@example.com',
       toUserId: 'alice',
-      dmSecret: '0123456789abcdef0123456789abcdef',
+      dmSecret: testDmSecret,
       attestation,
     })
     expect(await verifyFriendInviteResponse(accept)).toBe(true)
     expect(parseFriendInviteResponsePayload(accept)?.fromEmail).toBe('bob@example.com')
+    expect(await verifyFriendInviteResponse({ ...accept, inviteId: 'cross-invite' })).toBe(false)
 
     const decline = await createFriendInviteResponse(identity, {
       inviteId: 'inv-4',

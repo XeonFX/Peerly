@@ -8,37 +8,38 @@ import {
   type PresencePayload,
 } from '@peerly/core'
 import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity'
-import { hashEmail, isPlausibleEmail, normalizeEmail } from './emailHash'
+import { isPlausibleEmail, normalizeEmail } from './emailHash'
 
 export type { PresencePayload }
 
 /**
  * Friend invite wire protocol for the Peerly presence lobby.
  *
- * Delivery is presence-based: the inviter types an email; when a peer with
- * that email-hash is online, a signed invite is sent directed. No mailbox.
+ * Delivery is presence-based: the inviter types an email, resolves it through
+ * the authenticated rendezvous service, and sends the invite directly to the
+ * peer advertising that opaque capability. No mailbox or deterministic email
+ * identifier is placed on the wire.
  */
 
-export const FRIEND_INVITE_SCHEME = 'peerly-friend-invite-v3'
-export const FRIEND_INVITE_RESPONSE_SCHEME = 'peerly-friend-invite-resp-v3'
+export const FRIEND_INVITE_SCHEME = 'peerly-friend-invite-v4'
+export const FRIEND_INVITE_RESPONSE_SCHEME = 'peerly-friend-invite-resp-v4'
 
 const MAX_NAME = 80
-const HEX64 = /^[0-9a-f]{64}$/i
+const RENDEZVOUS_CAPABILITY = /^[A-Za-z0-9_-]{32,128}$/
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
 
 export type FriendInvitePayload = {
-  v: 1
+  v: 2
   inviteId: string
   fromUserId: string
   fromName: string
   /**
-   * Inviter's email. Directed only to the matching peer (presence match on
-   * toEmailHash), so the invitee can store a useful friend record. Presence
-   * itself still carries only hashes.
+   * Inviter's email. The OIDC/device attestation binds this claim, and the
+   * envelope is directed only to the peer matching `toRendezvousId`.
    */
   fromEmail: string
-  fromEmailHash: string
-  toEmailHash: string
+  toRendezvousId: string
   dmSecret: string
   ts: number
   deviceKeyId: DeviceKeyId
@@ -47,14 +48,14 @@ export type FriendInvitePayload = {
 }
 
 export type FriendInviteResponsePayload = {
-  v: 1
+  v: 2
   inviteId: string
   /** True = accept and become friends; false = decline. */
   accept: boolean
   /** The person who is responding (the invitee). */
   fromUserId: string
   fromName: string
-  /** Invitee's email only on accept (inviter already knew the hash target). */
+  /** Invitee's OIDC-bound email, disclosed only on accept. */
   fromEmail?: string
   dmSecret?: string
   /** Original inviter userId. */
@@ -75,8 +76,7 @@ export function friendInviteBytes(
     invite.fromUserId,
     invite.fromName,
     invite.fromEmail,
-    invite.fromEmailHash,
-    invite.toEmailHash,
+    invite.toRendezvousId,
     invite.dmSecret,
     String(invite.ts),
     invite.deviceKeyId,
@@ -112,24 +112,24 @@ export async function createFriendInvite(
     fromUserId: string
     fromName: string
     fromEmail: string
-    toEmail: string
+    toRendezvousId: string
     attestation: OidcDeviceAttestation
   }
 ): Promise<FriendInvitePayload> {
-  if (!isPlausibleEmail(input.fromEmail) || !isPlausibleEmail(input.toEmail)) {
-    throw new Error('Invalid email')
+  if (
+    !isPlausibleEmail(input.fromEmail) ||
+    !RENDEZVOUS_CAPABILITY.test(input.toRendezvousId)
+  ) {
+    throw new Error('Invalid invite target')
   }
   const fromEmail = normalizeEmail(input.fromEmail)
-  const fromEmailHash = await hashEmail(fromEmail)
-  const toEmailHash = await hashEmail(input.toEmail)
   const base: Omit<FriendInvitePayload, 'sig'> = {
-    v: 1,
+    v: 2,
     inviteId: input.inviteId,
     fromUserId: input.fromUserId,
     fromName: input.fromName.trim().slice(0, MAX_NAME) || input.fromUserId.slice(0, 12),
     fromEmail,
-    fromEmailHash,
-    toEmailHash,
+    toRendezvousId: input.toRendezvousId,
     dmSecret: generateDmSecret(),
     ts: Date.now(),
     deviceKeyId: await signer.publicKeyId(),
@@ -156,7 +156,7 @@ export async function createFriendInviteResponse(
     throw new Error('Invalid email')
   }
   const base: Omit<FriendInviteResponsePayload, 'sig'> = {
-    v: 1,
+    v: 2,
     inviteId: input.inviteId,
     accept: input.accept,
     fromUserId: input.fromUserId,
@@ -174,7 +174,7 @@ export async function createFriendInviteResponse(
 
 function inviteShapeOk(msg: Partial<FriendInvitePayload>): msg is FriendInvitePayload {
   return (
-    msg.v === 1 &&
+    msg.v === 2 &&
     typeof msg.inviteId === 'string' &&
     !!msg.inviteId &&
     msg.inviteId.length <= 64 &&
@@ -184,10 +184,8 @@ function inviteShapeOk(msg: Partial<FriendInvitePayload>): msg is FriendInvitePa
     msg.fromName.length <= MAX_NAME &&
     typeof msg.fromEmail === 'string' &&
     isPlausibleEmail(msg.fromEmail) &&
-    typeof msg.fromEmailHash === 'string' &&
-    HEX64.test(msg.fromEmailHash) &&
-    typeof msg.toEmailHash === 'string' &&
-    HEX64.test(msg.toEmailHash) &&
+    typeof msg.toRendezvousId === 'string' &&
+    RENDEZVOUS_CAPABILITY.test(msg.toRendezvousId) &&
     isValidDmSecret(msg.dmSecret) &&
     typeof msg.ts === 'number' &&
     Number.isFinite(msg.ts) &&
@@ -204,7 +202,7 @@ function responseShapeOk(
   msg: Partial<FriendInviteResponsePayload>
 ): msg is FriendInviteResponsePayload {
   return (
-    msg.v === 1 &&
+    msg.v === 2 &&
     typeof msg.inviteId === 'string' &&
     !!msg.inviteId &&
     msg.inviteId.length <= 64 &&
@@ -232,10 +230,8 @@ function responseShapeOk(
 
 export async function verifyFriendInvite(invite: FriendInvitePayload): Promise<boolean> {
   if (!inviteShapeOk(invite)) return false
-  if (Date.now() - invite.ts > INVITE_TTL_MS) return false
-  if (invite.fromEmailHash === invite.toEmailHash) return false
-  // Claimed email must match the signed hash (prevents display spoofing).
-  if ((await hashEmail(invite.fromEmail)) !== invite.fromEmailHash.toLowerCase()) return false
+  const age = Date.now() - invite.ts
+  if (age > INVITE_TTL_MS || age < -MAX_CLOCK_SKEW_MS) return false
   return verifyWithDeviceKeyId(invite.deviceKeyId, friendInviteBytes(invite), invite.sig)
 }
 
@@ -243,7 +239,8 @@ export async function verifyFriendInviteResponse(
   response: FriendInviteResponsePayload
 ): Promise<boolean> {
   if (!responseShapeOk(response)) return false
-  if (Date.now() - response.ts > INVITE_TTL_MS) return false
+  const age = Date.now() - response.ts
+  if (age > INVITE_TTL_MS || age < -MAX_CLOCK_SKEW_MS) return false
   if (response.accept && !response.fromEmail) return false
   if (response.accept && !response.dmSecret) return false
   if (!response.accept && response.fromEmail) return false
@@ -266,13 +263,12 @@ export function parseFriendInvitePayload(raw: unknown): FriendInvitePayload | nu
   const msg = raw as Partial<FriendInvitePayload>
   if (!inviteShapeOk(msg)) return null
   return {
-    v: 1,
+    v: 2,
     inviteId: msg.inviteId,
     fromUserId: msg.fromUserId.trim(),
     fromName: msg.fromName.trim().slice(0, MAX_NAME),
     fromEmail: normalizeEmail(msg.fromEmail),
-    fromEmailHash: msg.fromEmailHash.toLowerCase(),
-    toEmailHash: msg.toEmailHash.toLowerCase(),
+    toRendezvousId: msg.toRendezvousId,
     dmSecret: msg.dmSecret.toLowerCase(),
     ts: msg.ts,
     deviceKeyId: msg.deviceKeyId,
@@ -291,7 +287,7 @@ export function parseFriendInviteResponsePayload(
   const msg = raw as Partial<FriendInviteResponsePayload>
   if (!responseShapeOk(msg)) return null
   return {
-    v: 1,
+    v: 2,
     inviteId: msg.inviteId,
     accept: msg.accept,
     fromUserId: msg.fromUserId.trim(),
