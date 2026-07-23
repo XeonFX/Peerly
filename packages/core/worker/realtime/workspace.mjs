@@ -29,7 +29,9 @@ export class WorkspaceDO extends DurableObject {
       uid, dk, capabilityVersion, now, now + ttlMs
     )
     await this.broadcastPresence(uid, 'joined')
-    await this.ctx.storage.setAlarm(now + ttlMs)
+    // Never push out an earlier pending alarm set by a shorter-lived member.
+    const pending = await this.ctx.storage.getAlarm()
+    if (pending === null || now + ttlMs < pending) await this.ctx.storage.setAlarm(now + ttlMs)
     return { ok: true }
   }
 

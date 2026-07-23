@@ -35,7 +35,7 @@
     "postbuild": "node scripts/configure-auth-bridge.mjs",
     "test": "vitest run --maxWorkers=4",
     "test:watch": "vitest",
-    "test:workers": "vitest run -c vitest.workers.config.ts",
+    "test:workers": "mkdir -p dist && vitest run -c vitest.workers.config.ts",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test e2e/accessibility.spec.ts",
     "test:coverage": "vitest run --coverage --maxWorkers=4",
@@ -51,7 +51,7 @@
     "audit:production": "npm audit --omit=dev --audit-level=high",
     "test:load:relay": "node scripts/load-relay.mjs",
     "verify:production": "node scripts/verify-production.mjs",
-    "worker:check": "wrangler types --check && wrangler deploy --dry-run --env=''",
+    "worker:check": "wrangler types --check && wrangler deploy --dry-run --env='' && wrangler deploy --dry-run -c wrangler.preview.jsonc",
     "test:bump": "node --test scripts/bump-version.test.mjs"
   },
   "dependencies": {

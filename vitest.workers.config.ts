@@ -5,7 +5,10 @@ export default defineWorkersConfig({
     include: ['packages/core/worker/realtime/**/*.workers.test.mjs'],
     poolOptions: {
       workers: {
-        wrangler: { configPath: './wrangler.jsonc' },
+        // The preview config is the one with Durable Object bindings; the
+        // default wrangler.jsonc must stay migration-free until cutover
+        // (see the comment in wrangler.preview.jsonc).
+        wrangler: { configPath: './wrangler.preview.jsonc' },
         // WebSocket tests (control/signal socket upgrades) are not supported
         // under per-file storage isolation — see
         // https://developers.cloudflare.com/workers/testing/vitest-integration/known-issues/#websockets.

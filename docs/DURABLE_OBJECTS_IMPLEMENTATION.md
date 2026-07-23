@@ -22,6 +22,17 @@ of guessing.
 >   token cannot know in advance that its signing secret will later become
 >   "previous" during rotation, so verification tries `current` then
 >   `previous` unconditionally instead of trusting a tag written at mint time.
+> - Section 13 is superseded: `durable_objects`/`migrations` must NOT appear
+>   in the default `wrangler.jsonc` until the Phase 5 cutover PR. Workers
+>   Builds deploys every non-production branch with `wrangler versions
+>   upload`, and Cloudflare rejects any version carrying a DO migration (API
+>   error 10211) — so a default config with migrations turns every branch
+>   build red and breaks `{branch}-{app}.codefusion.workers.dev` preview
+>   aliases. The DO-enabled staging worker lives in `wrangler.preview.jsonc`
+>   (a standalone config, since `migrations` is top-level-only and would leak
+>   into version uploads from any shared file). The cutover PR moves
+>   bindings+migrations into the default config; its own branch build will
+>   red on 10211 — expected, resolved by the merge-to-main full deploy.
 
 ## 0. Rules for the implementing agent
 

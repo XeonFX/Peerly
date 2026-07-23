@@ -43,7 +43,10 @@ export class RoomDirectoryShardDO extends DurableObject {
          entry = excluded.entry, updated_at = excluded.updated_at, expires_at = excluded.expires_at`,
       roomId, ownerUid, dk, revision, JSON.stringify(entry), now, expiresAt
     )
-    await this.ctx.storage.setAlarm(expiresAt)
+    // Never push out an earlier pending alarm; the alarm handler reschedules
+    // itself to the next-earliest expiry after each prune.
+    const pending = await this.ctx.storage.getAlarm()
+    if (pending === null || expiresAt < pending) await this.ctx.storage.setAlarm(expiresAt)
     return { ok: true }
   }
 

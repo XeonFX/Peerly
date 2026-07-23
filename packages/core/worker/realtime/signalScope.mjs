@@ -34,7 +34,10 @@ export class SignalScopeDO extends DurableObject {
     this.ctx.storage.sql.exec(
       'INSERT OR REPLACE INTO authorizations (uid, dk, expires_at) VALUES (?, ?, ?)', uid, dk, expiresAt
     )
-    await this.ctx.storage.setAlarm(expiresAt)
+    // Never push out an earlier pending alarm: a later-expiring authorize
+    // must not delay pruning of rows that expire sooner.
+    const pending = await this.ctx.storage.getAlarm()
+    if (pending === null || expiresAt < pending) await this.ctx.storage.setAlarm(expiresAt)
     return { ok: true }
   }
 

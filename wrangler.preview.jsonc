@@ -1,0 +1,54 @@
+{
+  // The DO-enabled staging worker. A single, stable hostname for testing any
+  // branch with real Google sign-in — Google OAuth requires exact JavaScript
+  // origins (no wildcards), so per-branch preview URLs can never sign in;
+  // this fixed hostname is registered once in the OAuth client and reused
+  // for every branch:
+  //   npm run build && npx wrangler deploy -c wrangler.preview.jsonc
+  //
+  // This is a separate config file (not an `env` inside wrangler.jsonc)
+  // because the Durable Object `migrations` block cannot appear anywhere in
+  // the default config: Workers Builds deploys non-production branches with
+  // `wrangler versions upload`, and Cloudflare rejects versions that carry a
+  // DO migration (API error 10211). Migrations move into wrangler.jsonc only
+  // in the production cutover PR, where merge-to-main applies them via a
+  // full deploy. See docs/DURABLE_OBJECTS_ARCHITECTURE.md Phase 5.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "peerly-preview",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-07-22",
+  "vars": {
+    "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com",
+    "COORDINATION_BACKEND": "durable-objects"
+  },
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "ratelimits": [
+    {
+      "name": "RENDEZVOUS_RATE_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "USER_GATEWAYS", "class_name": "UserGatewayDO" },
+      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" },
+      { "name": "WORKSPACES", "class_name": "WorkspaceDO" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "realtime-v1",
+      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO", "WorkspaceDO"]
+    }
+  ],
+  "secrets": {
+    "required": ["NETWORK_SESSION_SECRET", "OPAQUE_USER_ID_SECRET"]
+  },
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}
