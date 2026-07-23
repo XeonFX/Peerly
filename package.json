@@ -39,7 +39,7 @@
     "test:e2e": "playwright test",
     "test:a11y": "playwright test e2e/accessibility.spec.ts",
     "test:coverage": "VITE_APP_ID=peerly vitest run --coverage --maxWorkers=4",
-    "test:mutation": "stryker run",
+    "test:mutation": "VITE_APP_ID=peerly stryker run",
     "test:e2e:nostr": "E2E_SIGNALING=nostr playwright test -g \"two users connect and see each other|chat messages sync between peers|file sharing between peers|shared image preview survives page reload\"",
     "test:e2e:ui": "playwright test --ui",
     "lint": "oxlint",
