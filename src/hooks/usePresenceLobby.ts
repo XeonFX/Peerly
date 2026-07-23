@@ -38,7 +38,7 @@ import {
   type IncomingFriendInvite,
   type OutgoingFriendInvite,
 } from '../collab/friendInviteStore'
-import { hashEmail, isPlausibleEmail, normalizeEmail } from '../collab/emailHash'
+import { isPlausibleEmail, normalizeEmail } from '../collab/emailHash'
 import {
   parseDmRingPayload,
   type DmRingPayload,
@@ -136,19 +136,6 @@ export function usePresenceLobby({
       myRendezvousIdRef.current = rendezvousId ?? ''
     })
   }, [profile?.email])
-
-  // Migrate still-valid local queues created before opaque rendezvous IDs existed.
-  useEffect(() => {
-    if (!roomEnabled) return
-    void (async () => {
-      const migrated = await Promise.all(loadOutgoingInvites().map(async item => ({
-        ...item,
-        toRendezvousId: item.toRendezvousId ?? await lookupRendezvousId(item.toEmail) ?? undefined,
-      })))
-      saveOutgoingInvites(migrated)
-      setOutgoing(migrated)
-    })()
-  }, [roomEnabled])
 
   useEffect(() => {
     if (!room || !roomEnabled) {
@@ -310,7 +297,7 @@ export function usePresenceLobby({
         if (!(await verifyFriendInvite(parsed))) return
         if (!(await verifyAttestedPeer(parsed))) return
         const me = profileRef.current
-        if (!me || parsed.toEmailHash !== await hashEmail(me.email)) return
+        if (!me || parsed.toRendezvousId !== myRendezvousIdRef.current) return
         if (parsed.fromUserId === me.userId) return
         // Already friends — auto-ack so their outgoing queue clears.
         if (isFriend(loadFriends(), parsed.fromUserId)) {
@@ -347,7 +334,6 @@ export function usePresenceLobby({
           inviteId: parsed.inviteId,
           fromUserId: parsed.fromUserId,
           fromName: parsed.fromName,
-          fromEmailHash: parsed.fromEmailHash,
           payload: parsed,
           receivedAt: Date.now(),
         }
@@ -478,13 +464,12 @@ export function usePresenceLobby({
           fromUserId: me.userId,
           fromName: me.name,
           fromEmail: me.email,
-          toEmail: normalized,
+          toRendezvousId,
           attestation: proof,
         })
         const entry: OutgoingFriendInvite = {
           inviteId,
           toEmail: normalized,
-          toEmailHash: payload.toEmailHash,
           toRendezvousId,
           payload,
           createdAt: Date.now(),

@@ -393,8 +393,8 @@ const plByEnglish: Record<string, string> = {
   'Still connecting — try again in a moment': 'Nadal trwa łączenie — spróbuj ponownie za chwilę',
   'Signed in as {actual}, but this workspace admitted {expected}. Use the same account.':
     'Zalogowano jako {actual}, ale ta przestrzeń dopuściła {expected}. Użyj tego samego konta.',
-  'Your sign-in expired. Current connections keep working, but nobody new can verify you until you sign in again.':
-    'Twoje logowanie wygasło. Obecne połączenia nadal działają, ale nikt nowy nie zweryfikuje Cię, dopóki nie zalogujesz się ponownie.',
+  'Your sign-in expired. Sign in again to reconnect securely.':
+    'Twoje logowanie wygasło. Zaloguj się ponownie, aby bezpiecznie wznowić połączenie.',
   'Your sign-in expires in a few minutes. Renew it to keep accepting new connections.':
     'Twoje logowanie wygaśnie za kilka minut. Odnów je, aby nadal przyjmować nowe połączenia.',
   'Sign in again': 'Zaloguj się ponownie',

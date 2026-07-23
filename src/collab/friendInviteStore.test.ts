@@ -9,6 +9,8 @@ import {
   upsertOutgoingInvite,
 } from './friendInviteStore'
 
+const testDmSecret = '0'.repeat(32)
+
 function createStorage(): Storage {
   const store = new Map<string, string>()
   return {
@@ -28,14 +30,13 @@ function createStorage(): Storage {
 }
 
 const payload = {
-  v: 1 as const,
+  v: 2 as const,
   inviteId: 'inv-1',
   fromUserId: 'alice',
   fromName: 'Alice',
   fromEmail: 'alice@example.com',
-  fromEmailHash: 'a'.repeat(64),
-  toEmailHash: 'b'.repeat(64),
-  dmSecret: '0123456789abcdef0123456789abcdef',
+  toRendezvousId: 'AbCdEf0123456789_bob-opaque-capability-value',
+  dmSecret: testDmSecret,
   ts: Date.now(),
   deviceKeyId: 'P-256:x:y',
   attestation: { providerId: 'google', idToken: 'header.payload.signature' },
@@ -56,7 +57,7 @@ describe('friendInviteStore', () => {
     out = upsertOutgoingInvite(out, {
       inviteId: 'inv-1',
       toEmail: 'bob@example.com',
-      toEmailHash: 'b'.repeat(64),
+      toRendezvousId: payload.toRendezvousId,
       payload,
       createdAt: Date.now(),
       lastSentAt: 0,
@@ -64,7 +65,7 @@ describe('friendInviteStore', () => {
     out = upsertOutgoingInvite(out, {
       inviteId: 'inv-2',
       toEmail: 'Bob@example.com',
-      toEmailHash: 'b'.repeat(64),
+      toRendezvousId: payload.toRendezvousId,
       payload: { ...payload, inviteId: 'inv-2' },
       createdAt: Date.now(),
       lastSentAt: 0,
@@ -82,7 +83,6 @@ describe('friendInviteStore', () => {
       inviteId: 'inv-1',
       fromUserId: 'alice',
       fromName: 'Alice',
-      fromEmailHash: 'a'.repeat(64),
       payload,
       receivedAt: Date.now(),
     }

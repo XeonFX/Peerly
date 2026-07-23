@@ -116,7 +116,7 @@ export function ReauthBanner({ phase, session, authManager, onReauthed }: Props)
     >
       <span className="min-w-0 flex-1">
         {phase === 'expired'
-          ? tr('Your sign-in expired. Current connections keep working, but nobody new can verify you until you sign in again.')
+          ? tr('Your sign-in expired. Sign in again to reconnect securely.')
           : tr('Your sign-in expires in a few minutes. Renew it to keep accepting new connections.')}
       </span>
       {isGoogle ? (
