@@ -487,7 +487,7 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
     setSeek(pool, _memberId, tags, _data, excluded = []) {
       const seekId = crypto.randomUUID()
       activeSeek = { pool, seekId }
-      void transport.startSeek({ seekId, interests: tags, exclusions: excluded })
+      void transport.startSeek({ seekId, interests: tags.slice(0, 5), exclusions: excluded })
     },
     clearSeek(pool) {
       const seek = activeSeek
