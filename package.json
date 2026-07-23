@@ -35,6 +35,7 @@
     "postbuild": "node scripts/configure-auth-bridge.mjs",
     "test": "vitest run --maxWorkers=4",
     "test:watch": "vitest",
+    "test:workers": "vitest run -c vitest.workers.config.ts",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test e2e/accessibility.spec.ts",
     "test:coverage": "vitest run --coverage --maxWorkers=4",
@@ -64,6 +65,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
+    "@cloudflare/vitest-pool-workers": "^0.12.0",
     "@emnapi/core": "^1.11.2",
     "@emnapi/runtime": "^1.11.2",
     "@playwright/test": "^1.52.0",

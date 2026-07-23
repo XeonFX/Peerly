@@ -289,3 +289,19 @@ export {
   type NsfwScreenScanState,
   type VisualSource,
 } from './nsfwPolicy.js'
+export { RealtimeClient, type RealtimeClientConfig } from './realtime/client.js'
+export { selectDurableObjectsTransport, type CoordinationTransport } from './realtime/transport.js'
+export {
+  type DeviceSignerLike,
+  type ErrorCode,
+  type OidcCredentialProvider,
+  type RealtimeDeltaEvent,
+  type RealtimeFrame,
+  type RoomEntry,
+  type RoomPage,
+  type ScopeHandle,
+  type ScopeKind,
+  type SeekOptions,
+  type TransportDiagnostics,
+  type TransportState,
+} from './realtime/types.js'

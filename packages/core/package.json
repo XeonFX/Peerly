@@ -33,6 +33,9 @@
     "./worker/google-auth": {
       "default": "./worker/googleAuth.mjs"
     },
+    "./worker/realtime": {
+      "default": "./worker/realtime/index.mjs"
+    },
     "./server/coordination": {
       "default": "./server/coordination.mjs"
     }

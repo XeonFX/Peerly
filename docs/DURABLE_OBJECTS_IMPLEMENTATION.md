@@ -7,6 +7,22 @@ document decides *what and why*; this document specifies *exactly how*. When
 the two disagree, the architecture document wins — flag the conflict instead
 of guessing.
 
+> **Implementation note (2026-07-23):** PR-1 simplified two points below
+> after building against the existing codebase; neither changes the security
+> properties this guide requires.
+> - There is no separate `GET /api/network/nonce` endpoint. Enroll/session
+>   device-proof headers reuse the exact scheme already shipped for
+>   `/api/network/credentials` (`x-peerly-device-key/request-ts/request-nonce/
+>   request-signature`); single-use replay protection comes from
+>   `UserGatewayDO.consumeNonce` hashing the client-supplied nonce, not a
+>   server-minted one. The 60-second timestamp window plus per-hash
+>   single-use tracking gives the same guarantee with one fewer round trip.
+> - Signed tokens (capability, cookie) are `v1.<body>.<mac>` — no embedded
+>   `c`/`p` key-id segment (section 4.1 below is superseded on this point). A
+>   token cannot know in advance that its signing secret will later become
+>   "previous" during rotation, so verification tries `current` then
+>   `previous` unconditionally instead of trusting a tag written at mint time.
+
 ## 0. Rules for the implementing agent
 
 1. Implement one numbered PR from section 15 at a time, in order. Do not mix

@@ -6,7 +6,12 @@
   "vars": {
     // The auth bridge executes in the Worker runtime, where Cloudflare's
     // build-time VITE_* variables are not available automatically.
-    "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com"
+    "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com",
+    // Production stays on the legacy relay until the Durable Objects control
+    // plane passes its seven-day exit criteria (see
+    // docs/DURABLE_OBJECTS_ARCHITECTURE.md Phase 5). Only the preview
+    // environment below flips this to "durable-objects".
+    "COORDINATION_BACKEND": "legacy-relay"
   },
   "assets": {
     "binding": "ASSETS",
@@ -21,6 +26,22 @@
       "simple": { "limit": 30, "period": 60 }
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "USER_GATEWAYS", "class_name": "UserGatewayDO" },
+      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" },
+      { "name": "WORKSPACES", "class_name": "WorkspaceDO" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "realtime-v1",
+      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO", "WorkspaceDO"]
+    }
+  ],
+  "secrets": {
+    "required": ["NETWORK_SESSION_SECRET", "OPAQUE_USER_ID_SECRET"]
+  },
   "observability": { "enabled": true, "head_sampling_rate": 1 },
   "env": {
     // A single, stable staging worker for testing any branch with real Google
@@ -30,6 +51,21 @@
     //   npm run build && npx wrangler deploy --env preview
     "preview": {
       "name": "peerly-preview",
+      // vars is non-inheritable — this whole object replaces the top-level
+      // one for this environment, so every top-level var this env still
+      // needs (VITE_GOOGLE_CLIENT_ID) has to be repeated here. The one
+      // deliberate difference is COORDINATION_BACKEND: this fixed preview
+      // worker exercises the new control plane while production (top-level,
+      // above) stays on the legacy relay. Branch subdomain previews
+      // (<branch>-peerly.codefusion.workers.dev) deploy the *default*
+      // top-level environment, not this one, and cannot complete Google
+      // sign-in at all (see allowedAuthParent below) — this fixed-hostname
+      // worker is the only target that can exercise the full
+      // enroll -> session -> control-socket flow before cutover.
+      "vars": {
+        "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com",
+        "COORDINATION_BACKEND": "durable-objects"
+      },
       // assets is a non-inheritable key: every env re-declares it.
       "assets": {
         "binding": "ASSETS",
@@ -43,7 +79,19 @@
           "namespace_id": "1002",
           "simple": { "limit": 60, "period": 60 }
         }
-      ]
+      ],
+      // durable_objects/migrations are non-inheritable too; every env
+      // re-declares its bindings even though they point at the same classes.
+      "durable_objects": {
+        "bindings": [
+          { "name": "USER_GATEWAYS", "class_name": "UserGatewayDO" },
+          { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" },
+          { "name": "WORKSPACES", "class_name": "WorkspaceDO" }
+        ]
+      },
+      "secrets": {
+        "required": ["NETWORK_SESSION_SECRET", "OPAQUE_USER_ID_SECRET"]
+      }
     }
   }
 }
