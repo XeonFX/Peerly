@@ -5,6 +5,10 @@ import {
   openCoordinationData,
   sealCoordinationData,
 } from './coordination.js'
+import {
+  clearRuntimeNetworkCredentials,
+  configureRuntimeAuthCredentialProvider,
+} from './runtimeCredentials.js'
 
 class FakeSocket extends EventTarget {
   readyState = 1
@@ -26,7 +30,11 @@ class OwnedFakeSocket extends FakeSocket {
   }
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  configureRuntimeAuthCredentialProvider(null)
+  clearRuntimeNetworkCredentials()
+  vi.unstubAllGlobals()
+})
 
 describe('relay coordination client', () => {
   it('waits for relay capability acknowledgement before flushing state', async () => {
@@ -74,6 +82,21 @@ describe('relay coordination client', () => {
 
   it('owns a dedicated coordination socket and refreshes desired state after it opens', async () => {
     vi.stubGlobal('WebSocket', { CONNECTING: 0, OPEN: 1, CLOSED: 3 })
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      relayTickets: {
+        'relay-a.example': 'ticket-a',
+        'relay-b.example': 'ticket-b',
+      },
+      expiresAt: Date.now() + 5 * 60_000,
+    })))
+    configureRuntimeAuthCredentialProvider(() => ({
+      token: 'signed-id-token',
+      providerId: 'google',
+      signer: {
+        publicKeyId: async () => `P-256:${'a'.repeat(22)}:${'b'.repeat(22)}`,
+        sign: async () => 'device-signature',
+      },
+    }))
     const created: Array<{ url: string; socket: OwnedFakeSocket }> = []
     const coordinator = createRelayCoordinator(
       { VITE_RELAY_HOSTS: 'relay-a.example,relay-b.example', VITE_RELAY_PORT: '443' },
@@ -89,7 +112,7 @@ describe('relay coordination client', () => {
     coordinator.setPresence('scope', 'member', 'ciphertext')
 
     await vi.waitFor(() => expect(created).toHaveLength(1))
-    expect(created[0].url).toBe('wss://relay-a.example:443')
+    expect(created[0].url).toBe('wss://relay-a.example:443?ticket=ticket-a')
     created[0].socket.open()
     expect(JSON.parse(created[0].socket.sent[0])).toMatchObject({ action: 'hello' })
     created[0].socket.dispatchEvent(new MessageEvent('message', {
@@ -100,7 +123,7 @@ describe('relay coordination client', () => {
 
     created[0].socket.close()
     await vi.waitFor(() => expect(created).toHaveLength(2))
-    expect(created[1].url).toBe('wss://relay-b.example:443')
+    expect(created[1].url).toBe('wss://relay-b.example:443?ticket=ticket-b')
     coordinator.close()
   })
 

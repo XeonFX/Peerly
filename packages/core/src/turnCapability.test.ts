@@ -18,10 +18,29 @@ describe('probeTurnCapability', () => {
         throw new Error('TURN blocked by administrator')
       }
     })
-    await expect(probeTurnCapability({ VITE_TURN_URLS: 'turn:turn.example:3478' })).resolves.toMatchObject({
+    await expect(probeTurnCapability(
+      { VITE_TURN_URLS: 'turn:turn.example:3478' },
+      20,
+      async () => [{ urls: ['turn:turn.example:3478'], username: 'user', credential: 'pass' }]
+    )).resolves.toMatchObject({
       status: 'unavailable',
       detail: expect.stringContaining('blocked by administrator'),
     })
+  })
+
+  it('does not attempt anonymous TURN when runtime credentials are unavailable', async () => {
+    const PeerConnection = vi.fn()
+    vi.stubGlobal('RTCPeerConnection', PeerConnection)
+
+    await expect(probeTurnCapability(
+      { VITE_TURN_URLS: 'turn:turn.example:3478' },
+      20,
+      async () => undefined
+    )).resolves.toMatchObject({
+      status: 'unavailable',
+      detail: expect.stringContaining('credentials are unavailable'),
+    })
+    expect(PeerConnection).not.toHaveBeenCalled()
   })
 
   it('succeeds on the first relay candidate without waiting for gathering to finish', async () => {
@@ -39,7 +58,12 @@ describe('probeTurnCapability', () => {
 
     await expect(probeTurnCapability(
       { VITE_TURN_URLS: 'turn:turn.example:3478' },
-      20
+      20,
+      async () => [{
+        urls: ['turn:turn.example:3478'],
+        username: 'runtime-user',
+        credential: 'runtime-credential',
+      }]
     )).resolves.toEqual({
       status: 'available',
       detail: 'TURN relay allocation succeeded (tcp).',
