@@ -47,6 +47,7 @@ export class RealtimeClient extends EventTarget {
   private queue: PendingCommand[] = []
   private lastEventAt: number | null = null
   private stopped = false
+  private connectPromise: Promise<void> | null = null
 
   constructor(config: RealtimeClientConfig) {
     super()
@@ -69,8 +70,13 @@ export class RealtimeClient extends EventTarget {
   }
 
   async connect(): Promise<void> {
+    if (this.state === 'ready') return
+    if (this.connectPromise) return this.connectPromise
     this.stopped = false
-    await this.runConnectCycle()
+    this.connectPromise = this.runConnectCycle().finally(() => {
+      this.connectPromise = null
+    })
+    await this.connectPromise
   }
 
   close(): void {
@@ -202,7 +208,7 @@ export class RealtimeClient extends EventTarget {
       const command = forId ? this.pending.get(forId) : undefined
       if (command) {
         this.pending.delete(forId!)
-        if (frame.type === 'ack') command.resolve(payload)
+        if (frame.type === 'ack') command.resolve((payload as { result?: unknown }).result)
         else command.reject(new Error(JSON.stringify(payload)))
       }
       return

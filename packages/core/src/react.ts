@@ -134,6 +134,14 @@ export function useRelayChannel(
   options: UseRelayChannelOptions
 ): { room: RelayChannelRoom | null } {
   const { channel, memberId, env, onError, connectTimeoutMs = 10_000 } = options
+  const durableObjects = resolveSignalingStrategy(env) === 'durable-objects'
+  const { room: durableRoom } = useRoom({
+    appId: channel.startsWith('heyhubs:') ? 'heyhubs-lobby-v1' : 'peerly-lobby-v1',
+    roomId: durableObjects ? channel : '',
+    password: channel,
+    env,
+    onError,
+  })
   const [room, setRoom] = useState<RelayChannelRoom | null>(null)
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
@@ -141,6 +149,10 @@ export function useRelayChannel(
   envRef.current = env
 
   useEffect(() => {
+    if (durableObjects) {
+      setRoom(null)
+      return
+    }
     if (!channel || !memberId) {
       setRoom(null)
       return
@@ -162,9 +174,13 @@ export function useRelayChannel(
       coordinator.close()
       setRoom(null)
     }
-  }, [channel, memberId, connectTimeoutMs])
+  }, [channel, memberId, connectTimeoutMs, durableObjects])
 
-  return { room }
+  return {
+    room: durableObjects
+      ? durableRoom as unknown as RelayChannelRoom | null
+      : room,
+  }
 }
 
 export type RoomErrorKind =

@@ -42,23 +42,21 @@ describe('Peerly auth bridge parent validation', () => {
 })
 
 describe('Peerly preview network configuration', () => {
-  it('builds the client against the authenticated public relay', () => {
-    expect(previewConfig.build?.command).toContain('VITE_SIGNALING=ws-relay')
-    expect(previewConfig.build?.command).toContain('VITE_RELAY_HOST=relay.peerly.cc')
-    expect(previewConfig.build?.command).toContain('VITE_RELAY_PORT=443')
+  it('builds the client against Durable Objects without the VPS relay', () => {
+    expect(previewConfig.build?.command).toContain('VITE_SIGNALING=durable-objects')
     expect(previewConfig.build?.command).toContain(
       'VITE_TURN_URLS=turn:turn.peerly.cc:3478,turns:turn.peerly.cc:5349'
     )
-    expect(previewConfig.build?.command).not.toContain('preview.peerly.cc:8080')
+    expect(previewConfig.build?.command).not.toContain('VITE_RELAY_HOST')
+    expect(previewConfig.build?.command).not.toContain('relay.peerly.cc')
+    expect(previewConfig.build?.command).not.toContain('ws-relay')
   })
 
   it('configures credential and rendezvous services without storing secrets in source', () => {
-    expect(previewConfig.vars.RELAY_TICKET_AUDIENCE).toBe('relay.peerly.cc')
     expect(previewConfig.vars.TURN_URLS).toBe(
       'turn:turn.peerly.cc:3478,turns:turn.peerly.cc:5349'
     )
     expect(previewConfig.secrets?.required).toEqual([
-      'RELAY_TICKET_SECRET',
       'TURN_AUTH_SECRET',
       'RENDEZVOUS_SECRET',
       'NETWORK_SESSION_SECRET',

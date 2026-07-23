@@ -38,7 +38,7 @@ export type RealtimeDeltaEvent =
   | { kind: 'invite.acked'; body: { inviteId: string } }
   | { kind: 'ring'; body: { from: string; roomRoute: string } }
   | { kind: 'seek.state'; body: Record<string, unknown> }
-  | { kind: 'match.commit'; body: { matchId: string; routeId: string; peer: { opaqueUserId: string } } }
+  | { kind: 'match.commit'; body: { matchId: string; routeId: string; initiator: boolean; peer: { opaqueUserId: string } } }
   | { kind: 'directory.change'; body: Record<string, unknown> }
   | { kind: 'workspace.presence'; body: { uid: string; state: string } }
   | { kind: 'device.revoked'; body: Record<string, unknown> }

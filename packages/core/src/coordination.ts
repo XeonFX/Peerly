@@ -1,6 +1,7 @@
 import { base64UrlToBytes, bytesToBase64Url } from './base64url.js'
 import type { Env } from './env.js'
 import { resolveRelayUrls } from './relays.js'
+import { getDurableObjectsTransport } from './realtime/runtime.js'
 
 const COORDINATION_TOPIC = '__relay_coord_v1__'
 const REFRESH_MS = 10_000
@@ -97,6 +98,9 @@ export function createRelayCoordinator(
     reconnectMs?: number
   }
 ): RelayCoordinator {
+  if (env.VITE_SIGNALING === 'durable-objects') {
+    return createDurableObjectsCoordinator(env)
+  }
   const listeners = new Set<(event: RelayCoordinationEvent) => void>()
   const desired = new Map<string, Command>()
   let urls: string[] = []
@@ -376,6 +380,156 @@ export function createRelayCoordinator(
           // Already closed.
         }
       }
+      listeners.clear()
+    },
+  }
+}
+
+function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
+  const app = env.VITE_APP_ID === 'heyhubs' ? 'heyhubs' : 'peerly'
+  const transport = getDurableObjectsTransport(app)
+  const listeners = new Set<(event: RelayCoordinationEvent) => void>()
+  let available = false
+  let closed = false
+  let activeSeek: { pool: string; seekId: string } | null = null
+  let watchedDirectory = ''
+  let hostedRoom: { directory: string; roomId: string; revision: number } | null = null
+  let refreshTimer: ReturnType<typeof globalThis.setInterval> | undefined
+
+  const emit = (event: RelayCoordinationEvent) => {
+    if (!closed) listeners.forEach(listener => listener(event))
+  }
+
+  const refreshRooms = async () => {
+    if (!watchedDirectory || closed) return
+    try {
+      const page = await transport.listRooms()
+      emit({
+        type: 'room.snapshot',
+        directory: watchedDirectory,
+        rooms: page.entries.map(item => ({
+          roomId: item.roomId,
+          data: typeof item.entry.data === 'string'
+            ? item.entry.data
+            : JSON.stringify(item.entry),
+        })),
+        total: page.entries.length,
+      })
+    } catch {
+      emit({ type: 'error', code: 'directory-unavailable' })
+    }
+  }
+
+  const refreshStats = async () => {
+    if (!activeSeek || closed) return
+    try {
+      const response = await fetch('/api/stats/snapshot')
+      if (!response.ok) return
+      const snapshot = await response.json() as {
+        online?: unknown
+        interests?: Array<{ tag?: unknown; count?: unknown }>
+      }
+      const tags: Record<string, number> = {}
+      for (const item of snapshot.interests ?? []) {
+        if (typeof item.tag === 'string' && typeof item.count === 'number') tags[item.tag] = item.count
+      }
+      emit({
+        type: 'seek.stats',
+        pool: activeSeek.pool,
+        total: typeof snapshot.online === 'number' ? snapshot.online : 0,
+        tags,
+      })
+    } catch {
+      // Statistics are advisory; matching correctness does not depend on them.
+    }
+  }
+
+  transport.events.addEventListener('state', event => {
+    available = (event as CustomEvent<string>).detail === 'ready'
+    emit({ type: 'status', available })
+  })
+  transport.events.addEventListener('match.commit', event => {
+    if (!activeSeek) return
+    const detail = (event as CustomEvent<{
+      matchId: string
+      initiator?: boolean
+      peer: { opaqueUserId: string }
+    }>).detail
+    emit({
+      type: 'seek.match',
+      pool: activeSeek.pool,
+      matchId: detail.matchId,
+      roomCode: detail.matchId.replaceAll('-', ''),
+      initiator: detail.initiator === true,
+      partner: { memberId: detail.peer.opaqueUserId, data: '{}' },
+    })
+  })
+
+  void transport.connect().then(() => {
+    available = true
+    emit({ type: 'status', available: true })
+  }).catch(() => emit({ type: 'status', available: false }))
+
+  return {
+    setPresence() {},
+    clearPresence() {},
+    watchSeek(pool) {
+      activeSeek = activeSeek ?? { pool, seekId: '' }
+      void refreshStats()
+      refreshTimer ??= globalThis.setInterval(() => {
+        void refreshStats()
+        void refreshRooms()
+      }, 30_000)
+    },
+    unwatchSeek(pool) {
+      if (activeSeek?.pool === pool) activeSeek = null
+    },
+    setSeek(pool, _memberId, tags, _data, excluded = []) {
+      const seekId = crypto.randomUUID()
+      activeSeek = { pool, seekId }
+      void transport.startSeek({ seekId, interests: tags, exclusions: excluded })
+    },
+    clearSeek(pool) {
+      const seek = activeSeek
+      if (!seek || seek.pool !== pool) return
+      activeSeek = null
+      if (seek.seekId) void transport.cancelSeek(seek.seekId)
+    },
+    acknowledgeSeekMatch() {},
+    watchRooms(directory) {
+      watchedDirectory = directory
+      void refreshRooms()
+      refreshTimer ??= globalThis.setInterval(() => {
+        void refreshStats()
+        void refreshRooms()
+      }, 30_000)
+    },
+    unwatchRooms(directory) {
+      if (watchedDirectory === directory) watchedDirectory = ''
+    },
+    setRoom(directory, roomId, data) {
+      const revision = Date.now()
+      hostedRoom = { directory, roomId, revision }
+      void transport.publishRoom(roomId, revision, { data }).then(refreshRooms)
+    },
+    clearRoom(directory) {
+      const room = hostedRoom
+      if (!room || room.directory !== directory) return
+      hostedRoom = null
+      void transport.deleteRoom(room.roomId, Date.now()).then(refreshRooms)
+    },
+    watchChannel() {},
+    unwatchChannel() {},
+    publishChannel() {},
+    subscribe(listener) {
+      listeners.add(listener)
+      listener({ type: 'status', available })
+      return () => listeners.delete(listener)
+    },
+    close() {
+      closed = true
+      if (refreshTimer) globalThis.clearInterval(refreshTimer)
+      if (activeSeek?.seekId) void transport.cancelSeek(activeSeek.seekId)
       listeners.clear()
     },
   }

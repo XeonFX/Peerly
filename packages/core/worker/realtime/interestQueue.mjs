@@ -123,8 +123,12 @@ export class InterestQueueDO extends DurableObject {
     }
 
     await Promise.allSettled([
-      firstGateway.commitMatch({ reservationId, matchId, routeId, peerUid: second.uid }),
-      secondGateway.commitMatch({ reservationId, matchId, routeId, peerUid: first.uid }),
+      firstGateway.commitMatch({
+        reservationId, matchId, routeId, peerUid: second.uid, initiator: true,
+      }),
+      secondGateway.commitMatch({
+        reservationId, matchId, routeId, peerUid: first.uid, initiator: false,
+      }),
     ])
 
     this.ctx.storage.sql.exec('DELETE FROM seeks WHERE uid IN (?, ?)', first.uid, second.uid)

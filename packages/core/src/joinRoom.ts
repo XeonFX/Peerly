@@ -3,6 +3,7 @@ import type { joinRoom as joinNostrRoom } from '@trystero-p2p/nostr'
 import type { Env } from './env.js'
 import type { SignalingStrategy } from './signaling.js'
 import { getNostrRelayConfig, getSupabaseRoomConfig, resolveIceServers } from './relays.js'
+import { getDurableObjectsIceServers } from './realtime/runtime.js'
 
 export type Room = ReturnType<typeof joinNostrRoom>
 
@@ -102,6 +103,10 @@ export type JoinRoomOptions = {
   onJoinError?: (details: { error?: unknown }) => void
   /** Override Trystero data-channel handshake wait (ms). */
   handshakeTimeoutMs?: number
+  /** DO scope kind; defaults to room. */
+  scopeKind?: 'workspace' | 'dm' | 'room' | 'chat'
+  /** Existing server-authorized route (for committed matches). */
+  scopeRouteId?: string
 }
 
 /**
@@ -119,10 +124,15 @@ export async function joinRoomByCode(options: JoinRoomOptions): Promise<Room> {
     onPeerHandshake,
     onJoinError,
     handshakeTimeoutMs = DEFAULT_HANDSHAKE_TIMEOUT_MS,
+    scopeKind = 'room',
+    scopeRouteId,
   } = options
   const env = options.env ?? {}
 
-  const iceServers = await resolveIceServers(env)
+  const durableApp = appId.startsWith('heyhubs') ? 'heyhubs' : 'peerly'
+  const iceServers = strategy === 'durable-objects'
+    ? await getDurableObjectsIceServers(durableApp)
+    : await resolveIceServers(env)
   const baseConfig = {
     ...(password ? { password } : {}),
     rtcConfig: {
@@ -148,6 +158,24 @@ export async function joinRoomByCode(options: JoinRoomOptions): Promise<Room> {
     handshakeTimeoutMs,
     ...(onPeerHandshake ? { onPeerHandshake } : {}),
     ...(onJoinError ? { onJoinError } : {}),
+  }
+
+  if (strategy === 'durable-objects') {
+    const { joinDurableObjectsRoom } = await import('./realtime/signaling.js')
+    return joinDurableObjectsRoom(
+      {
+        ...baseConfig,
+        appId,
+        durableObjects: {
+          app: durableApp,
+          kind: scopeKind,
+          capability: password || roomId,
+          ...(scopeRouteId ? { routeId: scopeRouteId } : {}),
+        },
+      },
+      roomId,
+      callbacks
+    )
   }
 
   if (strategy === 'ws-relay') {

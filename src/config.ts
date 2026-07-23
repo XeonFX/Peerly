@@ -29,6 +29,7 @@ export const APP_ID = 'peerly-collab-v1'
 
 /** Explicit public allowlist: never embed the complete hosting environment. */
 export const PUBLIC_NETWORK_ENV: Env = {
+  VITE_APP_ID: 'peerly',
   VITE_SIGNALING: import.meta.env.VITE_SIGNALING,
   VITE_RELAY_HOST: import.meta.env.VITE_RELAY_HOST,
   VITE_RELAY_HOSTS: import.meta.env.VITE_RELAY_HOSTS,

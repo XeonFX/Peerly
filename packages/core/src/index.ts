@@ -24,6 +24,7 @@ export {
   clearRuntimeNetworkCredentials,
   configureRuntimeAuthCredentialProvider,
   configureRuntimeAuthTokenProvider,
+  getRuntimeAuthCredential,
   getRuntimeNetworkCredentials,
   lookupRendezvousId,
   type RuntimeAuthCredential,

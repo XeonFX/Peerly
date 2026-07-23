@@ -342,11 +342,14 @@ export class UserGatewayDO extends DurableObject {
     return { ok: true }
   }
 
-  async commitMatch({ reservationId, matchId, routeId, peerUid }) {
+  async commitMatch({ reservationId, matchId, routeId, peerUid, initiator = false }) {
     const row = this.ctx.storage.sql.exec('SELECT reservation_id FROM seek WHERE one = 1').toArray()[0]
     if (!row || row.reservation_id !== reservationId) return { ok: true } // already committed or released; idempotent
     this.ctx.storage.sql.exec('DELETE FROM seek WHERE one = 1')
-    await this.appendEvents([{ kind: 'match.commit', body: { matchId, routeId, peer: { opaqueUserId: peerUid } } }])
+    await this.appendEvents([{
+      kind: 'match.commit',
+      body: { matchId, routeId, initiator, peer: { opaqueUserId: peerUid } },
+    }])
     return { ok: true }
   }
 
