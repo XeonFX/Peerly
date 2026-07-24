@@ -57,7 +57,7 @@ export async function verifyOidcDeviceBinding(
   }
 }
 
-/** Google-pinned convenience wrapper used by HeyHubs and Google-only flows. */
+/** Google-pinned convenience wrapper for hosts that only enable Google sign-in. */
 export async function verifyGoogleDeviceBinding(
   raw: unknown,
   expected: { deviceKeyId: DeviceKeyId; userId: string; clientId: string; atTime?: number; fetchJwks?: import('./oidcIdToken.js').JwksFetcher }

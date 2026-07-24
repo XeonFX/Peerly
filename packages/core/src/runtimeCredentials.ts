@@ -20,6 +20,11 @@ let cached: RuntimeNetworkCredentials | null = null
 let pending: Promise<RuntimeNetworkCredentials | null> | null = null
 const rendezvousCache = new Map<string, string>()
 
+/** Return the currently configured live credential without exposing the provider callback. */
+export async function getRuntimeAuthCredential(): Promise<RuntimeAuthCredential | null> {
+  return authCredentialProvider ? await authCredentialProvider() : null
+}
+
 /** Register the live, device-bound OIDC credential used to mint relay/TURN tickets. */
 export function configureRuntimeAuthCredentialProvider(
   provider: (() => RuntimeAuthCredential | null | Promise<RuntimeAuthCredential | null>) | null

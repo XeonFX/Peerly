@@ -35,6 +35,8 @@ jobs:
 
       - run: npm test
 
+      - run: npm run test:workers
+
       - run: npm run test:coverage
 
       - name: Build and prove retired static credentials cannot enter the bundle

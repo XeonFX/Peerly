@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { probeTurnCapability } from './turnCapability.js'
+import { probeTurnCapability, resolveProbeIceServers } from './turnCapability.js'
+
+vi.mock('./realtime/runtime.js', () => ({
+  getDurableObjectsIceServers: vi.fn(async () => [{
+    urls: ['turn:turn.example:3478'], username: 'do-user', credential: 'do-credential',
+  }]),
+}))
 
 describe('probeTurnCapability', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -69,5 +75,22 @@ describe('probeTurnCapability', () => {
       detail: 'TURN relay allocation succeeded (tcp).',
       transports: ['tcp'],
     })
+  })
+})
+
+describe('resolveProbeIceServers', () => {
+  it('sources credentials from the Durable Objects session under that strategy', async () => {
+    await expect(resolveProbeIceServers({
+      VITE_SIGNALING: 'durable-objects',
+      VITE_APP_ID: 'heyhubs',
+    })).resolves.toEqual([{
+      urls: ['turn:turn.example:3478'], username: 'do-user', credential: 'do-credential',
+    }])
+  })
+
+  it('falls back to the legacy relay-ticket endpoint for other strategies', async () => {
+    // No auth credential provider is configured in this test, so the legacy
+    // path resolves to undefined without ever touching the DO runtime mock.
+    await expect(resolveProbeIceServers({ VITE_SIGNALING: 'nostr' })).resolves.toBeUndefined()
   })
 })

@@ -115,6 +115,8 @@ import { createRelayCoordinator } from './coordination.js'
 import { createRelayChannel, type RelayChannelRoom } from './relayChannel.js'
 
 export type UseRelayChannelOptions = {
+  /** Stable P2P namespace owned by the host application. */
+  appId: string
   /** Empty means do not connect. */
   channel: string
   /** Opaque application member id; never used as an authorization claim. */
@@ -133,7 +135,15 @@ export type UseRelayChannelOptions = {
 export function useRelayChannel(
   options: UseRelayChannelOptions
 ): { room: RelayChannelRoom | null } {
-  const { channel, memberId, env, onError, connectTimeoutMs = 10_000 } = options
+  const { appId, channel, memberId, env, onError, connectTimeoutMs = 10_000 } = options
+  const durableObjects = resolveSignalingStrategy(env) === 'durable-objects'
+  const { room: durableRoom } = useRoom({
+    appId,
+    roomId: durableObjects ? channel : '',
+    password: channel,
+    env,
+    onError,
+  })
   const [room, setRoom] = useState<RelayChannelRoom | null>(null)
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
@@ -141,6 +151,10 @@ export function useRelayChannel(
   envRef.current = env
 
   useEffect(() => {
+    if (durableObjects) {
+      setRoom(null)
+      return
+    }
     if (!channel || !memberId) {
       setRoom(null)
       return
@@ -162,9 +176,13 @@ export function useRelayChannel(
       coordinator.close()
       setRoom(null)
     }
-  }, [channel, memberId, connectTimeoutMs])
+  }, [channel, memberId, connectTimeoutMs, durableObjects])
 
-  return { room }
+  return {
+    room: durableObjects
+      ? durableRoom as unknown as RelayChannelRoom | null
+      : room,
+  }
 }
 
 export type RoomErrorKind =

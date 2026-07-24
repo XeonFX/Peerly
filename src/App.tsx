@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { configureRuntimeAuthCredentialProvider } from '@peerly/core'
+import { base64UrlToBytes, configureRuntimeAuthCredentialProvider } from '@peerly/core'
+import { deriveUserId } from './collab/userId'
 import { isE2eAuthBypass } from './collab/e2eAuth'
 import { DeviceIdentity } from './collab/deviceIdentity'
 import { loadStoredProfile } from './collab/profileStore'
@@ -166,6 +167,23 @@ function App() {
       const liveToken = loadIdToken()
       if (loaded?.identityUserId && liveToken && !loadIdentityUserId()) {
         saveIdCredentials(liveToken, loaded.identityProvider, loaded.identityEmail, loaded.identityUserId)
+      }
+      // A signed-in user with no workspace has no stored session to backfill
+      // from, so if the opaque user id is still missing (e.g. localStorage was
+      // cleared while a token lingered in sessionStorage) derive it from the
+      // live token's already-verified claims. Without it lobbyProfile stays
+      // null and Home wrongly falls through to the create-workspace screen.
+      const provider = loadIdentityProvider()
+      const email = loadIdentityEmail()
+      if (liveToken && provider && email && !loadIdentityUserId()) {
+        try {
+          const claims = JSON.parse(new TextDecoder().decode(base64UrlToBytes(liveToken.split('.')[1] ?? '')))
+          if (typeof claims.iss === 'string' && typeof claims.sub === 'string') {
+            saveIdCredentials(liveToken, provider, email, await deriveUserId(claims.iss, claims.sub))
+          }
+        } catch {
+          // Malformed token — leave the user id unset; re-auth restores it.
+        }
       }
       if (loaded) {
         setSession(await hydrateSessionAvatar(loaded))

@@ -1,6 +1,6 @@
 /** Single source for the Trystero peer id (must match the room connection id). */
 export { selfId } from '@trystero-p2p/core'
-export type { Env } from './env.js'
+export { requireAppId, type Env } from './env.js'
 export { generateRoomCode } from './roomCode.js'
 export {
   resolveSignalingStrategy,
@@ -24,6 +24,7 @@ export {
   clearRuntimeNetworkCredentials,
   configureRuntimeAuthCredentialProvider,
   configureRuntimeAuthTokenProvider,
+  getRuntimeAuthCredential,
   getRuntimeNetworkCredentials,
   lookupRendezvousId,
   type RuntimeAuthCredential,
@@ -42,7 +43,7 @@ export { isReplaceOnlyUpgrade, planTrackOps, type TrackOp } from './mediaTracks.
 export { createRelayHealth, type RelayHealth } from './relayHealth.js'
 export { probeNostrRelay, probeNostrRelays, type RelayProbeResult } from './relayProbe.js'
 export { probeP2pCapability, type P2pCapability } from './p2pCapability.js'
-export { probeTurnCapability, type TurnCapability } from './turnCapability.js'
+export { probeTurnCapability, resolveProbeIceServers, type TurnCapability } from './turnCapability.js'
 export {
   canonicalizePublicKey,
   DeviceIdentity,
@@ -289,3 +290,20 @@ export {
   type NsfwScreenScanState,
   type VisualSource,
 } from './nsfwPolicy.js'
+export { RealtimeClient, type RealtimeClientConfig } from './realtime/client.js'
+export { selectDurableObjectsTransport, type CoordinationTransport } from './realtime/transport.js'
+export { revokeRealtimeDevice } from './realtime/runtime.js'
+export {
+  type DeviceSignerLike,
+  type ErrorCode,
+  type OidcCredentialProvider,
+  type RealtimeDeltaEvent,
+  type RealtimeFrame,
+  type RoomEntry,
+  type RoomPage,
+  type ScopeHandle,
+  type ScopeKind,
+  type SeekOptions,
+  type TransportDiagnostics,
+  type TransportState,
+} from './realtime/types.js'

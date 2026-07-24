@@ -8,6 +8,9 @@ export default defineConfig({
     alias: [
       { find: '@peerly/core/react', replacement: fileURLToPath(new URL('./packages/core/src/react.ts', import.meta.url)) },
       { find: '@peerly/core', replacement: fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)) },
+      // worker/index.test.mjs runs in plain Node, not the Workers runtime;
+      // see scripts/cloudflareWorkersStub.mjs for why this alias is safe.
+      { find: 'cloudflare:workers', replacement: fileURLToPath(new URL('./scripts/cloudflareWorkersStub.mjs', import.meta.url)) },
     ],
   },
   test: {

@@ -1,10 +1,34 @@
 import { base64UrlToBytes, bytesToBase64Url } from './base64url.js'
 import type { Env } from './env.js'
+import { requireAppId } from './env.js'
 import { resolveRelayUrls } from './relays.js'
+import { getDurableObjectsTransport } from './realtime/runtime.js'
 
 const COORDINATION_TOPIC = '__relay_coord_v1__'
 const REFRESH_MS = 10_000
 const SOCKET_POLL_MS = 1_000
+/**
+ * Durable Objects backend polls, split because the two things cost very
+ * different amounts and change at very different rates.
+ *
+ * Interest counts are an edge-cached HTTP GET (one Worker request, served from
+ * the colo cache), and they are what a user watches while deciding whether
+ * anyone shares their interest — so they poll fast.
+ *
+ * The room directory is a `directory.list` command over the control socket,
+ * which bills a cross-object request on the directory shard *per tab, per
+ * poll*. Public rooms come and go on a scale of minutes. At 10s a single
+ * always-open tab spends ~8,600 Durable Object requests a day on room
+ * listings alone — roughly a tenth of the entire free daily allowance for one
+ * idle browser tab.
+ *
+ * Both are additionally gated on document visibility (see startRefreshTimer):
+ * the architecture plan requires client polling to be "demand-driven and
+ * visibility-gated", and a background tab polling a lobby nobody is looking at
+ * is the single easiest way to exhaust the free plan.
+ */
+const DO_STATS_REFRESH_MS = 10_000
+const DO_ROOMS_REFRESH_MS = 30_000
 
 type Command = { v: 1; type: 'coord'; action: string; [key: string]: unknown }
 
@@ -97,6 +121,9 @@ export function createRelayCoordinator(
     reconnectMs?: number
   }
 ): RelayCoordinator {
+  if (env.VITE_SIGNALING === 'durable-objects') {
+    return createDurableObjectsCoordinator(env)
+  }
   const listeners = new Set<(event: RelayCoordinationEvent) => void>()
   const desired = new Map<string, Command>()
   let urls: string[] = []
@@ -376,6 +403,221 @@ export function createRelayCoordinator(
           // Already closed.
         }
       }
+      listeners.clear()
+    },
+  }
+}
+
+function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
+  const app = requireAppId(env)
+  const transport = getDurableObjectsTransport(app)
+  const listeners = new Set<(event: RelayCoordinationEvent) => void>()
+  let available = false
+  let closed = false
+  /**
+   * The pool this client is *watching* (availability counts, match delivery)
+   * — deliberately separate from the seek it currently has outstanding.
+   * Folding the two into one field meant `clearSeek()` (cancel, or accepting
+   * a match) also stopped the stats poll and made the `match.commit` handler
+   * drop the very event the cancelled-looking seek was waiting for.
+   */
+  let watchedPool = ''
+  let activeSeek: { pool: string; seekId: string } | null = null
+  let watchedDirectory = ''
+  let hostedRoom: { directory: string; roomId: string; revision: number } | null = null
+  let statsTimer: ReturnType<typeof globalThis.setInterval> | undefined
+  let roomsTimer: ReturnType<typeof globalThis.setInterval> | undefined
+  let onVisibility: (() => void) | null = null
+  // Strictly-increasing revision for directory writes. Date.now() alone can
+  // repeat (two re-announces in the same millisecond) or invert under async
+  // reordering, both of which the shard rejects with a monotonic-revision
+  // conflict. Advancing past the last value we issued keeps every write newer.
+  let lastRevision = 0
+  const nextRevision = () => (lastRevision = Math.max(Date.now(), lastRevision + 1))
+
+  const emit = (event: RelayCoordinationEvent) => {
+    if (!closed) listeners.forEach(listener => listener(event))
+  }
+
+  const refreshRooms = async () => {
+    if (!watchedDirectory || closed) return
+    try {
+      const page = await transport.listRooms()
+      emit({
+        type: 'room.snapshot',
+        directory: watchedDirectory,
+        rooms: page.entries.map(item => ({
+          roomId: item.roomId,
+          data: typeof item.entry.data === 'string'
+            ? item.entry.data
+            : JSON.stringify(item.entry),
+        })),
+        total: page.entries.length,
+      })
+    } catch {
+      emit({ type: 'error', code: 'directory-unavailable' })
+    }
+  }
+
+  const refreshStats = async () => {
+    if (!watchedPool || closed) return
+    try {
+      // The Worker caches this per colo; `no-store` only stops the *browser*
+      // from re-serving its own copy, which otherwise doubled the window in
+      // which a new seeker's interest was invisible to everybody else.
+      const response = await fetch('/api/stats/snapshot', { cache: 'no-store' })
+      if (!response.ok) return
+      const snapshot = await response.json() as {
+        online?: unknown
+        interests?: Array<{ tag?: unknown; count?: unknown }>
+      }
+      const tags: Record<string, number> = {}
+      for (const item of snapshot.interests ?? []) {
+        if (typeof item.tag === 'string' && typeof item.count === 'number') tags[item.tag] = item.count
+      }
+      emit({
+        type: 'seek.stats',
+        pool: watchedPool,
+        total: typeof snapshot.online === 'number' ? snapshot.online : 0,
+        tags,
+      })
+    } catch {
+      // Statistics are advisory; matching correctness does not depend on them.
+    }
+  }
+
+  const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible'
+
+  const startRefreshTimer = () => {
+    statsTimer ??= globalThis.setInterval(() => {
+      if (visible()) void refreshStats()
+    }, DO_STATS_REFRESH_MS)
+    roomsTimer ??= globalThis.setInterval(() => {
+      if (visible()) void refreshRooms()
+    }, DO_ROOMS_REFRESH_MS)
+    if (onVisibility || typeof document === 'undefined') return
+    // Coming back to the tab should show current state immediately, not up to
+    // a full poll interval of staleness — that catch-up is what makes it
+    // acceptable to stop polling entirely while hidden.
+    onVisibility = () => {
+      if (!visible() || closed) return
+      void refreshStats()
+      void refreshRooms()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+  }
+
+  const stopRefreshTimers = () => {
+    if (statsTimer) globalThis.clearInterval(statsTimer)
+    if (roomsTimer) globalThis.clearInterval(roomsTimer)
+    statsTimer = undefined
+    roomsTimer = undefined
+    if (onVisibility && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+    onVisibility = null
+  }
+
+  transport.events.addEventListener('state', event => {
+    available = (event as CustomEvent<string>).detail === 'ready'
+    emit({ type: 'status', available })
+  })
+  transport.events.addEventListener('match.commit', event => {
+    const pool = activeSeek?.pool || watchedPool
+    if (!pool) return
+    // The gateway has already torn down its seek row to commit this match, so
+    // this client's outstanding seek is spent whether or not it hears back.
+    activeSeek = null
+    const detail = (event as CustomEvent<{
+      matchId: string
+      initiator?: boolean
+      peer: { opaqueUserId: string; memberId?: string }
+    }>).detail
+    emit({
+      type: 'seek.match',
+      pool,
+      matchId: detail.matchId,
+      roomCode: detail.matchId.replaceAll('-', ''),
+      initiator: detail.initiator === true,
+      // App-space id when the server has one (so the app's own blocklist and
+      // recent-partner cooldown speak the same language as its exclusions);
+      // the opaque id only as a fallback for a seek started before this field
+      // existed.
+      partner: { memberId: detail.peer.memberId || detail.peer.opaqueUserId, data: '{}' },
+    })
+  })
+
+  void transport.connect().then(() => {
+    available = true
+    emit({ type: 'status', available: true })
+  }).catch(() => emit({ type: 'status', available: false }))
+
+  return {
+    setPresence() {},
+    clearPresence() {},
+    watchSeek(pool) {
+      watchedPool = pool
+      void refreshStats()
+      startRefreshTimer()
+    },
+    unwatchSeek(pool) {
+      if (watchedPool === pool) watchedPool = ''
+      if (activeSeek?.pool === pool) activeSeek = null
+    },
+    setSeek(pool, memberId, tags, _data, excluded = []) {
+      const seekId = crypto.randomUUID()
+      activeSeek = { pool, seekId }
+      // `memberId` is forwarded, not dropped: it is the id the *other* side's
+      // exclusion list names us by, so without it nobody's blocklist (or
+      // recent-partner cooldown) can exclude anyone.
+      void transport.startSeek({ seekId, memberId, interests: tags.slice(0, 5), exclusions: excluded })
+        // Publish landed; pull the counts now rather than waiting out the poll
+        // interval, so at least the person who just picked an interest sees it
+        // reflected immediately.
+        .then(() => refreshStats())
+        .catch(() => {})
+    },
+    clearSeek(pool) {
+      const seek = activeSeek
+      if (!seek || seek.pool !== pool) return
+      activeSeek = null
+      if (seek.seekId) void transport.cancelSeek(seek.seekId)
+    },
+    acknowledgeSeekMatch() {},
+    watchRooms(directory) {
+      watchedDirectory = directory
+      void refreshRooms()
+      startRefreshTimer()
+    },
+    unwatchRooms(directory) {
+      if (watchedDirectory === directory) watchedDirectory = ''
+    },
+    setRoom(directory, roomId, data) {
+      const revision = nextRevision()
+      hostedRoom = { directory, roomId, revision }
+      // A conflict means a newer revision already won (e.g. a re-announce
+      // racing the periodic heartbeat) — the listing is already current, so
+      // swallow it rather than let it surface as an unhandled rejection.
+      void transport.publishRoom(roomId, revision, { data }).then(refreshRooms).catch(() => {})
+    },
+    clearRoom(directory) {
+      const room = hostedRoom
+      if (!room || room.directory !== directory) return
+      hostedRoom = null
+      void transport.deleteRoom(room.roomId, nextRevision()).then(refreshRooms).catch(() => {})
+    },
+    watchChannel() {},
+    unwatchChannel() {},
+    publishChannel() {},
+    subscribe(listener) {
+      listeners.add(listener)
+      listener({ type: 'status', available })
+      return () => listeners.delete(listener)
+    },
+    close() {
+      closed = true
+      stopRefreshTimers()
+      if (activeSeek?.seekId) void transport.cancelSeek(activeSeek.seekId)
       listeners.clear()
     },
   }

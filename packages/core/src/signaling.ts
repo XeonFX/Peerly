@@ -1,6 +1,6 @@
 import type { Env } from './env.js'
 
-export type SignalingStrategy = 'nostr' | 'ws-relay' | 'supabase'
+export type SignalingStrategy = 'durable-objects' | 'nostr' | 'ws-relay' | 'supabase'
 
 /**
  * Resolution order: explicit VITE_SIGNALING, then Supabase if it's configured,
@@ -15,6 +15,7 @@ export type SignalingStrategy = 'nostr' | 'ws-relay' | 'supabase'
  */
 export function resolveSignalingStrategy(env: Env): SignalingStrategy {
   const mode = env.VITE_SIGNALING
+  if (mode === 'durable-objects') return 'durable-objects'
   if (mode === 'nostr') return 'nostr'
   if (mode === 'supabase') return 'supabase'
   if (mode === 'ws-relay') return 'ws-relay'
@@ -25,6 +26,7 @@ export function resolveSignalingStrategy(env: Env): SignalingStrategy {
 }
 
 export function signalingLabel(strategy: SignalingStrategy): string {
+  if (strategy === 'durable-objects') return 'Cloudflare'
   if (strategy === 'ws-relay') return 'Relay'
   if (strategy === 'supabase') return 'Supabase'
   return 'Nostr'
