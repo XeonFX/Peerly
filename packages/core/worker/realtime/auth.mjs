@@ -75,10 +75,13 @@ export async function handleEnroll(request, env, config) {
   const gateway = gatewayFor(env, config.app, uid)
 
   const nonceHash = await sha256Hex(`enroll\n${deviceKeyId}\n${nonce}`)
-  const fresh = await gateway.consumeNonce(nonceHash, now + LIMITS.nonceTtlMs)
+  // The uid rides along on every gateway call: a Durable Object cannot read
+  // back the name it was addressed by (`ctx.id.name` is undefined inside the
+  // object), so the caller is the only source of "which account is this".
+  const fresh = await gateway.consumeNonce(nonceHash, now + LIMITS.nonceTtlMs, uid)
   if (!fresh) return conflict('replay')
 
-  const registered = await gateway.registerSession({ dk: deviceKeyId, now, ttlMs: LIMITS.capabilityTtlMs })
+  const registered = await gateway.registerSession({ dk: deviceKeyId, now, ttlMs: LIMITS.capabilityTtlMs, uid })
   if (registered.code) return conflict(registered.code)
 
   const capability = await mintCapability(env.NETWORK_SESSION_SECRET, {
@@ -131,10 +134,12 @@ export async function handleSession(request, env, config) {
 
   const gateway = gatewayFor(env, config.app, claims.uid)
   const nonceHash = await sha256Hex(`session\n${deviceKeyId}\n${nonce}`)
-  const fresh = await gateway.consumeNonce(nonceHash, now + LIMITS.nonceTtlMs)
+  const fresh = await gateway.consumeNonce(nonceHash, now + LIMITS.nonceTtlMs, claims.uid)
   if (!fresh) return conflict('replay')
 
-  const validation = await gateway.validateSession({ sid: claims.sid, dk: deviceKeyId, epoch: claims.epoch })
+  const validation = await gateway.validateSession({
+    sid: claims.sid, dk: deviceKeyId, epoch: claims.epoch, uid: claims.uid,
+  })
   if (!validation.ok) return unauthorized()
 
   const cookie = await mintCookie(env.NETWORK_SESSION_SECRET, {

@@ -49,6 +49,8 @@ export class RealtimeClient extends EventTarget {
   private lastEventAt: number | null = null
   private stopped = false
   private connectPromise: Promise<void> | null = null
+  private sessionTimer: ReturnType<typeof setInterval> | null = null
+  private pingTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(config: RealtimeClientConfig) {
     super()
@@ -86,6 +88,7 @@ export class RealtimeClient extends EventTarget {
 
   close(): void {
     this.stopped = true
+    this.stopTimers()
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.ws?.close(1000, 'client closing')
     // Fail in-flight commands immediately rather than leaving their promises
@@ -108,6 +111,7 @@ export class RealtimeClient extends EventTarget {
       this.reconnectAttempt = 0
       this.setState('ready')
       this.dispatchEvent(new CustomEvent('turn', { detail: turn }))
+      this.startTimers()
     } catch (error) {
       if (error instanceof Error && error.message === 'upgrade-required') {
         this.setState('upgrade-required')
@@ -117,8 +121,45 @@ export class RealtimeClient extends EventTarget {
     }
   }
 
+  /**
+   * Keep the two things that expire on a wall clock rather than on socket
+   * lifetime alive for as long as this socket is: the `pnet` cookie (which
+   * every later signal-socket upgrade is authenticated with) and the TURN
+   * credential. Both come from the same `/api/network/session` response, so
+   * one periodic re-establish refreshes both; each success re-dispatches
+   * `turn` so consumers replace the credentials they cached.
+   */
+  private startTimers(): void {
+    this.stopTimers()
+    this.sessionTimer = setInterval(() => {
+      if (this.stopped || this.ws?.readyState !== 1) return
+      void (async () => {
+        try {
+          const capability = await this.ensureCapability()
+          const { turn } = await this.establishSession(capability)
+          this.dispatchEvent(new CustomEvent('turn', { detail: turn }))
+        } catch {
+          // The socket is still up and still authenticated; the next attempt
+          // (or a reconnect) refreshes. Never tear down a healthy socket for
+          // a failed refresh.
+        }
+      })()
+    }, CLIENT_LIMITS.sessionRefreshMs)
+    this.pingTimer = setInterval(() => {
+      if (this.ws?.readyState === 1) this.ws.send('ping')
+    }, CLIENT_LIMITS.pingIntervalMs)
+  }
+
+  private stopTimers(): void {
+    if (this.sessionTimer) clearInterval(this.sessionTimer)
+    if (this.pingTimer) clearInterval(this.pingTimer)
+    this.sessionTimer = null
+    this.pingTimer = null
+  }
+
   private scheduleReconnect(): void {
     if (this.stopped) return
+    this.stopTimers()
     this.setState('backoff')
     const attempt = this.reconnectAttempt
     this.reconnectAttempt += 1
@@ -203,6 +244,7 @@ export class RealtimeClient extends EventTarget {
       ws.addEventListener('message', event => this.handleMessage(String(event.data)))
       ws.addEventListener('close', event => {
         this.ws = null
+        this.stopTimers()
         for (const command of this.pending.values()) this.queue.unshift(command)
         this.pending.clear()
         if (event.code === 4002) reject(new Error('upgrade-required'))

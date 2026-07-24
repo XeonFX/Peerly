@@ -30,12 +30,18 @@ export class UserGatewayDO extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env)
     this.buckets = new Map() // cid -> { commands: bucket, ... } — in-memory only, see rateLimit.mjs
-    // getByName(`${app}:${uid}`) makes the full name recoverable from the id
-    // it produced; that is the only reliable source of "which account is
-    // this" inside the object (there is no reverse lookup from HMAC output).
-    const [appPart, ...uidParts] = (ctx.id.name ?? '').split(':')
-    this.appPart = appPart || 'app'
-    this.uidPart = uidParts.join(':')
+    // Opaque account id, learned from the authenticated caller and persisted.
+    // It is NOT derivable from `ctx.id.name`: a Durable Object's own id does
+    // not carry the name it was created from — `ctx.id.name` is `undefined`
+    // inside the object even when the stub came from `getByName()` — so
+    // parsing it yielded app='app', uid='' for *every* account. That silently
+    // routed invites/rings to a phantom `app:<uid>` gateway, derived signal
+    // scope route ids under the wrong app (so the signal socket the router
+    // opened at `<app>:<routeId>` was never authorized and 403'd), collapsed
+    // every seeker in an interest queue onto the same empty uid (so two
+    // people sharing an interest could never be two rows, hence no match and
+    // a stuck availability count), and suppressed the presence lease.
+    this.uid = ''
     ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -58,8 +64,32 @@ export class UserGatewayDO extends DurableObject {
           one INTEGER PRIMARY KEY CHECK (one = 1), seek_id TEXT, state TEXT,
           reservation_id TEXT, queue_key TEXT, interests TEXT, expires_at INTEGER);
       `)
+      this.uid = ctx.storage.sql.exec("SELECT value FROM meta WHERE key = 'uid'").toArray()[0]?.value ?? ''
     })
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG))
+  }
+
+  /**
+   * The app this gateway belongs to. Read from the binding's `env`, the same
+   * source `WorkspaceDO`/`InterestQueueDO` already use, because it is the only
+   * one that survives inside the object — see the `this.uid` comment above.
+   */
+  get appName() {
+    const app = this.env.APP_ID?.trim()
+    if (!app) throw new Error('APP_ID is required for UserGatewayDO')
+    return app
+  }
+
+  /**
+   * Record the opaque account id this object serves. Every authenticated entry
+   * point (enroll, session validation, control-socket upgrade, and cross-DO
+   * delivery) hands it in, so the first contact of an account's lifetime
+   * persists it and every later one is a no-op.
+   */
+  rememberUid(uid) {
+    if (typeof uid !== 'string' || !uid || uid === this.uid) return
+    this.uid = uid
+    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('uid', ?)", uid)
   }
 
   // ---- HTTP entry: WebSocket upgrade only; everything else is RPC. ----
@@ -77,6 +107,11 @@ export class UserGatewayDO extends DurableObject {
     if (!row || row.dk !== dk || row.expires_at <= now) return new Response('Unauthorized', { status: 401 })
     const epochRow = this.ctx.storage.sql.exec('SELECT epoch FROM device_epochs WHERE dk = ?', dk).toArray()[0]
     if (epochRow && epochRow.epoch !== row.epoch) return new Response('Unauthorized', { status: 401 })
+    // Only after the session checks pass. The router stamps these headers
+    // itself (stripping any client-supplied `x-realtime-*` first), so they are
+    // already trusted — recording the id after validation just keeps the
+    // "never learn identity from an unauthenticated request" rule local.
+    this.rememberUid(uid)
 
     const openSockets = this.ctx.getWebSockets()
     if (openSockets.length >= LIMITS.controlSocketsPerAccount) {
@@ -102,9 +137,9 @@ export class UserGatewayDO extends DurableObject {
    * waiting out the lease. A no-op for apps that do not bind PRESENCE_STATS.
    */
   async renewPresence(now = nowMs(), online = this.ctx.getWebSockets().length > 0) {
-    if (!this.env.PRESENCE_STATS || !this.uidPart) return
-    await this.env.PRESENCE_STATS.getByName(`${this.appPart}:0`)
-      .presenceUpsert({ uid: this.uidPart, expiresAt: online ? now + PRESENCE_LEASE_MS : now })
+    if (!this.env.PRESENCE_STATS || !this.uid) return
+    await this.env.PRESENCE_STATS.getByName(`${this.appName}:0`)
+      .presenceUpsert({ uid: this.uid, expiresAt: online ? now + PRESENCE_LEASE_MS : now })
       .catch(() => {})
   }
 
@@ -228,7 +263,15 @@ export class UserGatewayDO extends DurableObject {
     )
     await this.scheduleNextAlarm()
     await Promise.allSettled(interests.map(interest => this.env.INTEREST_QUEUES.getByName(this.queueKey(interest))
-      .enqueue({ interest, uid: this.uidPart, seekId: payload.seekId, dk: attachment.dk, exclusions: payload.exclusions ?? [], expiresAt })))
+      .enqueue({
+        interest, uid: this.uid, seekId: payload.seekId, dk: attachment.dk,
+        // The app-space id others' exclusion lists are written against; the
+        // server matches it by equality only. Without it, exclusions (blocks)
+        // were compared against the server's opaque uid, an id no client can
+        // name — so a blocked person was still matchable.
+        memberId: typeof payload.memberId === 'string' ? payload.memberId : '',
+        exclusions: payload.exclusions ?? [], expiresAt,
+      })))
     return encodeAck(id)
   }
 
@@ -238,7 +281,7 @@ export class UserGatewayDO extends DurableObject {
     if (this.env.INTEREST_QUEUES && row && row.seek_id === payload.seekId) {
       const interests = JSON.parse(row.interests ?? '[]')
       await Promise.allSettled(interests.map(interest => this.env.INTEREST_QUEUES.getByName(this.queueKey(interest))
-        .dequeue({ interest, uid: this.uidPart, seekId: payload.seekId })))
+        .dequeue({ interest, uid: this.uid, seekId: payload.seekId })))
     }
     return encodeAck(id)
   }
@@ -246,26 +289,32 @@ export class UserGatewayDO extends DurableObject {
   async handleScopeRequest(id, payload, attachment) {
     if (!this.env.SIGNAL_SCOPES) return encodeError('not-found', { forId: id })
     const { deriveScopeRouteId } = await import('./crypto.mjs')
-    const routeId = await deriveScopeRouteId(this.env.OPAQUE_USER_ID_SECRET, this.appPart, payload.kind, payload.capability)
+    const routeId = await deriveScopeRouteId(this.env.OPAQUE_USER_ID_SECRET, this.appName, payload.kind, payload.capability)
     const expiresAt = nowMs() + LIMITS.scopeAuthorizationTtlMs
-    await this.env.SIGNAL_SCOPES.getByName(`${this.appPart}:${routeId}`)
-      .authorize({ uid: this.uidPart, dk: attachment.dk, expiresAt })
+    await this.env.SIGNAL_SCOPES.getByName(`${this.appName}:${routeId}`)
+      .authorize({ uid: this.uid, dk: attachment.dk, expiresAt })
     return encodeAck(id, { routeId, expiresAt })
   }
 
   async handleInviteSend(id, payload) {
-    const target = this.env.USER_GATEWAYS.getByName(`${this.appPart}:${payload.to}`)
+    const target = this.env.USER_GATEWAYS.getByName(`${this.appName}:${payload.to}`)
+    const targetUid = payload.to
     const inviteId = crypto.randomUUID()
     await target.deliver({
-      events: [{ kind: 'invite', body: { inviteId, from: this.uidPart, kind: payload.kind, body: payload.body } }],
-      mailbox: { inviteId, body: JSON.stringify({ from: this.uidPart, kind: payload.kind, body: payload.body }) },
+      uid: targetUid,
+      events: [{ kind: 'invite', body: { inviteId, from: this.uid, kind: payload.kind, body: payload.body } }],
+      mailbox: { inviteId, body: JSON.stringify({ from: this.uid, kind: payload.kind, body: payload.body }) },
     })
     return encodeAck(id, { inviteId })
   }
 
   async handleRingSend(id, payload) {
-    const target = this.env.USER_GATEWAYS.getByName(`${this.appPart}:${payload.to}`)
-    await target.deliver({ events: [{ kind: 'ring', body: { from: this.uidPart, roomRoute: payload.roomRoute } }] })
+    const target = this.env.USER_GATEWAYS.getByName(`${this.appName}:${payload.to}`)
+    const targetUid = payload.to
+    await target.deliver({
+      uid: targetUid,
+      events: [{ kind: 'ring', body: { from: this.uid, roomRoute: payload.roomRoute } }],
+    })
     return encodeAck(id)
   }
 
@@ -273,40 +322,45 @@ export class UserGatewayDO extends DurableObject {
     if (!this.env.ROOM_DIRECTORY) return encodeError('not-found', { forId: id })
     const shard = this.env.ROOM_DIRECTORY.getByName(this.directoryShardKey(payload.roomId))
     const result = await shard.publish({
-      roomId: payload.roomId, ownerUid: this.uidPart, dk: attachment.dk,
+      roomId: payload.roomId, ownerUid: this.uid, dk: attachment.dk,
       revision: payload.revision, entry: payload.entry, expiresAt: nowMs() + LIMITS.directoryEntryTtlMs,
     })
-    if (result.code) return encodeError('conflict', { forId: id })
+    // Report the shard's own code ('conflict' | 'cap-exceeded' | 'too-large'):
+    // flattening all three to 'conflict' told the client to retry with a
+    // higher revision when the real problem was a full shard or an oversized
+    // entry, neither of which a retry can fix.
+    if (result.code) return encodeError(result.code, { forId: id })
     return encodeAck(id)
   }
 
   async handleDirectoryDelete(id, payload) {
     if (!this.env.ROOM_DIRECTORY) return encodeError('not-found', { forId: id })
     const shard = this.env.ROOM_DIRECTORY.getByName(this.directoryShardKey(payload.roomId))
-    await shard.remove({ roomId: payload.roomId, ownerUid: this.uidPart, revision: payload.revision })
+    await shard.remove({ roomId: payload.roomId, ownerUid: this.uid, revision: payload.revision })
     return encodeAck(id)
   }
 
   async handleDirectoryList(id, payload) {
     if (!this.env.ROOM_DIRECTORY) return encodeError('not-found', { forId: id })
-    const shard = this.env.ROOM_DIRECTORY.getByName(`${this.appPart}:0`)
+    const shard = this.env.ROOM_DIRECTORY.getByName(`${this.appName}:0`)
     const page = await shard.list({ cursor: payload?.cursor, limit: LIMITS.directoryPageEntries })
     return encodeAck(id, page)
   }
 
-  // ---- helpers derived from this DO's own name/env, not persisted ----
+  // ---- shard/queue names derived from the binding env, not from ctx.id ----
 
   queueKey(interest) {
-    return `${this.appPart}:${interest}`
+    return `${this.appName}:${interest}`
   }
 
   directoryShardKey(_roomId) {
-    return `${this.appPart}:0` // shardCount starts at 1; see LIMITS.shardCount
+    return `${this.appName}:0` // shardCount starts at 1; see LIMITS.shardCount
   }
 
   // ---- RPC methods (invoked by Worker routes and other DOs) ----
 
-  async consumeNonce(hashHex, expiresAt) {
+  async consumeNonce(hashHex, expiresAt, uid) {
+    this.rememberUid(uid)
     try {
       this.ctx.storage.sql.exec('INSERT INTO nonces (hash, expires_at) VALUES (?, ?)', hashHex, expiresAt)
       await this.scheduleNextAlarm()
@@ -316,7 +370,8 @@ export class UserGatewayDO extends DurableObject {
     }
   }
 
-  async registerSession({ dk, now, ttlMs }) {
+  async registerSession({ dk, now, ttlMs, uid }) {
+    this.rememberUid(uid)
     this.ctx.storage.sql.exec('DELETE FROM sessions WHERE expires_at <= ?', now)
     const live = this.ctx.storage.sql.exec('SELECT DISTINCT dk FROM sessions').toArray()
     const distinctDevices = new Set(live.map(row => row.dk))
@@ -351,7 +406,8 @@ export class UserGatewayDO extends DurableObject {
     return { sid, epoch }
   }
 
-  async validateSession({ sid, dk, epoch }) {
+  async validateSession({ sid, dk, epoch, uid }) {
+    this.rememberUid(uid)
     const row = this.ctx.storage.sql.exec(
       'SELECT dk, epoch, expires_at FROM sessions WHERE sid = ?', sid
     ).toArray()[0]
@@ -370,7 +426,11 @@ export class UserGatewayDO extends DurableObject {
     return { ok: true }
   }
 
-  async deliver({ events = [], mailbox }) {
+  async deliver({ events = [], mailbox, uid }) {
+    // The sender knows who it is delivering to; recording it here means a
+    // gateway whose first-ever contact is an inbound invite still knows its
+    // own account id (needed for seeks/presence/directory ownership later).
+    this.rememberUid(uid)
     if (events.length) await this.appendEvents(events)
     if (mailbox) {
       const count = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM mailbox').toArray()[0].n
@@ -399,13 +459,16 @@ export class UserGatewayDO extends DurableObject {
     return { ok: true }
   }
 
-  async commitMatch({ reservationId, matchId, routeId, peerUid, initiator = false }) {
+  async commitMatch({ reservationId, matchId, routeId, peerUid, peerMemberId = '', initiator = false }) {
     const row = this.ctx.storage.sql.exec('SELECT reservation_id FROM seek WHERE one = 1').toArray()[0]
     if (!row || row.reservation_id !== reservationId) return { ok: true } // already committed or released; idempotent
     this.ctx.storage.sql.exec('DELETE FROM seek WHERE one = 1')
     await this.appendEvents([{
       kind: 'match.commit',
-      body: { matchId, routeId, initiator, peer: { opaqueUserId: peerUid } },
+      // `memberId` is the peer in the app's own id space — the one a client
+      // can compare against its blocklist and remember as a recent partner.
+      // `opaqueUserId` stays for server-addressed operations (invite/ring).
+      body: { matchId, routeId, initiator, peer: { opaqueUserId: peerUid, memberId: peerMemberId } },
     }])
     return { ok: true }
   }

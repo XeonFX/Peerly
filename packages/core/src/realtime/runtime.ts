@@ -1,10 +1,25 @@
 import { getRuntimeAuthCredential } from '../runtimeCredentials.js'
 import { RealtimeClient } from './client.js'
 import { selectDurableObjectsTransport, type CoordinationTransport } from './transport.js'
-import type { TurnServer } from '../relays.js'
+import { expandTurnUrls, FALLBACK_STUN_URL, type TurnServer } from '../relays.js'
 
 const transports = new Map<string, CoordinationTransport>()
 const turnServers = new Map<string, TurnServer[]>()
+/** Resolves on the first `turn` event per app, so a join that starts while the
+ *  control session is still being established still gets TURN instead of
+ *  silently falling back to Trystero's STUN-only defaults. */
+const turnArrivals = new Map<string, { promise: Promise<void>; resolve: () => void }>()
+const TURN_WAIT_MS = 10_000
+
+function turnArrival(app: string) {
+  const existing = turnArrivals.get(app)
+  if (existing) return existing
+  let resolve = (): void => {}
+  const promise = new Promise<void>(settle => { resolve = settle })
+  const entry = { promise, resolve }
+  turnArrivals.set(app, entry)
+  return entry
+}
 
 /**
  * One control socket per app/tab. Room joins share it so several active P2P
@@ -25,11 +40,25 @@ export function getDurableObjectsTransport(app: string): CoordinationTransport {
       credential?: unknown
     }>).detail
     if (!value || (!Array.isArray(value.urls) && typeof value.urls !== 'string')) return
-    turnServers.set(app, [{
-      urls: Array.isArray(value.urls) ? value.urls.filter((url): url is string => typeof url === 'string') : [value.urls],
-      ...(typeof value.username === 'string' ? { username: value.username } : {}),
-      ...(typeof value.credential === 'string' ? { credential: value.credential } : {}),
-    }])
+    const configured = Array.isArray(value.urls)
+      ? value.urls.filter((url): url is string => typeof url === 'string')
+      : [value.urls]
+    const urls = expandTurnUrls(configured)
+    if (urls.length === 0) return
+    // Mirror the legacy /api/network/credentials shape exactly: one public
+    // STUN entry alongside our own TURN. joinRoom.ts replaces Trystero's
+    // default ICE list with whatever this returns, so omitting STUN here left
+    // DO builds with no reflexive-candidate source at all when TURN was slow
+    // or blocked — the same list on both backends removes that difference.
+    turnServers.set(app, [
+      { urls: [FALLBACK_STUN_URL] },
+      {
+        urls,
+        ...(typeof value.username === 'string' ? { username: value.username } : {}),
+        ...(typeof value.credential === 'string' ? { credential: value.credential } : {}),
+      },
+    ])
+    turnArrival(app).resolve()
   })
   transports.set(app, transport)
   return transport
@@ -37,7 +66,17 @@ export function getDurableObjectsTransport(app: string): CoordinationTransport {
 
 export async function getDurableObjectsIceServers(app: string): Promise<TurnServer[] | undefined> {
   const transport = getDurableObjectsTransport(app)
+  const arrival = turnArrival(app)
   await transport.connect()
+  // `connect()` resolves even when the cycle failed and only scheduled a
+  // retry, so the credentials may legitimately not have landed yet. Wait a
+  // bounded moment for them rather than reporting "no TURN configured".
+  if (!turnServers.has(app)) {
+    await Promise.race([
+      arrival.promise,
+      new Promise<void>(resolve => setTimeout(resolve, TURN_WAIT_MS)),
+    ])
+  }
   return turnServers.get(app)
 }
 
@@ -46,11 +85,13 @@ export function closeDurableObjectsTransport(app?: string): void {
     transports.get(app)?.close()
     transports.delete(app)
     turnServers.delete(app)
+    turnArrivals.delete(app)
     return
   }
   for (const transport of transports.values()) transport.close()
   transports.clear()
   turnServers.clear()
+  turnArrivals.clear()
 }
 
 export { RealtimeClient }

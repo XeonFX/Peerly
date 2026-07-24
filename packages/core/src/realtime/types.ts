@@ -30,6 +30,14 @@ export type RoomPage = {
 export type SeekOptions = {
   seekId: string
   interests: string[]
+  /**
+   * This seeker's id in the app's own opaque id space — the same space
+   * `exclusions` is written in. Everything the server does with either is an
+   * equality comparison, so the app can use an id derivable from a user id it
+   * already knows (see HeyHubs' `coordinationScope`) and keep its blocklist
+   * client-side. Omit it and exclusions cannot match anything.
+   */
+  memberId?: string
   exclusions?: string[]
 }
 
@@ -38,7 +46,15 @@ export type RealtimeDeltaEvent =
   | { kind: 'invite.acked'; body: { inviteId: string } }
   | { kind: 'ring'; body: { from: string; roomRoute: string } }
   | { kind: 'seek.state'; body: Record<string, unknown> }
-  | { kind: 'match.commit'; body: { matchId: string; routeId: string; initiator: boolean; peer: { opaqueUserId: string } } }
+  | {
+      kind: 'match.commit'
+      body: {
+        matchId: string
+        routeId: string
+        initiator: boolean
+        peer: { opaqueUserId: string; memberId?: string }
+      }
+    }
   | { kind: 'directory.change'; body: Record<string, unknown> }
   | { kind: 'workspace.presence'; body: { uid: string; state: string } }
   | { kind: 'device.revoked'; body: Record<string, unknown> }

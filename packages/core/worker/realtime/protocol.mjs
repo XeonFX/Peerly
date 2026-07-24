@@ -121,6 +121,12 @@ function validatePayload(type, payload) {
       if (!isPlainObject(payload)) fail()
       if (!boundedString(payload.seekId, 64)) fail()
       if (!boundedArray(payload.interests, LIMITS.interestsPerSeek, value => boundedString(value, LIMITS.interestMaxChars))) fail()
+      // `memberId` and `exclusions` live in the *app's* own opaque id space,
+      // never the server's: the app publishes an id others can derive for
+      // anyone they can already name, so "don't match me with these people"
+      // works without the server ever learning who they are. The server only
+      // compares them for equality.
+      if (payload.memberId !== undefined && !boundedString(payload.memberId, 128)) fail()
       if (payload.exclusions !== undefined && !boundedArray(payload.exclusions, 50, value => boundedString(value, 128))) fail()
       return
     case 'seek.cancel':

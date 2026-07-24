@@ -7,6 +7,14 @@ import { getDurableObjectsTransport } from './realtime/runtime.js'
 const COORDINATION_TOPIC = '__relay_coord_v1__'
 const REFRESH_MS = 10_000
 const SOCKET_POLL_MS = 1_000
+/**
+ * Durable Objects backend poll for the room directory and interest counts.
+ * The ws-relay backend pushes both; here they are pulled, so this interval is
+ * the whole latency budget a user perceives as "the other person's interest
+ * never showed up". The stats response is edge-cached for
+ * `LIMITS.statsCacheSeconds`, so polling faster than that only adds requests.
+ */
+const DO_REFRESH_MS = 10_000
 
 type Command = { v: 1; type: 'coord'; action: string; [key: string]: unknown }
 
@@ -392,6 +400,14 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
   const listeners = new Set<(event: RelayCoordinationEvent) => void>()
   let available = false
   let closed = false
+  /**
+   * The pool this client is *watching* (availability counts, match delivery)
+   * — deliberately separate from the seek it currently has outstanding.
+   * Folding the two into one field meant `clearSeek()` (cancel, or accepting
+   * a match) also stopped the stats poll and made the `match.commit` handler
+   * drop the very event the cancelled-looking seek was waiting for.
+   */
+  let watchedPool = ''
   let activeSeek: { pool: string; seekId: string } | null = null
   let watchedDirectory = ''
   let hostedRoom: { directory: string; roomId: string; revision: number } | null = null
@@ -428,9 +444,12 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
   }
 
   const refreshStats = async () => {
-    if (!activeSeek || closed) return
+    if (!watchedPool || closed) return
     try {
-      const response = await fetch('/api/stats/snapshot')
+      // The Worker caches this per colo; `no-store` only stops the *browser*
+      // from re-serving its own copy, which otherwise doubled the window in
+      // which a new seeker's interest was invisible to everybody else.
+      const response = await fetch('/api/stats/snapshot', { cache: 'no-store' })
       if (!response.ok) return
       const snapshot = await response.json() as {
         online?: unknown
@@ -442,7 +461,7 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
       }
       emit({
         type: 'seek.stats',
-        pool: activeSeek.pool,
+        pool: watchedPool,
         total: typeof snapshot.online === 'number' ? snapshot.online : 0,
         tags,
       })
@@ -451,24 +470,39 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
     }
   }
 
+  const startRefreshTimer = () => {
+    refreshTimer ??= globalThis.setInterval(() => {
+      void refreshStats()
+      void refreshRooms()
+    }, DO_REFRESH_MS)
+  }
+
   transport.events.addEventListener('state', event => {
     available = (event as CustomEvent<string>).detail === 'ready'
     emit({ type: 'status', available })
   })
   transport.events.addEventListener('match.commit', event => {
-    if (!activeSeek) return
+    const pool = activeSeek?.pool || watchedPool
+    if (!pool) return
+    // The gateway has already torn down its seek row to commit this match, so
+    // this client's outstanding seek is spent whether or not it hears back.
+    activeSeek = null
     const detail = (event as CustomEvent<{
       matchId: string
       initiator?: boolean
-      peer: { opaqueUserId: string }
+      peer: { opaqueUserId: string; memberId?: string }
     }>).detail
     emit({
       type: 'seek.match',
-      pool: activeSeek.pool,
+      pool,
       matchId: detail.matchId,
       roomCode: detail.matchId.replaceAll('-', ''),
       initiator: detail.initiator === true,
-      partner: { memberId: detail.peer.opaqueUserId, data: '{}' },
+      // App-space id when the server has one (so the app's own blocklist and
+      // recent-partner cooldown speak the same language as its exclusions);
+      // the opaque id only as a fallback for a seek started before this field
+      // existed.
+      partner: { memberId: detail.peer.memberId || detail.peer.opaqueUserId, data: '{}' },
     })
   })
 
@@ -481,20 +515,21 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
     setPresence() {},
     clearPresence() {},
     watchSeek(pool) {
-      activeSeek = activeSeek ?? { pool, seekId: '' }
+      watchedPool = pool
       void refreshStats()
-      refreshTimer ??= globalThis.setInterval(() => {
-        void refreshStats()
-        void refreshRooms()
-      }, 30_000)
+      startRefreshTimer()
     },
     unwatchSeek(pool) {
+      if (watchedPool === pool) watchedPool = ''
       if (activeSeek?.pool === pool) activeSeek = null
     },
-    setSeek(pool, _memberId, tags, _data, excluded = []) {
+    setSeek(pool, memberId, tags, _data, excluded = []) {
       const seekId = crypto.randomUUID()
       activeSeek = { pool, seekId }
-      void transport.startSeek({ seekId, interests: tags.slice(0, 5), exclusions: excluded })
+      // `memberId` is forwarded, not dropped: it is the id the *other* side's
+      // exclusion list names us by, so without it nobody's blocklist (or
+      // recent-partner cooldown) can exclude anyone.
+      void transport.startSeek({ seekId, memberId, interests: tags.slice(0, 5), exclusions: excluded })
     },
     clearSeek(pool) {
       const seek = activeSeek
@@ -506,10 +541,7 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
     watchRooms(directory) {
       watchedDirectory = directory
       void refreshRooms()
-      refreshTimer ??= globalThis.setInterval(() => {
-        void refreshStats()
-        void refreshRooms()
-      }, 30_000)
+      startRefreshTimer()
     },
     unwatchRooms(directory) {
       if (watchedDirectory === directory) watchedDirectory = ''

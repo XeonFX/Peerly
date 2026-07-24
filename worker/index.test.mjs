@@ -48,6 +48,13 @@ describe('Peerly auth bridge parent validation', () => {
     expect(allowedAuthParent('http://fix-auth-peerly.codefusion.workers.dev')).toBe(false)
     expect(allowedAuthParent('https://fix-auth-peerly.codefusion.workers.dev/path')).toBe(false)
     expect(allowedAuthParent('https://fix-auth-peerly.codefusion.workers.dev.evil.test')).toBe(false)
+    // Both staging shapes on our own zone: `<label>.preview` and
+    // `<label>-preview`. Only the first was accepted before, so a worker at
+    // dev-preview.peerly.cc had every /api/network/* request 403'd.
+    expect(allowedAuthParent('https://branch.preview.peerly.cc')).toBe(true)
+    expect(allowedAuthParent('https://dev-preview.peerly.cc')).toBe(true)
+    expect(allowedAuthParent('https://dev-preview.peerly.cc.evil.test')).toBe(false)
+    expect(allowedAuthParent('https://evil.dev-preview.peerly.cc')).toBe(false)
   })
 
   it('enforces the parent allowlist before serving the bridge', async () => {

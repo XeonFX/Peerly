@@ -434,8 +434,21 @@ CREATE TABLE IF NOT EXISTS seek (
   reservation_id TEXT, queue_key TEXT, interests TEXT, expires_at INTEGER);
 ```
 
-`meta` holds `stream_seq` (last assigned sequence). Do not keep a JS mirror
-of any of this as the source of truth.
+`meta` holds `stream_seq` (last assigned sequence) and `uid` (this gateway's
+opaque account id). Do not keep a JS mirror of any of this as the source of
+truth.
+
+**A Durable Object cannot read the name it was addressed by.** `ctx.id.name`
+is `undefined` inside the object even when the stub came from
+`getByName('app:uid')`, so `app`/`uid` must never be parsed out of it. The app
+comes from `env.APP_ID` (as in `WorkspaceDO`/`InterestQueueDO`); the uid is
+handed in by every authenticated entry point — `consumeNonce`,
+`registerSession`, `validateSession`, `deliver`, and the `x-realtime-uid`
+header on the control-socket upgrade — and persisted here on first contact.
+Parsing the id instead silently gave every account `app='app'`, `uid=''`,
+which routed invites to a phantom gateway, derived signal-scope route ids the
+router would never look up (so every signal socket 403'd), and collapsed all
+seekers in an interest queue onto one row.
 
 ### 6.2 Socket accept
 
@@ -492,11 +505,12 @@ send `ack`, in that order, with no `await` between the SQL statements):
 ### 6.4 RPC methods (called by Worker routes and other DOs)
 
 ```js
-async consumeNonce(hashHex, expiresAt)            // → boolean
-async registerSession({ sid, dk, now })           // → { ok } | { code:'cap-exceeded' }
-async validateSession({ sid, dk, epoch })         // → { ok: boolean }
+// `uid` on these is the caller telling the object which account it is; see 6.1.
+async consumeNonce(hashHex, expiresAt, uid)       // → boolean
+async registerSession({ sid, dk, now, uid })      // → { ok } | { code:'cap-exceeded' }
+async validateSession({ sid, dk, epoch, uid })    // → { ok: boolean }
 async revokeDevice(dk)                            // bump device_epochs, close its sockets 4001
-async deliver({ events, mailbox })                // append events, push, cap mailbox at 100 (drop oldest)
+async deliver({ events, mailbox, uid })           // append events, push, cap mailbox at 100 (drop oldest)
 async reserveForMatch({ reservationId, queueKey, seekId, expiresAt }) // → { ok } | { busy }
 async commitMatch({ reservationId, matchId, routeId, peerUid })       // idempotent by reservationId
 async releaseMatch({ reservationId })             // idempotent

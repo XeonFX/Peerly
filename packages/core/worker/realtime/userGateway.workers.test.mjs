@@ -205,4 +205,38 @@ describe('UserGatewayDO fetch upgrade', () => {
     })
     expect(closeEvent.code).toBe(CLOSE.MALFORMED_FRAME)
   })
+  it('learns its account id from the caller, because ctx.id.name is unreadable inside the object', async () => {
+    const stub = gateway('peerly:identity-test-1')
+    await runInDurableObject(stub, (_instance, state) => {
+      // The reason the whole rememberUid mechanism exists: a Durable Object
+      // cannot recover the name its stub was addressed by.
+      expect(state.id.name).toBeUndefined()
+    })
+    await stub.registerSession({ dk: 'dk-a', now: Date.now(), ttlMs: 60_000, uid: 'identity-test-1' })
+    await runInDurableObject(stub, instance => {
+      expect(instance.uid).toBe('identity-test-1')
+      // ...and the app comes from the binding's env, never from the id.
+      expect(instance.appName).toBe('peerly')
+    })
+  })
+
+  it('keeps the account id across an object restart', async () => {
+    const stub = gateway('peerly:identity-test-2')
+    await stub.consumeNonce('identity-nonce', Date.now() + 60_000, 'identity-test-2')
+    await runInDurableObject(stub, (_instance, state) => {
+      const row = state.storage.sql.exec("SELECT value FROM meta WHERE key = 'uid'").toArray()[0]
+      expect(row.value).toBe('identity-test-2')
+    })
+  })
+
+  it('a control-socket upgrade identifies the account even if it is the first contact', async () => {
+    const stub = gateway('peerly:identity-test-3')
+    const { sid } = await stub.registerSession({ dk: 'dk-a', now: Date.now(), ttlMs: 60_000 })
+    await stub.fetch('http://do/', {
+      headers: { upgrade: 'websocket', 'x-realtime-uid': 'identity-test-3', 'x-realtime-dk': 'dk-a', 'x-realtime-sid': sid },
+    })
+    await runInDurableObject(stub, instance => {
+      expect(instance.uid).toBe('identity-test-3')
+    })
+  })
 })

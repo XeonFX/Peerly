@@ -64,7 +64,7 @@ export class WorkspaceDO extends DurableObject {
     if (!appPart) throw new Error('APP_ID is required for WorkspaceDO')
     const members = this.ctx.storage.sql.exec('SELECT uid FROM members WHERE uid != ?', uid).toArray()
     await Promise.allSettled(members.map(member => this.env.USER_GATEWAYS.getByName(`${appPart}:${member.uid}`)
-      .deliver({ events: [{ kind: 'workspace.presence', body: { uid, state } }] })))
+      .deliver({ uid: member.uid, events: [{ kind: 'workspace.presence', body: { uid, state } }] })))
   }
 
   async alarm() {

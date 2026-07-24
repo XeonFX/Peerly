@@ -46,8 +46,13 @@ export const LIMITS = Object.freeze({
   scopeAuthorizationTtlMs: 10 * 60_000,
 
   presenceLeaseMs: 60 * 60_000,
-  statsCacheSeconds: 30,
-  statsMinPollMs: 30_000,
+  // Edge-cache window for /api/stats/snapshot. This is the floor on how long
+  // one person's newly-announced interest stays invisible to everyone else,
+  // so it is deliberately short: at 30s, two people who picked the same
+  // interest seconds apart could each see the other's count as 0 for most of
+  // a minute and conclude discovery was broken.
+  statsCacheSeconds: 10,
+  statsMinPollMs: 10_000,
 
   attachmentBytes: 2048,
 
