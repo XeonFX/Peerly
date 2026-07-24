@@ -571,6 +571,11 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
       // exclusion list names us by, so without it nobody's blocklist (or
       // recent-partner cooldown) can exclude anyone.
       void transport.startSeek({ seekId, memberId, interests: tags.slice(0, 5), exclusions: excluded })
+        // Publish landed; pull the counts now rather than waiting out the poll
+        // interval, so at least the person who just picked an interest sees it
+        // reflected immediately.
+        .then(() => refreshStats())
+        .catch(() => {})
     },
     clearSeek(pool) {
       const seek = activeSeek
