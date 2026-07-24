@@ -7,17 +7,26 @@ function gateway(name) {
 }
 
 describe('UserGatewayDO RPC', () => {
-  it('registers a session and rejects a 4th distinct device', async () => {
+  it('evicts the least-recently-enrolled device when a 4th distinct device enrolls', async () => {
     const stub = gateway('peerly:cap-test-1')
     const now = Date.now()
+    // Stagger enroll times so "least recently enrolled" is unambiguous.
     const a = await stub.registerSession({ dk: 'dk-a', now, ttlMs: 60_000 })
-    const b = await stub.registerSession({ dk: 'dk-b', now, ttlMs: 60_000 })
-    const c = await stub.registerSession({ dk: 'dk-c', now, ttlMs: 60_000 })
+    const b = await stub.registerSession({ dk: 'dk-b', now: now + 1, ttlMs: 60_000 })
+    const c = await stub.registerSession({ dk: 'dk-c', now: now + 2, ttlMs: 60_000 })
     expect(a.sid).toBeTruthy()
     expect(b.sid).toBeTruthy()
     expect(c.sid).toBeTruthy()
-    const d = await stub.registerSession({ dk: 'dk-d', now, ttlMs: 60_000 })
-    expect(d).toEqual({ code: 'cap-exceeded' })
+
+    // The 4th device is admitted (no lockout) by bumping the oldest, dk-a.
+    const d = await stub.registerSession({ dk: 'dk-d', now: now + 3, ttlMs: 60_000 })
+    expect(d.sid).toBeTruthy()
+
+    // dk-a's session is gone; dk-b/dk-c/dk-d remain valid.
+    expect((await stub.validateSession({ sid: a.sid, dk: 'dk-a', epoch: a.epoch })).ok).toBe(false)
+    expect((await stub.validateSession({ sid: b.sid, dk: 'dk-b', epoch: b.epoch })).ok).toBe(true)
+    expect((await stub.validateSession({ sid: c.sid, dk: 'dk-c', epoch: c.epoch })).ok).toBe(true)
+    expect((await stub.validateSession({ sid: d.sid, dk: 'dk-d', epoch: d.epoch })).ok).toBe(true)
   })
 
   it('allows re-registering an already-live device without hitting the cap', async () => {

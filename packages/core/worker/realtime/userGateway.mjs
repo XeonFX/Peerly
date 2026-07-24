@@ -292,7 +292,23 @@ export class UserGatewayDO extends DurableObject {
     const live = this.ctx.storage.sql.exec('SELECT DISTINCT dk FROM sessions').toArray()
     const distinctDevices = new Set(live.map(row => row.dk))
     if (!distinctDevices.has(dk) && distinctDevices.size >= LIMITS.controlSocketsPerAccount) {
-      return { code: 'cap-exceeded' }
+      // Evict the least-recently-enrolled device instead of rejecting the new
+      // one. Sessions carry a 30-day TTL, and clearing browser storage
+      // regenerates the device key, so a returning user who cleared data (or
+      // rotates browsers) a few times would otherwise be locked out of their
+      // own account until the stalest enrollment expired. This is the familiar
+      // "max N devices, newest wins" rule: the bumped device simply re-enrolls
+      // (evicting the next-oldest) the next time it is used. Eviction is a
+      // capacity bound, not revocation, so the device epoch is left untouched.
+      const oldest = this.ctx.storage.sql.exec(
+        'SELECT dk FROM sessions GROUP BY dk ORDER BY MAX(created_at) ASC, dk ASC LIMIT 1'
+      ).toArray()[0]
+      if (oldest) {
+        this.ctx.storage.sql.exec('DELETE FROM sessions WHERE dk = ?', oldest.dk)
+        for (const ws of this.ctx.getWebSockets()) {
+          if (ws.deserializeAttachment()?.dk === oldest.dk) ws.close(CLOSE.AUTH_REQUIRED, 'device limit reached')
+        }
+      }
     }
     const epochRow = this.ctx.storage.sql.exec('SELECT epoch FROM device_epochs WHERE dk = ?', dk).toArray()[0]
     const epoch = epochRow?.epoch ?? 0
