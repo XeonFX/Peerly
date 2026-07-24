@@ -3,8 +3,11 @@
 The P2P room core of [Peerly](https://github.com/XeonFX/Peerly) — join encrypted
 [Trystero](https://github.com/dmotz/trystero) rooms by high-entropy room codes,
 with device identity, signing primitives, and signaling-strategy selection.
-No application server: signaling (Nostr by default) is used only so browsers can
-find each other; everything after the handshake is direct WebRTC.
+No application server by default: signaling (Nostr by default) is used only so
+browsers can find each other; everything after the handshake is direct WebRTC.
+An optional `durable-objects` strategy (below) instead uses a Cloudflare
+Worker + Durable Objects control plane for coordination — see "Signaling
+strategies".
 
 Powers Peerly and any app that joins the same style of encrypted Trystero
 rooms. MIT.
@@ -88,9 +91,20 @@ fails after SDP exchange (strict NAT / flaky path).
 | `nostr` (default) | No server, public relays | none — curated `DEFAULT_NOSTR_RELAYS`, override `VITE_NOSTR_RELAYS` |
 | `ws-relay` | Offline / CI / local relay | `VITE_SIGNALING=ws-relay`, `resolveRelayUrls(env)` |
 | `supabase` | A relay you control | `VITE_SIGNALING=supabase` + `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` |
+| `durable-objects` | Cloudflare Worker + Durable Objects control plane | `VITE_SIGNALING=durable-objects` + `VITE_APP_ID`; the *Worker* must separately run with `COORDINATION_BACKEND=durable-objects`, matching DO bindings/migrations, and its own secrets — a client-only flag against an unconfigured Worker fails closed (`503`) rather than falling back |
 
 Related helpers: `signalingLabel()`, `buildRelayUrls()`, `getNostrRelayConfig()`,
 `getSupabaseRoomConfig()`, `resolveRelayPort()`.
+
+`durable-objects` also replaces `/api/network/credentials` with
+`/api/network/session` for TURN credentials, and replaces the relay's own
+transport for presence/directory/DM notifications and WebRTC signaling
+(`SignalScopeDO`) — see [`worker/realtime`](worker/realtime) and
+[`src/realtime`](src/realtime), and the
+[Durable Objects architecture doc](https://github.com/XeonFX/Peerly/blob/main/docs/DURABLE_OBJECTS_ARCHITECTURE.md)
+for the full design. It currently backs only Peerly's stable preview
+deployment (`preview.peerly.cc`); production still runs the relay-based
+strategies above.
 
 TURN for strict NATs uses `VITE_TURN_URLS` plus short-lived credentials from
 `/api/network/credentials` (see `resolveIceServers`). Do not embed long-lived

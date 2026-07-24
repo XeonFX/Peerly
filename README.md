@@ -168,15 +168,26 @@ Browsers need a **signaling channel** to discover each other (WebRTC handshake).
 | **Nostr** (default) | Dev & deploy — public signaling, no application server | None |
 | **ws-relay** | Offline / local CI | `npm run dev:relay` or `VITE_SIGNALING=ws-relay` |
 | **Supabase** | Relay you control | `VITE_SIGNALING=supabase` + Supabase URL/key |
+| **Durable Objects** (preview only) | Cloudflare-hosted control plane instead of a relay | `VITE_SIGNALING=durable-objects` against a Worker deployed with matching backend config — see below |
 
 `npm run test:e2e` uses a local relay (many connections from one IP would throttle public Nostr relays) and runs 4 workers in parallel — each worker gets its own workspace/room, so tests never meet each other. `npm run test:e2e:nostr` runs a small subset against public relays, deliberately serial.
 
 Deployment owners can replace the curated Nostr set with the build-time `VITE_NOSTR_RELAYS` variable. Peerly does **not** currently expose relay editing to end users: members need at least one signaling relay in common, so a safe user-facing design must distribute a workspace relay profile rather than silently changing one device.
 
+### Durable Objects control plane (preview)
+
+A fourth signaling mode moves *coordination* — device enrollment, session cookies, presence, workspace/DM notifications, WebRTC signaling, and short-lived TURN credentials — off the self-hosted relay and onto a Cloudflare Worker backed by Durable Objects, served from `/api/network/*` and `/api/realtime/*` (see [`worker/index.mjs`](worker/index.mjs) and [`packages/core/worker/realtime`](packages/core/worker/realtime)). Nothing about the security model changes: chat, files, and calls stay end-to-end P2P exactly as with any other signaling mode — only the handshake that lets two browsers find each other moves.
+
+`VITE_SIGNALING=durable-objects` only works against a Worker that was itself deployed with `COORDINATION_BACKEND=durable-objects`, the Durable Object bindings/migrations, and its own secrets (`NETWORK_SESSION_SECRET`, `OPAQUE_USER_ID_SECRET`, `TURN_AUTH_SECRET`, …). A client pointed at an unconfigured Worker fails closed with `503`, and a stale/invalid capability fails with `400`/`401` rather than degrading silently. Production (`peerly.cc`) still runs `COORDINATION_BACKEND=legacy-relay`; only the stable preview deployment (`preview.peerly.cc`, via [`wrangler.preview.jsonc`](wrangler.preview.jsonc)) runs the Durable Objects path today, ahead of a full production cutover.
+
+This control plane is shared code in [`packages/core/worker/realtime`](packages/core/worker/realtime) and [`packages/core/src/realtime`](packages/core/src/realtime): Peerly and HeyHubs each deploy their own Worker and Durable Object namespaces from it, with independent secrets and data. See [docs/DURABLE_OBJECTS_ARCHITECTURE.md](docs/DURABLE_OBJECTS_ARCHITECTURE.md) for the full design, rollout phases, and current status, or [docs/RELAY_VS_DURABLE_OBJECTS.md](docs/RELAY_VS_DURABLE_OBJECTS.md) for a detailed comparison against the relay stack production still runs.
+
 ### TURN (optional)
 
 For strict NAT / corporate firewalls, configure your TURN URLs. The browser
-obtains short-lived REST credentials from `/api/network/credentials`:
+obtains short-lived REST credentials from `/api/network/credentials` — or, on
+the `durable-objects` signaling mode above, from `/api/network/session`
+instead, using the same `TURN_AUTH_SECRET`:
 
 ```bash
 VITE_TURN_URLS=turn:your-turn.example:3478,turns:your-turn.example:5349 \

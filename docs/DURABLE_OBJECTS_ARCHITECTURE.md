@@ -1,6 +1,12 @@
 # Durable Objects architecture and implementation plan
 
-Status: proposed implementation plan  
+Status: implemented in `@peerly/core` and Peerly's own Worker (enrollment,
+session, `UserGatewayDO`, `SignalScopeDO`, `WorkspaceDO`, and the
+`durable-objects` client signaling strategy); running in Peerly's stable
+preview deployment (`wrangler.preview.jsonc`, `preview.peerly.cc`) only.
+Production (`peerly.cc`) still pins `COORDINATION_BACKEND=legacy-relay` — see
+Phase 5 for the cutover this plan gates on. HeyHubs' rollout status lives in
+its own repo.  
 Date: 2026-07-23  
 Applies to: Peerly, HeyHubs, `@peerly/core`, and production network infrastructure
 
@@ -8,7 +14,10 @@ This document decides what to build and why. The exact file map, wire
 schemas, SQL DDL, crypto recipes, endpoint contracts, algorithms, tests, and
 PR-by-PR sequence live in the companion
 [implementation guide](./DURABLE_OBJECTS_IMPLEMENTATION.md); implementers
-follow that guide and treat this document as the authority on intent.
+follow that guide and treat this document as the authority on intent. See
+[RELAY_VS_DURABLE_OBJECTS.md](./RELAY_VS_DURABLE_OBJECTS.md) for a detailed,
+dimension-by-dimension comparison against the relay stack production still
+runs.
 
 ## Decision
 
