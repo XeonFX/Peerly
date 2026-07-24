@@ -113,10 +113,18 @@ export async function handleSession(request, env, config) {
   const claims = await verifyCapability(env.NETWORK_SESSION_SECRET, capabilityToken, { app: config.app, now })
   if (!claims || claims.dk !== deviceKeyId) return unauthorized()
 
+  // The device signature is over the SAME fields the client signs in
+  // src/realtime/client.ts establishSession(): purpose, app, deviceKeyId,
+  // timestamp, nonce — no sid. The client cannot bind its signature to the
+  // sid because the sid lives only inside the opaque, MAC-protected
+  // capability and is never handed to the browser separately. The sid is
+  // already bound here by verifyCapability above (claims.sid comes from the
+  // integrity-checked capability); requiring it in the device proof too was a
+  // client/server mismatch that made every session request 401.
   const proof = await verifyDeviceSignature(
     request.headers,
     deviceKeyId,
-    deviceProofBytes('realtime-session-v1', config.app, deviceKeyId, timestamp, nonce, claims.sid),
+    deviceProofBytes('realtime-session-v1', config.app, deviceKeyId, timestamp, nonce),
     now
   )
   if (!proof) return unauthorized()

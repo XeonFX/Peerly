@@ -1,11 +1,40 @@
 import { env } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { authenticateUpgrade, handleEnroll, handleSession } from './auth.mjs'
-import { mintCookie, serializeNetworkCookie } from './crypto.mjs'
+import {
+  bytesBase64Url, deviceProofBytes, mintCapability, mintCookie, serializeNetworkCookie,
+} from './crypto.mjs'
 
 const config = {
   app: 'peerly',
   allowedOrigin: origin => origin === 'https://peerly.cc',
+}
+
+/**
+ * Sign a device proof exactly as the browser client does in
+ * src/realtime/client.ts (deviceProofHeaders): purpose, app, deviceKeyId,
+ * timestamp, nonce — and no sid, because the client never sees the sid.
+ */
+async function signedDeviceHeaders(purpose, app, keyPair, deviceKeyId, now) {
+  const timestamp = now
+  const nonce = crypto.randomUUID()
+  const signature = await crypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    keyPair.privateKey,
+    deviceProofBytes(purpose, app, deviceKeyId, timestamp, nonce)
+  )
+  return {
+    'x-peerly-device-key': deviceKeyId,
+    'x-peerly-request-ts': String(timestamp),
+    'x-peerly-request-nonce': nonce,
+    'x-peerly-request-signature': bytesBase64Url(new Uint8Array(signature)),
+  }
+}
+
+async function makeDeviceKey() {
+  const keyPair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'])
+  const jwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey)
+  return { keyPair, deviceKeyId: `P-256:${jwk.x}:${jwk.y}` }
 }
 
 function requestWithOrigin(url, { method = 'POST', origin, body, headers = {} } = {}) {
@@ -81,6 +110,35 @@ describe('handleSession origin and size checks', () => {
       env, config
     )
     expect(response.status).toBe(400)
+  })
+
+  // Regression: the device signature the client sends covers (purpose, app,
+  // deviceKeyId, ts, nonce) with NO sid — the client can't sign over a sid it
+  // never receives. handleSession must verify against those exact fields, not
+  // append claims.sid, or every real session request 401s in an endless
+  // reconnect loop. This exercises the full happy path a real browser hits.
+  it('accepts a capability plus a matching client device signature and sets the cookie', async () => {
+    const now = Date.now()
+    const uid = `u-${crypto.randomUUID()}`
+    const { keyPair, deviceKeyId } = await makeDeviceKey()
+
+    const gateway = env.USER_GATEWAYS.getByName(`peerly:${uid}`)
+    const registered = await gateway.registerSession({ dk: deviceKeyId, now, ttlMs: 600_000 })
+    expect(registered.sid).toBeTruthy()
+
+    const capability = await mintCapability(env.NETWORK_SESSION_SECRET, {
+      app: 'peerly', uid, deviceKeyId, sid: registered.sid, epoch: registered.epoch, now, ttlMs: 600_000,
+    })
+
+    const headers = await signedDeviceHeaders('realtime-session-v1', 'peerly', keyPair, deviceKeyId, now)
+    const response = await handleSession(
+      requestWithOrigin('https://x/api/network/session', {
+        origin: 'https://peerly.cc', body: { capability }, headers,
+      }),
+      env, config
+    )
+    expect(response.status).toBe(200)
+    expect(response.headers.get('set-cookie')).toContain('pnet=')
   })
 })
 
