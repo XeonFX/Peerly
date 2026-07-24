@@ -1,5 +1,6 @@
 import { env, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
+import { CLOSE } from './protocol.mjs'
 
 function gateway(name) {
   return env.USER_GATEWAYS.getByName(name)
@@ -162,5 +163,37 @@ describe('UserGatewayDO fetch upgrade', () => {
     expect(ack.type).toBe('ack')
     expect(ack.payload.for).toBe('hello-1')
     ws.close()
+  })
+
+  it('closes 4002 on a hello carrying an unsupported protocol version', async () => {
+    const stub = gateway('peerly:fetch-test-4')
+    const now = Date.now()
+    const { sid } = await stub.registerSession({ dk: 'dk-real', now, ttlMs: 60_000 })
+    const response = await stub.fetch('http://do/', {
+      headers: { upgrade: 'websocket', 'x-realtime-uid': 'fetch-test-4', 'x-realtime-dk': 'dk-real', 'x-realtime-sid': sid },
+    })
+    const ws = response.webSocket
+    ws.accept()
+    const closeEvent = await new Promise(resolve => {
+      ws.addEventListener('close', resolve, { once: true })
+      ws.send(JSON.stringify({ v: 1, id: 'hello-2', type: 'hello', sentAt: Date.now(), payload: { version: 2 } }))
+    })
+    expect(closeEvent.code).toBe(CLOSE.VERSION_UNSUPPORTED)
+  })
+
+  it('rejects any command sent before hello with malformed-frame, without version-negotiating it', async () => {
+    const stub = gateway('peerly:fetch-test-5')
+    const now = Date.now()
+    const { sid } = await stub.registerSession({ dk: 'dk-real', now, ttlMs: 60_000 })
+    const response = await stub.fetch('http://do/', {
+      headers: { upgrade: 'websocket', 'x-realtime-uid': 'fetch-test-5', 'x-realtime-dk': 'dk-real', 'x-realtime-sid': sid },
+    })
+    const ws = response.webSocket
+    ws.accept()
+    const closeEvent = await new Promise(resolve => {
+      ws.addEventListener('close', resolve, { once: true })
+      ws.send(JSON.stringify({ v: 1, id: 'seek-1', type: 'seek.cancel', sentAt: Date.now(), payload: { seekId: 's1' } }))
+    })
+    expect(closeEvent.code).toBe(CLOSE.MALFORMED_FRAME)
   })
 })

@@ -17,6 +17,7 @@ type PendingCommand = {
   text: string
   resolve: (value: unknown) => void
   reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
 }
 
 const encodeProof = (purpose: string, app: string, deviceKeyId: string, timestamp: number, nonce: string, extra = '') =>
@@ -52,7 +53,11 @@ export class RealtimeClient extends EventTarget {
   constructor(config: RealtimeClientConfig) {
     super()
     this.config = config
-    this.store = createKvStore<string | number>('peerly-realtime', 'state')
+    // App-scoped: this class runs in both Peerly's and HeyHubs' browsers
+    // (see docs/DURABLE_OBJECTS_IMPLEMENTATION.md section 12.2), so a fixed
+    // 'peerly-realtime' name would put HeyHubs' capability/resume state in a
+    // database literally named after the other product.
+    this.store = createKvStore<string | number>(`${config.app}-realtime`, 'state')
   }
 
   get diagnostics(): TransportDiagnostics {
@@ -83,6 +88,12 @@ export class RealtimeClient extends EventTarget {
     this.stopped = true
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.ws?.close(1000, 'client closing')
+    // Fail in-flight commands immediately rather than leaving their promises
+    // unsettled for up to commandTimeoutMs after an explicit, intentional
+    // shutdown — the eventual timeout rejection bounds the wait either way,
+    // but a caller awaiting send() around a close() should not have to wait
+    // out that whole window for an answer that will never come.
+    for (const command of [...this.pending.values(), ...this.queue]) this.settle(command, 'reject', new Error('client-closed'))
     this.setState('offline')
   }
 
@@ -197,6 +208,16 @@ export class RealtimeClient extends EventTarget {
     })
   }
 
+  /** Clear a command's timeout timer and remove it from pending/queue, then resolve or reject it. */
+  private settle(command: PendingCommand, outcome: 'resolve' | 'reject', value: unknown): void {
+    clearTimeout(command.timer)
+    this.pending.delete(command.id)
+    const queued = this.queue.indexOf(command)
+    if (queued !== -1) this.queue.splice(queued, 1)
+    if (outcome === 'resolve') command.resolve(value)
+    else command.reject(value as Error)
+  }
+
   private handleMessage(raw: string): void {
     if (raw === 'pong') return
     const frame = decodeFrame(raw)
@@ -207,9 +228,8 @@ export class RealtimeClient extends EventTarget {
       const forId = payload?.for
       const command = forId ? this.pending.get(forId) : undefined
       if (command) {
-        this.pending.delete(forId!)
-        if (frame.type === 'ack') command.resolve((payload as { result?: unknown }).result)
-        else command.reject(new Error(JSON.stringify(payload)))
+        if (frame.type === 'ack') this.settle(command, 'resolve', (payload as { result?: unknown }).result)
+        else this.settle(command, 'reject', new Error(JSON.stringify(payload)))
       }
       return
     }
@@ -224,16 +244,29 @@ export class RealtimeClient extends EventTarget {
     }
   }
 
-  /** Send a command and resolve with its ack payload; rejects on an `error` frame or timeout. */
+  /**
+   * Send a command and resolve with its ack payload; rejects on an `error`
+   * frame or after CLIENT_LIMITS.commandTimeoutMs with no ack/error — a lost
+   * ack (e.g. the DO drops the socket without acking) must not leave the
+   * promise, and its entry in `pending`/`queue`, hanging forever. The
+   * deadline covers the command's whole lifetime including any reconnect:
+   * it is not reset when a command is requeued after a socket close.
+   */
   send<T = unknown>(type: string, payload?: unknown, scope?: string): Promise<T> {
     const { id, text } = encodeCommand(type, payload, scope)
     return new Promise<T>((resolve, reject) => {
-      const command: PendingCommand = { id, text, resolve: resolve as (value: unknown) => void, reject }
+      const command: PendingCommand = {
+        id, text, resolve: resolve as (value: unknown) => void, reject,
+        timer: setTimeout(() => this.settle(command, 'reject', new Error('timeout')), CLIENT_LIMITS.commandTimeoutMs),
+      }
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.pending.set(id, command)
         this.ws.send(text)
       } else {
-        if (this.queue.length >= CLIENT_LIMITS.commandQueueMax) return reject(new Error('queue-full'))
+        if (this.queue.length >= CLIENT_LIMITS.commandQueueMax) {
+          clearTimeout(command.timer)
+          return reject(new Error('queue-full'))
+        }
         this.queue.push(command)
       }
     })

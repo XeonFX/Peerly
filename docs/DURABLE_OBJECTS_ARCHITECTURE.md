@@ -187,19 +187,25 @@ packages/core/
     limits.ts                 client-visible constants re-exported from limits.mjs
     types.ts
   worker/realtime/
-    index.mjs                 re-exports every DO class and route handler
+    index.mjs                 re-exports every shared DO class and route handler
     auth.mjs                  enrollment, session cookie, origin checks
     crypto.mjs                HMAC tokens, opaque ids, nonce, device signatures
     router.mjs                HTTP/WebSocket routing to namespaces
     limits.mjs                byte, rate, connection, and storage caps
     userGateway.mjs
     signalScope.mjs
-    workspace.mjs
-    interestQueue.mjs
-    presenceStats.mjs
-    roomDirectory.mjs
-    boardShard.mjs            only after the Phase 7 privacy gate
+    workspace.mjs             Peerly only
 ```
+
+`InterestQueueDO`, `PresenceStatsShardDO`, `RoomDirectoryShardDO`, and (after
+the Phase 7 privacy gate) `BoardShardDO` are HeyHubs-only and are implemented
+in the HeyHubs repo's own `worker/realtime/`, not in `packages/core`: each has
+exactly one consumer, so core carrying them would mean Peerly source holding
+HeyHubs product code (matching, presence stats, room/board content) with no
+shared-code benefit. They import `LIMITS`, `deriveScopeRouteId`, and other
+shared primitives from `@peerly/core/worker/realtime` like any other consumer
+of the package — the wire protocol, crypto, auth, and `UserGatewayDO`/
+`SignalScopeDO` they call into remain single-implementation and shared.
 
 The browser-facing app code imports interfaces, not DO-specific classes. The
 legacy relay adapter and the DO adapter implement the same narrow application

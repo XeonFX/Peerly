@@ -51,7 +51,7 @@
     "audit:production": "npm audit --omit=dev --audit-level=high",
     "test:load:relay": "node scripts/load-relay.mjs",
     "verify:production": "node scripts/verify-production.mjs",
-    "worker:check": "wrangler types --check && wrangler deploy --dry-run --env='' && wrangler deploy --dry-run -c wrangler.preview.jsonc",
+    "worker:check": "wrangler types --check && wrangler types worker-configuration.preview.d.ts -c wrangler.preview.jsonc --env-interface PreviewEnv --check && wrangler deploy --dry-run --env='' && wrangler deploy --dry-run -c wrangler.preview.jsonc",
     "test:bump": "node --test scripts/bump-version.test.mjs"
   },
   "dependencies": {

@@ -16,6 +16,12 @@ const unauthorized = () => new Response('Unauthorized', { status: 401 })
 const badRequest = message => new Response(message, { status: 400 })
 const conflict = code => json({ code }, { status: 409 })
 const notConfigured = () => new Response('Realtime backend is not configured', { status: 503 })
+const forbiddenOrigin = () => new Response('Forbidden origin', { status: 403 })
+
+/** All endpoints reject a non-allowlisted Origin with 403 — see plan section 5. */
+function originAllowed(request, config) {
+  return config.allowedOrigin(request.headers.get('origin') ?? '')
+}
 
 function gatewayFor(env, app, uid) {
   return env.USER_GATEWAYS.getByName(`${app}:${uid}`)
@@ -24,6 +30,7 @@ function gatewayFor(env, app, uid) {
 /** `GET /api/network/enroll` device-proof headers, `POST` body carries the OIDC token. */
 export async function handleEnroll(request, env, config) {
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { allow: 'POST' } })
+  if (!originAllowed(request, config)) return forbiddenOrigin()
   if (!env.NETWORK_SESSION_SECRET || !env.OPAQUE_USER_ID_SECRET) return notConfigured()
 
   const contentLength = Number(request.headers.get('content-length') ?? '0')
@@ -84,7 +91,11 @@ export async function handleEnroll(request, env, config) {
 /** `POST /api/network/session` — capability + fresh device signature, sets the network cookie. */
 export async function handleSession(request, env, config) {
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { allow: 'POST' } })
+  if (!originAllowed(request, config)) return forbiddenOrigin()
   if (!env.NETWORK_SESSION_SECRET || !env.OPAQUE_USER_ID_SECRET) return notConfigured()
+
+  const contentLength = Number(request.headers.get('content-length') ?? '0')
+  if (contentLength > LIMITS.maxRequestBodyBytes) return new Response('Request too large', { status: 413 })
 
   let body
   try {

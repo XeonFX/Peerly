@@ -58,11 +58,28 @@ describe('parseFrame', () => {
   it('soft-rejects a malformed payload without closing the socket', () => {
     let error
     try {
-      parseFrame(hello({ payload: { version: 2 } }), { maxBytes: 1024 })
+      parseFrame(hello({ payload: { version: 'not-a-number' } }), { maxBytes: 1024 })
     } catch (caught) {
       error = caught
     }
     expect(error.close).toBeNull()
+  })
+
+  it('accepts hello with a numeric but unsupported version at the shape level (business-logic rejection happens in UserGatewayDO)', () => {
+    const frame = parseFrame(hello({ payload: { version: 2 } }), { maxBytes: 1024 })
+    expect(frame.payload).toEqual({ version: 2 })
+  })
+
+  it('rejects an unsupported envelope version by closing 4002, distinct from a malformed envelope', () => {
+    const text = JSON.stringify({ v: 2, id: 'cmd-1', type: 'hello', sentAt: Date.now(), payload: { version: 1 } })
+    let error
+    try {
+      parseFrame(text, { maxBytes: 1024 })
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(FrameError)
+    expect(error.close).toBe(CLOSE.VERSION_UNSUPPORTED)
   })
 
   it('enforces the interests-per-seek cap', () => {

@@ -98,6 +98,7 @@ export class UserGatewayDO extends DurableObject {
 
     if (!attachment.v) {
       if (frame.type !== 'hello') return ws.close(CLOSE.MALFORMED_FRAME, 'expected hello')
+      if (frame.payload.version !== LIMITS.protocolVersion) return ws.close(CLOSE.VERSION_UNSUPPORTED, 'unsupported protocol version')
       attachment = { ...attachment, v: frame.payload.version }
       ws.serializeAttachment(attachment)
       ws.send(encodeAck(frame.id))
@@ -144,6 +145,11 @@ export class UserGatewayDO extends DurableObject {
     return bucket.take()
   }
 
+  // seek.* and directory.* are universal wire-protocol command types (see
+  // docs/DURABLE_OBJECTS_IMPLEMENTATION.md section 3.2), not HeyHubs product
+  // code living in the wrong place: any app can bind INTEREST_QUEUES/
+  // ROOM_DIRECTORY and use them. Today only HeyHubs does; on Peerly (which
+  // binds neither) every branch below is an unreachable `not-found` no-op.
   async dispatch(frame, attachment) {
     const { type, payload, id } = frame
     switch (type) {
@@ -174,8 +180,14 @@ export class UserGatewayDO extends DurableObject {
 
   async handleSeekStart(id, payload, attachment) {
     if (!this.env.INTEREST_QUEUES) return encodeError('not-found', { forId: id })
+    // The protocol layer already bounded each raw interest string to
+    // LIMITS.interestMaxChars, but NFKC normalization can expand a string's
+    // length (e.g. some ligatures/compatibility forms decompose into more
+    // code points) — re-check the bound on the normalized form rather than
+    // trusting the pre-normalization check to still hold.
     const interests = [...new Set(payload.interests.map(value => value.trim().toLowerCase().normalize('NFKC')))]
-      .filter(Boolean).slice(0, LIMITS.interestsPerSeek)
+      .filter(value => value.length > 0 && value.length <= LIMITS.interestMaxChars)
+      .slice(0, LIMITS.interestsPerSeek)
     const now = nowMs()
     const expiresAt = now + LIMITS.seekLeaseMs
     this.ctx.storage.sql.exec(
@@ -233,7 +245,7 @@ export class UserGatewayDO extends DurableObject {
     const shard = this.env.ROOM_DIRECTORY.getByName(this.directoryShardKey(payload.roomId))
     const result = await shard.publish({
       roomId: payload.roomId, ownerUid: this.uidPart, dk: attachment.dk,
-      revision: payload.revision, entry: payload.entry, expiresAt: nowMs() + LIMITS.seekLeaseMs,
+      revision: payload.revision, entry: payload.entry, expiresAt: nowMs() + LIMITS.directoryEntryTtlMs,
     })
     if (result.code) return encodeError('conflict', { forId: id })
     return encodeAck(id)

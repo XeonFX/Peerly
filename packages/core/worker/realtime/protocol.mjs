@@ -82,7 +82,7 @@ export function parseFrame(message, { maxBytes, allowedTypes = COMMAND_TYPES }) 
   }
   if (!isPlainObject(envelope)) throw new FrameError('malformed envelope', { close: CLOSE.MALFORMED_FRAME })
   const { v, id, type, scope, sentAt, payload } = envelope
-  if (v !== 1) throw new FrameError('unsupported version', { close: CLOSE.MALFORMED_FRAME })
+  if (v !== 1) throw new FrameError('unsupported version', { close: CLOSE.VERSION_UNSUPPORTED })
   if (!boundedString(id, 64) || !ID_PATTERN.test(id)) throw new FrameError('malformed id', { close: CLOSE.MALFORMED_FRAME })
   if (!allowedTypes.has(type)) throw new FrameError('unknown type', { close: CLOSE.MALFORMED_FRAME })
   if (typeof sentAt !== 'number' || !Number.isFinite(sentAt)) throw new FrameError('malformed sentAt', { close: CLOSE.MALFORMED_FRAME })
@@ -102,7 +102,11 @@ function validatePayload(type, payload) {
       if (payload.to !== undefined && !boundedString(payload.to, 128)) fail()
       return
     case 'hello':
-      if (!isPlainObject(payload) || payload.version !== 1) fail()
+      // Shape only: is `version` a number at all. Whether it is a *supported*
+      // version is a business-logic decision (close 4002, not a parse
+      // failure) made by the caller once the envelope is otherwise valid —
+      // see UserGatewayDO.webSocketMessage.
+      if (!isPlainObject(payload) || typeof payload.version !== 'number') fail()
       if (payload.resumeSeq !== undefined && typeof payload.resumeSeq !== 'number') fail()
       return
     case 'scope.request':
@@ -116,7 +120,7 @@ function validatePayload(type, payload) {
     case 'seek.start':
       if (!isPlainObject(payload)) fail()
       if (!boundedString(payload.seekId, 64)) fail()
-      if (!boundedArray(payload.interests, LIMITS.interestsPerSeek, value => boundedString(value, 32))) fail()
+      if (!boundedArray(payload.interests, LIMITS.interestsPerSeek, value => boundedString(value, LIMITS.interestMaxChars))) fail()
       if (payload.exclusions !== undefined && !boundedArray(payload.exclusions, 50, value => boundedString(value, 128))) fail()
       return
     case 'seek.cancel':

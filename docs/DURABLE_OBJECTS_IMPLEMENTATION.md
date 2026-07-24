@@ -33,6 +33,25 @@ of guessing.
 >   into version uploads from any shared file). The cutover PR moves
 >   bindings+migrations into the default config; its own branch build will
 >   red on 10211 — expected, resolved by the merge-to-main full deploy.
+>   Section 13's two-tag split (`realtime-v1` then `realtime-v2` for the
+>   second batch of classes) is also superseded: each app's
+>   `wrangler.preview.jsonc` declares every one of its classes in a single
+>   `realtime-v1` migration. Since production has not deployed yet, there is
+>   no existing tag history to reconcile — the Phase 5 cutover PR carries
+>   forward whatever tag layout each app's already-deployed preview
+>   established (single combined tag), not section 13's split. Migration tags
+>   remain append-only from that point on.
+> - Section 1 is superseded: `interestQueue.mjs`, `presenceStats.mjs`, and
+>   `roomDirectory.mjs` are implemented in the **HeyHubs repo**
+>   (`worker/realtime/`), not in `packages/core`. Each has exactly one
+>   consumer (HeyHubs), so keeping them in `@peerly/core` would mean Peerly
+>   source carrying HeyHubs-only product code (matching, presence stats, room
+>   directory) with no shared-code benefit — see
+>   [DURABLE_OBJECTS_AUDIT.md](./DURABLE_OBJECTS_AUDIT.md) finding A1. They
+>   import `LIMITS` and `deriveScopeRouteId` from `@peerly/core/worker/realtime`
+>   like any other consumer of the package, so route-id derivation stays
+>   identical across the two RPC call sites (`UserGatewayDO.handleScopeRequest`
+>   in core, `InterestQueueDO.tryMatch` in HeyHubs).
 
 ## 0. Rules for the implementing agent
 
@@ -70,18 +89,21 @@ packages/core/src/realtime/
   transport.ts    CoordinationTransport port + backend selector (section 12.4)
 
 packages/core/worker/realtime/
-  index.mjs       re-exports every DO class and route handler below
+  index.mjs       re-exports every shared DO class and route handler below
   limits.mjs      single source of truth for every cap (section 2)
-  crypto.mjs      hmac helpers, token mint/verify, opaque ids (section 4)
+  crypto.mjs      hmac helpers, token mint/verify, opaque ids, deriveScopeRouteId (section 4)
   auth.mjs        nonce/enroll/session route handlers (section 5)
   router.mjs      handleRealtimeRoute(request, env, config) (section 5.7)
   userGateway.mjs UserGatewayDO (section 6)
   signalScope.mjs SignalScopeDO (section 7)
   workspace.mjs   WorkspaceDO — Peerly only (section 8)
-  interestQueue.mjs   InterestQueueDO — HeyHubs only (section 9)
-  presenceStats.mjs   PresenceStatsShardDO — HeyHubs only (section 10)
-  roomDirectory.mjs   RoomDirectoryShardDO — HeyHubs only (section 11)
 ```
+
+`InterestQueueDO`, `PresenceStatsShardDO`, and `RoomDirectoryShardDO`
+(sections 9–11) are HeyHubs-only and live in the **HeyHubs repo** at
+`worker/realtime/` — see the superseded note above. They import `LIMITS` and
+`deriveScopeRouteId` from `@peerly/core/worker/realtime` like any other
+consumer of the package.
 
 Add to `packages/core/package.json` `exports`:
 
@@ -89,16 +111,19 @@ Add to `packages/core/package.json` `exports`:
 "./worker/realtime": { "default": "./worker/realtime/index.mjs" }
 ```
 
-App repos: only `worker/index.mjs`, `wrangler.jsonc`, client wiring, and
-tests change. DO classes are implemented once in core and re-exported from
-each app's Worker entry module (Wrangler requires DO classes to be exported
-from `main`):
+Peerly's `worker/index.mjs` re-exports `UserGatewayDO`, `SignalScopeDO`, and
+`WorkspaceDO` from core (Wrangler requires DO classes to be exported from
+`main`). HeyHubs' `worker/index.mjs` re-exports `UserGatewayDO`/`SignalScopeDO`
+from core and its own local `InterestQueueDO`/`PresenceStatsShardDO`/
+`RoomDirectoryShardDO` from `./realtime/*.mjs`:
 
 ```js
-// Peerly worker/index.mjs and HeyHubs worker/index.mjs both add:
+// Peerly worker/index.mjs
+export { UserGatewayDO, SignalScopeDO, WorkspaceDO } from '@peerly/core/worker/realtime'
+
+// HeyHubs worker/index.mjs
 export { UserGatewayDO, SignalScopeDO } from '@peerly/core/worker/realtime'
-// Peerly additionally: WorkspaceDO
-// HeyHubs additionally: InterestQueueDO, PresenceStatsShardDO, RoomDirectoryShardDO
+export { InterestQueueDO, PresenceStatsShardDO, RoomDirectoryShardDO } from './realtime/...'
 ```
 
 (Peerly's own worker imports core by relative path, mirroring its existing

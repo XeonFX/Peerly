@@ -21,6 +21,7 @@ export const LIMITS = Object.freeze({
   signalsWindowMs: 10_000,
 
   interestsPerSeek: 5,
+  interestMaxChars: 32,
   seekLeaseMs: 30 * 60_000,
   reservationMs: 30_000,
   matchCooldownMs: 10 * 60_000,
@@ -28,6 +29,10 @@ export const LIMITS = Object.freeze({
   directoryPageEntries: 50,
   directoryPayloadBytes: 8 * 1024,
   directoryMaxRoomsPerShard: 1000,
+  // Independent from seekLeaseMs on purpose: a public-room announcement is a
+  // different kind of thing than a matchmaking seek, and changing one must
+  // not silently change how long the other lives. Renewed by client republish.
+  directoryEntryTtlMs: 60 * 60_000,
 
   mailboxEntries: 100,
   idempotencyTtlMs: 24 * 60 * 60_000,
