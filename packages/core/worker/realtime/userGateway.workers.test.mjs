@@ -1,5 +1,5 @@
 import { env, runInDurableObject } from 'cloudflare:test'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CLOSE } from './protocol.mjs'
 
 function gateway(name) {
@@ -237,6 +237,69 @@ describe('UserGatewayDO fetch upgrade', () => {
     })
     await runInDurableObject(stub, instance => {
       expect(instance.uid).toBe('identity-test-3')
+    })
+  })
+  it('device.revoke invalidates the target device server-side and tells the siblings', async () => {
+    const stub = gateway('peerly:revoke-test-1')
+    const now = Date.now()
+    const victim = await stub.registerSession({ dk: 'dk-victim', now, ttlMs: 60_000, uid: 'revoke-test-1' })
+    const caller = await stub.registerSession({ dk: 'dk-caller', now: now + 1, ttlMs: 60_000, uid: 'revoke-test-1' })
+
+    const response = await stub.fetch('http://do/', {
+      headers: {
+        upgrade: 'websocket', 'x-realtime-uid': 'revoke-test-1',
+        'x-realtime-dk': 'dk-caller', 'x-realtime-sid': caller.sid,
+      },
+    })
+    const ws = response.webSocket
+    const frames = []
+    ws.accept()
+    ws.addEventListener('message', event => frames.push(JSON.parse(String(event.data))))
+    ws.send(JSON.stringify({ v: 1, id: 'hello-1', type: 'hello', sentAt: Date.now(), payload: { version: 1 } }))
+    await vi.waitFor(() => expect(frames.some(frame => frame.payload?.for === 'hello-1')).toBe(true))
+
+    ws.send(JSON.stringify({
+      v: 1, id: 'revoke-1', type: 'device.revoke', sentAt: Date.now(),
+      payload: { deviceKeyId: 'dk-victim' },
+    }))
+    await vi.waitFor(() => expect(frames.some(frame => frame.payload?.for === 'revoke-1')).toBe(true))
+
+    // The revoked device's session is gone and its epoch bumped, so any
+    // capability it still holds stops validating.
+    expect((await stub.validateSession({ sid: victim.sid, dk: 'dk-victim', epoch: victim.epoch })).ok).toBe(false)
+    // ...and the account's other devices are told, so their lists agree.
+    await runInDurableObject(stub, (_instance, state) => {
+      const events = state.storage.sql.exec("SELECT body FROM events WHERE kind = 'device.revoked'").toArray()
+      expect(JSON.parse(events[0].body)).toMatchObject({ deviceKeyId: 'dk-victim', by: 'dk-caller' })
+    })
+  })
+
+  it('invite.ack drops the mailbox copy instead of leaving it to be evicted', async () => {
+    const stub = gateway('peerly:mailbox-ack-1')
+    const now = Date.now()
+    const { sid } = await stub.registerSession({ dk: 'dk-a', now, ttlMs: 60_000, uid: 'mailbox-ack-1' })
+    await stub.deliver({ mailbox: { inviteId: 'invite-ack-me', body: '{}' } })
+
+    const response = await stub.fetch('http://do/', {
+      headers: {
+        upgrade: 'websocket', 'x-realtime-uid': 'mailbox-ack-1',
+        'x-realtime-dk': 'dk-a', 'x-realtime-sid': sid,
+      },
+    })
+    const ws = response.webSocket
+    const frames = []
+    ws.accept()
+    ws.addEventListener('message', event => frames.push(JSON.parse(String(event.data))))
+    ws.send(JSON.stringify({ v: 1, id: 'hello-2', type: 'hello', sentAt: Date.now(), payload: { version: 1 } }))
+    await vi.waitFor(() => expect(frames.some(frame => frame.payload?.for === 'hello-2')).toBe(true))
+
+    ws.send(JSON.stringify({
+      v: 1, id: 'ack-1', type: 'invite.ack', sentAt: Date.now(), payload: { inviteId: 'invite-ack-me' },
+    }))
+    await vi.waitFor(() => expect(frames.some(frame => frame.payload?.for === 'ack-1')).toBe(true))
+
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(state.storage.sql.exec('SELECT * FROM mailbox').toArray().length).toBe(0)
     })
   })
 })

@@ -260,6 +260,65 @@ and `npm run build` pass in both Peerly and HeyHubs after these changes.
 | E3 | **Fixed.** HeyHubs' `parseJsonc` now scans char-by-char tracking string/escape state instead of a line-suffix regex, so a `//` inside a quoted config value can't be mis-stripped. |
 | E4 | **Fixed.** Added `LIMITS.interestMaxChars`; `handleSeekStart` re-checks the bound after NFKC normalization (which can expand length) instead of trusting the pre-normalization protocol-layer check to still hold. |
 
+## Second pass, 2026-07-24 — behavioural
+
+The audit above is entirely **structural**: does the code match the spec, is it
+in the right package, is a constant duplicated. Every finding was real and
+every one was fixed. None of them asked *"if two users do X, does X happen?"* —
+and the answer was no. `UserGatewayDO` derived its app and account id from
+`ctx.id.name`, which is `undefined` inside a Durable Object, so every account
+in both apps ran as `app='app'`, `uid=''`: no two peers could exchange SDP
+(the signal scope authorized a route id the router never opens), no two
+seekers could match (an interest queue keyed by uid held one row for the whole
+population), invites went to a gateway nobody listens on, and presence was
+never published.
+
+The existing tests passed throughout because they exercised each object's RPCs
+with hand-written ids — the exact values that were broken.
+
+**Process change:** every user-visible loop gets one test that drives the real
+client path end to end (`HeyHubs/worker/realtime/seekMatching.workers.test.mjs`
+is the model: two real control sockets, `seek.start`, assert a match). Treat
+that as a gate on the Phase 5 cutover, not a nice-to-have.
+
+Findings from the behavioural pass, all fixed:
+
+| # | Finding |
+| --- | --- |
+| F1 | `ctx.id.name` is undefined inside a DO — the identity bug above. |
+| F2 | **`UserGatewayDO.revokeDevice` had no caller.** Revoking a device in Peerly's UI only dropped a local P2P grant; the device kept its 30-day capability, its server session, and its control socket. Added the `device.revoke` command, the `device.revoked` event to sibling devices, `revokeRealtimeDevice()` in core, and wired Peerly's devices page to it. |
+| F3 | The TURN credential and the `pnet` cookie both expire at `cookieTtlMs` (10 min) and were never refreshed on a long-lived socket — new signal sockets 401'd and peers offered each other credentials coturn had already expired. The client now re-establishes the session every 4 minutes. |
+| F4 | DO builds handed Trystero a TURN-only ICE list where the legacy path sends STUN + TURN, and `joinRoom` replaces Trystero's defaults with it. |
+| F5 | **The resume cursor was in-memory only**, so every page load resumed from 0 and replayed up to 24h of retained events. Now persisted; the aged-out-cursor snapshot path is reachable for the first time. |
+| F6 | `SignalScopeDO` never used its own `to`/topic routing — every SDP/ICE frame broadcast to the whole scope (O(N²), and every participant saw every pair's envelopes). Participants now claim their topics and delivery is routed, falling back to broadcast for unclaimed topics. |
+| F7 | Seek exclusions were compared against the server's opaque uid, an id no client can name: **no blocklist excluded anyone from matchmaking.** Exclusions and the new `memberId` now share the app's own id space. |
+| F8 | The mailbox was write-only (`invite.ack` was a no-op), so its cap silently evicted unread invites. `scope.leave` was a no-op, leaving authorizations live for their full lease. Both now do what they say. |
+| F9 | Polling was neither demand-driven nor visibility-gated, contrary to the plan's own constraint. `directory.list` costs a cross-object request per tab per poll — ~8,600 DO requests/day for one idle background tab. Now split (stats 10s / rooms 30s), stopped while the tab is hidden, and caught up on becoming visible. |
+
+**Still open, deliberately:** 5 of 9 declared delta event kinds are never
+emitted (`directory.change`, `seek.state`, `invite.acked`, `sync.notice`, and
+`workspace.presence` — the last only from `WorkspaceDO`, see below); the `bye`
+frame in §3.3 does not exist; `invite.send`/mailbox has no consumer in either
+app (Peerly delivers friend invites peer-to-peer over the presence lobby).
+None of these is reachable-but-wrong; they are designed-but-unbuilt, and
+`directory.change` in particular is the push mechanism that would remove the
+room-directory poll entirely.
+
+### `WorkspaceDO` — decision
+
+`WorkspaceDO` is **unreachable**: there is no `workspace.*` command, no
+dispatch branch, and no route; the only non-test reference to `env.WORKSPACES`
+is its own test file. Peerly nonetheless binds it and ships an append-only
+migration tag for it.
+
+Decision: **do not wire it up, and do not include it in the production cutover
+config.** Its one product use would be ICE-independent workspace presence, and
+`useRelayWorkspacePresence` deliberately returns no peers on this backend
+today — adding that is a feature decision, not a migration fix. Since
+production has no tag history yet (D6), the Phase 5 config can simply omit the
+class rather than inherit a permanently orphaned one. The preview namespace
+keeps its existing tag; that is harmless.
+
 ## Prioritized fix list
 
 | #      | Severity        | Fix |

@@ -12,6 +12,10 @@ export const LIMITS = Object.freeze({
   controlSocketsPerAccount: 3,
   signalSocketsPerDevice: 8,
   participantsPerScope: 16,
+  // Topics one signal-socket participant may claim for routed delivery: its
+  // own per-peer topic plus the room-wide one, with headroom for a rejoin
+  // that has not yet dropped the previous pair.
+  topicsPerParticipant: 8,
 
   commandsBurst: 20,
   commandsSustained: 5,

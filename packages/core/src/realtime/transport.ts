@@ -11,6 +11,9 @@ export interface CoordinationTransport {
   deleteRoom(roomId: string, revision: number): Promise<void>
   listRooms(cursor?: string): Promise<RoomPage>
   sendInvite(to: string, kind: string, body: object): Promise<void>
+  /** Revoke one of this account's own devices server-side (sessions + sockets). */
+  revokeDevice(deviceKeyId: string): Promise<void>
+  releaseScope(routeId: string): Promise<void>
   events: EventTarget
   readonly diagnostics: TransportDiagnostics
 }
@@ -64,6 +67,14 @@ class DurableObjectTransport implements CoordinationTransport {
 
   async sendInvite(to: string, kind: string, body: object): Promise<void> {
     await this.client.send('invite.send', { to, kind, body })
+  }
+
+  async revokeDevice(deviceKeyId: string): Promise<void> {
+    await this.client.send('device.revoke', { deviceKeyId })
+  }
+
+  async releaseScope(routeId: string): Promise<void> {
+    await this.client.send('scope.leave', { routeId })
   }
 }
 

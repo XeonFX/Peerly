@@ -198,12 +198,20 @@ type RealtimeFrame = {
 | `seek.start` | `{ seekId, interests: string[], exclusions: string[] }` | HeyHubs; ≤ `interestsPerSeek` normalized interests |
 | `seek.cancel` | `{ seekId }` | idempotent |
 | `invite.send` | `{ to: string, kind: string, body: object }` | `to` is an opaque user id; body ≤ 4 KiB |
-| `invite.ack` | `{ inviteId }` | |
+| `invite.ack` | `{ inviteId }` | drops the mailbox copy |
+| `device.revoke` | `{ deviceKeyId }` | one of the caller's *own* devices; the account is the socket's, never a parameter |
 | `ring.send` | `{ to: string, roomRoute: string }` | DM ring |
 | `directory.publish` | `{ roomId, revision, entry: object }` | entry ≤ `directoryPayloadBytes`, signed by device key |
 | `directory.delete` | `{ roomId, revision }` | |
 | `directory.list` | `{ cursor?: string }` | reply is a `snapshot` frame, ≤ `directoryPageEntries` |
 | `resume` | `{ fromSeq: number }` | reply: ordered `delta`s, or `snapshot` if the cursor aged out |
+
+`signal` frames additionally accept `{ subscribe: string[] }` on a signal
+socket: the participant claiming which topics it listens on, so per-peer
+offers/answers/ICE are routed to that peer instead of broadcast to the whole
+scope. Only the envelope's topic strings are read; the `message` beside them
+stays opaque. An unclaimed topic still broadcasts, which is what keeps
+Trystero's room-wide announce working.
 
 `ping` is never a JSON command: the client sends the literal text `ping` and
 the DO answers `pong` via WebSocket auto-response without waking (section 6.2).

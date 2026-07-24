@@ -8,13 +8,27 @@ const COORDINATION_TOPIC = '__relay_coord_v1__'
 const REFRESH_MS = 10_000
 const SOCKET_POLL_MS = 1_000
 /**
- * Durable Objects backend poll for the room directory and interest counts.
- * The ws-relay backend pushes both; here they are pulled, so this interval is
- * the whole latency budget a user perceives as "the other person's interest
- * never showed up". The stats response is edge-cached for
- * `LIMITS.statsCacheSeconds`, so polling faster than that only adds requests.
+ * Durable Objects backend polls, split because the two things cost very
+ * different amounts and change at very different rates.
+ *
+ * Interest counts are an edge-cached HTTP GET (one Worker request, served from
+ * the colo cache), and they are what a user watches while deciding whether
+ * anyone shares their interest — so they poll fast.
+ *
+ * The room directory is a `directory.list` command over the control socket,
+ * which bills a cross-object request on the directory shard *per tab, per
+ * poll*. Public rooms come and go on a scale of minutes. At 10s a single
+ * always-open tab spends ~8,600 Durable Object requests a day on room
+ * listings alone — roughly a tenth of the entire free daily allowance for one
+ * idle browser tab.
+ *
+ * Both are additionally gated on document visibility (see startRefreshTimer):
+ * the architecture plan requires client polling to be "demand-driven and
+ * visibility-gated", and a background tab polling a lobby nobody is looking at
+ * is the single easiest way to exhaust the free plan.
  */
-const DO_REFRESH_MS = 10_000
+const DO_STATS_REFRESH_MS = 10_000
+const DO_ROOMS_REFRESH_MS = 30_000
 
 type Command = { v: 1; type: 'coord'; action: string; [key: string]: unknown }
 
@@ -411,7 +425,9 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
   let activeSeek: { pool: string; seekId: string } | null = null
   let watchedDirectory = ''
   let hostedRoom: { directory: string; roomId: string; revision: number } | null = null
-  let refreshTimer: ReturnType<typeof globalThis.setInterval> | undefined
+  let statsTimer: ReturnType<typeof globalThis.setInterval> | undefined
+  let roomsTimer: ReturnType<typeof globalThis.setInterval> | undefined
+  let onVisibility: (() => void) | null = null
   // Strictly-increasing revision for directory writes. Date.now() alone can
   // repeat (two re-announces in the same millisecond) or invert under async
   // reordering, both of which the shard rejects with a monotonic-revision
@@ -470,11 +486,36 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
     }
   }
 
+  const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible'
+
   const startRefreshTimer = () => {
-    refreshTimer ??= globalThis.setInterval(() => {
+    statsTimer ??= globalThis.setInterval(() => {
+      if (visible()) void refreshStats()
+    }, DO_STATS_REFRESH_MS)
+    roomsTimer ??= globalThis.setInterval(() => {
+      if (visible()) void refreshRooms()
+    }, DO_ROOMS_REFRESH_MS)
+    if (onVisibility || typeof document === 'undefined') return
+    // Coming back to the tab should show current state immediately, not up to
+    // a full poll interval of staleness — that catch-up is what makes it
+    // acceptable to stop polling entirely while hidden.
+    onVisibility = () => {
+      if (!visible() || closed) return
       void refreshStats()
       void refreshRooms()
-    }, DO_REFRESH_MS)
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+  }
+
+  const stopRefreshTimers = () => {
+    if (statsTimer) globalThis.clearInterval(statsTimer)
+    if (roomsTimer) globalThis.clearInterval(roomsTimer)
+    statsTimer = undefined
+    roomsTimer = undefined
+    if (onVisibility && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+    onVisibility = null
   }
 
   transport.events.addEventListener('state', event => {
@@ -570,7 +611,7 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
     },
     close() {
       closed = true
-      if (refreshTimer) globalThis.clearInterval(refreshTimer)
+      stopRefreshTimers()
       if (activeSeek?.seekId) void transport.cancelSeek(activeSeek.seekId)
       listeners.clear()
     },

@@ -20,6 +20,9 @@ type PendingCommand = {
   timer: ReturnType<typeof setTimeout>
 }
 
+/** How long to sit on a resume-cursor advance before writing it to IndexedDB. */
+const RESUME_SAVE_DEBOUNCE_MS = 2_000
+
 const encodeProof = (purpose: string, app: string, deviceKeyId: string, timestamp: number, nonce: string, extra = '') =>
   new TextEncoder().encode([purpose, app, deviceKeyId, String(timestamp), nonce, extra].join('\n'))
 
@@ -51,6 +54,8 @@ export class RealtimeClient extends EventTarget {
   private connectPromise: Promise<void> | null = null
   private sessionTimer: ReturnType<typeof setInterval> | null = null
   private pingTimer: ReturnType<typeof setInterval> | null = null
+  private resumeLoaded = false
+  private resumeSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(config: RealtimeClientConfig) {
     super()
@@ -107,6 +112,7 @@ export class RealtimeClient extends EventTarget {
       this.setState('session')
       const { turn } = await this.establishSession(capability)
       this.setState('connecting')
+      await this.loadResumeCursor()
       await this.openSocket()
       this.reconnectAttempt = 0
       this.setState('ready')
@@ -119,6 +125,35 @@ export class RealtimeClient extends EventTarget {
       }
       this.scheduleReconnect()
     }
+  }
+
+  /**
+   * Restore the last acknowledged event sequence, once per client.
+   *
+   * Kept only in memory, every page load resumed from 0 — and the gateway
+   * reads "0" as "start of the retained stream", so each reload replayed up
+   * to 24 hours of invites, rings and match commits. Persisting the cursor is
+   * what makes resume mean resume, and it is also the only thing that ever
+   * exercises the aged-out-cursor snapshot path.
+   */
+  private async loadResumeCursor(): Promise<void> {
+    if (this.resumeLoaded) return
+    this.resumeLoaded = true
+    const stored = await this.store.get('resumeSeq')
+    if (typeof stored === 'number' && stored > this.lastAckSeq) this.lastAckSeq = stored
+  }
+
+  /**
+   * Persist the cursor lazily: an event batch can arrive far more often than
+   * IndexedDB should be written, and losing at most one window of progress
+   * only costs a replay of those few events.
+   */
+  private saveResumeCursor(): void {
+    if (this.resumeSaveTimer) return
+    this.resumeSaveTimer = setTimeout(() => {
+      this.resumeSaveTimer = null
+      void this.store.set('resumeSeq', this.lastAckSeq).catch(() => {})
+    }, RESUME_SAVE_DEBOUNCE_MS)
   }
 
   /**
@@ -155,6 +190,12 @@ export class RealtimeClient extends EventTarget {
     if (this.pingTimer) clearInterval(this.pingTimer)
     this.sessionTimer = null
     this.pingTimer = null
+    // Flush the cursor rather than let a pending debounce die with the socket.
+    if (this.resumeSaveTimer) {
+      clearTimeout(this.resumeSaveTimer)
+      this.resumeSaveTimer = null
+      void this.store.set('resumeSeq', this.lastAckSeq).catch(() => {})
+    }
   }
 
   private scheduleReconnect(): void {
@@ -283,6 +324,7 @@ export class RealtimeClient extends EventTarget {
     if (frame.type === 'delta') {
       const payload = frame.payload as { events: RealtimeDeltaEvent[]; seq: number }
       this.lastAckSeq = payload.seq
+      this.saveResumeCursor()
       for (const event of payload.events) this.dispatchEvent(new CustomEvent(event.kind, { detail: event.body }))
       return
     }

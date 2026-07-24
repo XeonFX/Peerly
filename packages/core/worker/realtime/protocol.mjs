@@ -3,7 +3,7 @@ import { LIMITS } from './limits.mjs'
 /** Client → server command types the gateway DO accepts. */
 export const COMMAND_TYPES = new Set([
   'hello', 'scope.request', 'scope.leave', 'seek.start', 'seek.cancel',
-  'invite.send', 'invite.ack', 'ring.send',
+  'invite.send', 'invite.ack', 'ring.send', 'device.revoke',
   'directory.publish', 'directory.delete', 'directory.list', 'resume',
 ])
 
@@ -139,6 +139,11 @@ function validatePayload(type, payload) {
       return
     case 'invite.ack':
       if (!isPlainObject(payload) || !boundedString(payload.inviteId, 64)) fail()
+      return
+    case 'device.revoke':
+      // Only a device key id; the account is the socket's own, never a
+      // parameter, so this can never reach outside the caller's account.
+      if (!isPlainObject(payload) || !boundedString(payload.deviceKeyId, 256)) fail()
       return
     case 'ring.send':
       if (!isPlainObject(payload)) fail()

@@ -6,8 +6,10 @@ import {
   revokeDevice,
   type ApprovedDevice,
 } from '../collab/deviceAuthorization'
+import { revokeRealtimeDevice } from '@peerly/core'
 import { useDevicePairing } from '../hooks/useDevicePairing'
 import { useI18n } from '../i18n'
+import { PUBLIC_NETWORK_ENV } from '../config'
 import { Icon } from './Icon'
 
 function newSecret(): string {
@@ -31,6 +33,7 @@ export function MyDevicesPage({
   const [currentKey, setCurrentKey] = useState('')
   const [devices, setDevices] = useState<ApprovedDevice[]>([])
   const [copied, setCopied] = useState(false)
+  const [revokeError, setRevokeError] = useState<string | null>(null)
   const pairing = useDevicePairing({ identity, userId, secret, role })
   const link = secret ? `${location.origin}/devices#pair=${secret}` : ''
 
@@ -67,6 +70,9 @@ export function MyDevicesPage({
               <div className="font-medium">{tr('This device')}</div>
               <div className="mt-1 font-mono text-xs text-base-content/55">{currentKey ? deviceFingerprint(currentKey) : '…'}</div>
             </div>
+            {revokeError && (
+              <div className="alert alert-warning text-sm" role="status">{revokeError}</div>
+            )}
             {devices.length === 0 ? (
               <p className="text-sm text-base-content/55">{tr('No other devices are approved yet.')}</p>
             ) : devices.map(device => (
@@ -80,7 +86,18 @@ export function MyDevicesPage({
                 </div>
                 <button className="btn btn-error btn-ghost btn-sm" type="button" onClick={() => {
                   if (!confirm(tr('Revoke this device? It will stop syncing with this device.'))) return
+                  // Local first: dropping the peer-to-peer grant is the part
+                  // that works offline and must never be blocked on network.
                   revokeDevice(userId, currentKey, device.deviceKeyId)
+                  setRevokeError(null)
+                  // Then the control plane, so the revoked device also loses
+                  // its server session and capability instead of keeping them
+                  // for the rest of their 30-day life. Surfaced on failure:
+                  // a revocation that silently did nothing is worse than one
+                  // that says so.
+                  void revokeRealtimeDevice(PUBLIC_NETWORK_ENV, device.deviceKeyId).catch(() => {
+                    setRevokeError(tr('Removed on this device, but the server could not be reached. Retry while online to sign that device out everywhere.'))
+                  })
                 }}>{tr('Revoke')}</button>
               </div>
             ))}

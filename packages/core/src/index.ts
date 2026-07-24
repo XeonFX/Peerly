@@ -292,6 +292,7 @@ export {
 } from './nsfwPolicy.js'
 export { RealtimeClient, type RealtimeClientConfig } from './realtime/client.js'
 export { selectDurableObjectsTransport, type CoordinationTransport } from './realtime/transport.js'
+export { revokeRealtimeDevice } from './realtime/runtime.js'
 export {
   type DeviceSignerLike,
   type ErrorCode,

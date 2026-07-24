@@ -1,5 +1,6 @@
 import { env, runInDurableObject } from 'cloudflare:test'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { CLOSE } from './protocol.mjs'
 
 function scope(name) {
   return env.SIGNAL_SCOPES.getByName(name)
@@ -84,5 +85,95 @@ describe('SignalScopeDO', () => {
       const tables = state.storage.sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='authorizations'").toArray()
       expect(tables.length).toBe(0)
     })
+  })
+
+  it('routes a claimed topic to its listener instead of broadcasting to the room', async () => {
+    const stub = scope('peerly:topic-routing')
+    const expiresAt = Date.now() + 60_000
+    for (const dk of ['dk-a', 'dk-b', 'dk-c']) {
+      await stub.authorize({ uid: 'topic-uid', dk, expiresAt })
+    }
+
+    const open = async dk => {
+      const response = await stub.fetch('http://do/', {
+        headers: { upgrade: 'websocket', 'x-realtime-uid': 'topic-uid', 'x-realtime-dk': dk },
+      })
+      const ws = response.webSocket
+      const frames = []
+      ws.accept()
+      // Only signal frames: a later participant's connect also emits a
+      // peer.join announcement to everyone already here.
+      ws.addEventListener('message', event => {
+        const frame = JSON.parse(String(event.data))
+        if (frame.type === 'signal') frames.push(frame)
+      })
+      return { ws, frames }
+    }
+    const a = await open('dk-a')
+    const b = await open('dk-b')
+    const c = await open('dk-c')
+
+    // b claims the per-peer topic a will address; c claims nothing relevant.
+    b.ws.send(JSON.stringify({
+      v: 1, id: 'sub-b', type: 'signal', sentAt: Date.now(), payload: { subscribe: ['peer-b'] },
+    }))
+    expect(b.frames.length).toBe(0)
+
+    a.ws.send(JSON.stringify({
+      v: 1, id: 'sig-1', type: 'signal', sentAt: Date.now(),
+      payload: { topic: 'peer-b', message: 'offer-envelope' },
+    }))
+    await vi.waitFor(() => expect(b.frames.length).toBe(1))
+    expect(b.frames[0].payload.message).toBe('offer-envelope')
+    // The uninvolved third participant never sees the pair's envelope — the
+    // whole point of routing rather than broadcasting.
+    expect(c.frames.length).toBe(0)
+  })
+
+  it('still broadcasts a topic nobody has claimed, so the room-wide announce works', async () => {
+    const stub = scope('peerly:topic-broadcast')
+    const expiresAt = Date.now() + 60_000
+    for (const dk of ['dk-a', 'dk-b']) await stub.authorize({ uid: 'bcast-uid', dk, expiresAt })
+    const open = async dk => {
+      const response = await stub.fetch('http://do/', {
+        headers: { upgrade: 'websocket', 'x-realtime-uid': 'bcast-uid', 'x-realtime-dk': dk },
+      })
+      const ws = response.webSocket
+      const frames = []
+      ws.accept()
+      // Only signal frames: a later participant's connect also emits a
+      // peer.join announcement to everyone already here.
+      ws.addEventListener('message', event => {
+        const frame = JSON.parse(String(event.data))
+        if (frame.type === 'signal') frames.push(frame)
+      })
+      return { ws, frames }
+    }
+    const a = await open('dk-a')
+    const b = await open('dk-b')
+    a.ws.send(JSON.stringify({
+      v: 1, id: 'sig-2', type: 'signal', sentAt: Date.now(),
+      payload: { topic: 'room-wide', message: 'announce' },
+    }))
+    await vi.waitFor(() => expect(b.frames.some(frame => frame.payload?.message === 'announce')).toBe(true))
+  })
+
+  it('release closes the leaving device socket and drops its authorization', async () => {
+    const stub = scope('peerly:scope-release')
+    await stub.authorize({ uid: 'release-uid', dk: 'dk-a', expiresAt: Date.now() + 60_000 })
+    const response = await stub.fetch('http://do/', {
+      headers: { upgrade: 'websocket', 'x-realtime-uid': 'release-uid', 'x-realtime-dk': 'dk-a' },
+    })
+    const ws = response.webSocket
+    ws.accept()
+    const closed = new Promise(resolve => ws.addEventListener('close', resolve, { once: true }))
+    await stub.release({ uid: 'release-uid', dk: 'dk-a' })
+    expect((await closed).code).toBe(CLOSE.AUTH_REQUIRED)
+
+    // A second upgrade is refused now that the authorization is gone.
+    const again = await stub.fetch('http://do/', {
+      headers: { upgrade: 'websocket', 'x-realtime-uid': 'release-uid', 'x-realtime-dk': 'dk-a' },
+    })
+    expect(again.status).toBe(403)
   })
 })

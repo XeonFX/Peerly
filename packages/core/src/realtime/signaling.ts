@@ -66,6 +66,17 @@ class ScopeSocket {
     this.socket.send(encodeCommand('signal', { topic, message }).text)
   }
 
+  /**
+   * Tell the scope which topics this participant listens on, so offers,
+   * answers and ICE addressed to one peer are delivered to that peer instead
+   * of broadcast to the whole room. Re-sent on every change because the scope
+   * keeps the claim on the socket, not in storage.
+   */
+  claimTopics(): void {
+    if (this.socket?.readyState !== WebSocket.OPEN) return
+    this.socket.send(encodeCommand('signal', { subscribe: [...this.handlers.keys()] }).text)
+  }
+
   close(): void {
     this.handlers.clear()
     this.socket?.close(1000, 'room left')
@@ -79,9 +90,11 @@ export const joinDurableObjectsRoom = createTopicStrategy<ScopeSocket, DurableOb
     const handlers = scope.handlers.get(topic) ?? new Set<TopicHandler>()
     handlers.add(onMessage)
     scope.handlers.set(topic, handlers)
+    scope.claimTopics()
     return () => {
       handlers.delete(onMessage)
       if (handlers.size === 0) scope.handlers.delete(topic)
+      scope.claimTopics()
     }
   },
   publishTopic: (scope, topic, message) => scope.send(topic, message),

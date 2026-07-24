@@ -41,6 +41,21 @@ export class SignalScopeDO extends DurableObject {
     return { ok: true }
   }
 
+  /**
+   * Drop one participant's authorization on an explicit `scope.leave`, rather
+   * than waiting out its lease. Any socket that device still has open here is
+   * closed too — an authorization is what makes the socket legitimate, so
+   * leaving it open after revoking would defeat the point.
+   */
+  async release({ uid, dk }) {
+    this.ctx.storage.sql.exec('DELETE FROM authorizations WHERE uid = ? AND dk = ?', uid, dk)
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment()
+      if (attachment?.uid === uid && attachment?.dk === dk) ws.close(CLOSE.AUTH_REQUIRED, 'scope left')
+    }
+    return { ok: true }
+  }
+
   async fetch(request) {
     const uid = request.headers.get('x-realtime-uid')
     const dk = request.headers.get('x-realtime-dk')
@@ -74,15 +89,41 @@ export class SignalScopeDO extends DurableObject {
     const attachment = ws.deserializeAttachment()
     if (!this.takeToken(attachment.cid)) return ws.close(CLOSE.RATE_LIMIT_ABUSE, 'signal rate limit')
 
+    // A participant claiming the topics it listens on. Only the envelope's
+    // `topic` strings are ever read — the `message` beside them stays opaque,
+    // exactly as before.
+    if (Array.isArray(frame.payload?.subscribe)) {
+      const topics = frame.payload.subscribe
+        .filter(topic => typeof topic === 'string' && topic.length > 0 && topic.length <= 256)
+        .slice(0, LIMITS.topicsPerParticipant)
+      ws.serializeAttachment({ ...attachment, topics })
+      return
+    }
+
     const outgoing = encodeFrame(SIGNAL_TYPE, { payload: { ...frame.payload, from: attachment.cid } })
     if (frame.payload?.to) {
       for (const other of this.ctx.getWebSockets()) {
         if (other.deserializeAttachment()?.cid === frame.payload.to) other.send(outgoing)
       }
-    } else {
-      for (const other of this.ctx.getWebSockets()) {
-        if (other !== ws) other.send(outgoing)
-      }
+      return
+    }
+
+    // Route by topic when the participants have claimed one. Trystero
+    // addresses per-peer topics for offers/answers/ICE and only its periodic
+    // announce goes to the room-wide topic, so broadcasting everything made
+    // signaling O(N^2) in a room and handed every participant every other
+    // pair's envelopes. An unclaimed topic still broadcasts, which is what
+    // keeps the room-wide announce working.
+    const topic = frame.payload?.topic
+    const listeners = typeof topic === 'string'
+      ? this.ctx.getWebSockets().filter(other => other !== ws && other.deserializeAttachment()?.topics?.includes(topic))
+      : []
+    if (listeners.length > 0) {
+      for (const other of listeners) other.send(outgoing)
+      return
+    }
+    for (const other of this.ctx.getWebSockets()) {
+      if (other !== ws) other.send(outgoing)
     }
   }
 

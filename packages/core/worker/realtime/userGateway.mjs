@@ -224,13 +224,15 @@ export class UserGatewayDO extends DurableObject {
       case 'scope.request':
         return this.handleScopeRequest(id, payload, attachment)
       case 'scope.leave':
-        return encodeAck(id)
+        return this.handleScopeLeave(id, payload, attachment)
       case 'invite.send':
         return this.handleInviteSend(id, payload)
       case 'invite.ack':
-        return encodeAck(id)
+        return this.handleInviteAck(id, payload)
       case 'ring.send':
         return this.handleRingSend(id, payload)
+      case 'device.revoke':
+        return this.handleDeviceRevoke(id, payload, attachment)
       case 'directory.publish':
         return this.handleDirectoryPublish(id, payload, attachment)
       case 'directory.delete':
@@ -306,6 +308,49 @@ export class UserGatewayDO extends DurableObject {
       mailbox: { inviteId, body: JSON.stringify({ from: this.uid, kind: payload.kind, body: payload.body }) },
     })
     return encodeAck(id, { inviteId })
+  }
+
+  /**
+   * Revoke one of *this account's own* devices from an authenticated socket.
+   * The account is the object's own identity, never a parameter, so this can
+   * only ever reach the caller's own devices.
+   *
+   * Until this existed, `revokeDevice` had no caller at all: revoking a device
+   * in the UI only dropped a local peer-to-peer grant, while that device kept
+   * a valid 30-day capability, its server session, and its control socket.
+   * "Revoke" has to mean the server stops honouring it.
+   */
+  async handleDeviceRevoke(id, payload, attachment) {
+    const target = payload.deviceKeyId
+    await this.revokeDevice(target)
+    // Tell this account's *other* devices, so their local device lists agree
+    // with the server without waiting for a refresh. The revoked device's own
+    // sockets are already closed by revokeDevice.
+    await this.appendEvents([{ kind: 'device.revoked', body: { deviceKeyId: target, by: attachment.dk } }])
+    return encodeAck(id, { deviceKeyId: target })
+  }
+
+  /**
+   * Drop the mailbox copy once the client confirms it has the invite. Without
+   * this the mailbox only ever grew to its cap and then silently evicted the
+   * oldest *unread* invite to make room for a read one.
+   */
+  handleInviteAck(id, payload) {
+    this.ctx.storage.sql.exec('DELETE FROM mailbox WHERE invite_id = ?', payload.inviteId)
+    return encodeAck(id)
+  }
+
+  /**
+   * Give up this device's authorization for a scope as soon as it leaves,
+   * instead of letting it sit until the 10-minute lease expires. A scope the
+   * caller was never authorized for is a no-op, not an error.
+   */
+  async handleScopeLeave(id, payload, attachment) {
+    if (!this.env.SIGNAL_SCOPES) return encodeAck(id)
+    await this.env.SIGNAL_SCOPES.getByName(`${this.appName}:${payload.routeId}`)
+      .release({ uid: this.uid, dk: attachment.dk })
+      .catch(() => {})
+    return encodeAck(id)
   }
 
   async handleRingSend(id, payload) {

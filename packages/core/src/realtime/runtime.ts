@@ -2,6 +2,8 @@ import { getRuntimeAuthCredential } from '../runtimeCredentials.js'
 import { RealtimeClient } from './client.js'
 import { selectDurableObjectsTransport, type CoordinationTransport } from './transport.js'
 import { expandTurnUrls, FALLBACK_STUN_URL, type TurnServer } from '../relays.js'
+import { requireAppId, type Env } from '../env.js'
+import { resolveSignalingStrategy } from '../signaling.js'
 
 const transports = new Map<string, CoordinationTransport>()
 const turnServers = new Map<string, TurnServer[]>()
@@ -78,6 +80,21 @@ export async function getDurableObjectsIceServers(app: string): Promise<TurnServ
     ])
   }
   return turnServers.get(app)
+}
+
+/**
+ * Revoke one of this account's own devices on the control plane: its server
+ * sessions are deleted, its device epoch is bumped so any capability it still
+ * holds stops validating, and its control sockets are closed.
+ *
+ * A no-op on the legacy backend, which has no server-side device registry —
+ * so callers can wire this to "revoke" unconditionally. Rejects if the control
+ * plane could not be reached, because a revocation that silently did nothing
+ * is worse than one that reports failure.
+ */
+export async function revokeRealtimeDevice(env: Env, deviceKeyId: string): Promise<void> {
+  if (resolveSignalingStrategy(env) !== 'durable-objects') return
+  await getDurableObjectsTransport(requireAppId(env)).revokeDevice(deviceKeyId)
 }
 
 export function closeDurableObjectsTransport(app?: string): void {
