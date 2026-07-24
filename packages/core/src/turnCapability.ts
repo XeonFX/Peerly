@@ -1,5 +1,6 @@
-import type { Env } from './env.js'
+import { requireAppId, type Env } from './env.js'
 import { getTurnConfig, resolveIceServers, type TurnServer } from './relays.js'
+import { resolveSignalingStrategy } from './signaling.js'
 
 export type TurnCapability = {
   status: 'not-configured' | 'checking' | 'available' | 'unavailable'
@@ -10,6 +11,23 @@ export type TurnCapability = {
 const TURN_PROBE_TIMEOUT_MS = 12_000
 
 /**
+ * Resolve the TURN credentials the probe should test, from whichever backend
+ * this build actually uses. On `durable-objects` the credentials ride the
+ * authenticated control session (`/api/network/session`); the legacy
+ * `/api/network/credentials` relay-ticket endpoint does not exist in that
+ * deployment, so probing it there is a guaranteed 503. Every other strategy
+ * keeps using that legacy endpoint. The realtime runtime is imported lazily so
+ * nostr/ws-relay/supabase-only consumers don't bundle the control client.
+ */
+export async function resolveProbeIceServers(env: Env): Promise<TurnServer[] | undefined> {
+  if (resolveSignalingStrategy(env) === 'durable-objects') {
+    const { getDurableObjectsIceServers } = await import('./realtime/runtime.js')
+    return getDurableObjectsIceServers(requireAppId(env))
+  }
+  return resolveIceServers(env)
+}
+
+/**
  * Force ICE gathering through TURN only. A relay candidate proves DNS, TLS or
  * transport reachability, authentication, and allocation from this browser's
  * current network without needing another user to be online.
@@ -17,7 +35,7 @@ const TURN_PROBE_TIMEOUT_MS = 12_000
 export async function probeTurnCapability(
   env: Env,
   timeoutMs: number = TURN_PROBE_TIMEOUT_MS,
-  resolveCredentials: (env: Env) => Promise<TurnServer[] | undefined> = resolveIceServers
+  resolveCredentials: (env: Env) => Promise<TurnServer[] | undefined> = resolveProbeIceServers
 ): Promise<TurnCapability> {
   if (!getTurnConfig(env)) {
     return { status: 'not-configured', detail: 'TURN is not configured.', transports: [] }
