@@ -396,6 +396,12 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
   let watchedDirectory = ''
   let hostedRoom: { directory: string; roomId: string; revision: number } | null = null
   let refreshTimer: ReturnType<typeof globalThis.setInterval> | undefined
+  // Strictly-increasing revision for directory writes. Date.now() alone can
+  // repeat (two re-announces in the same millisecond) or invert under async
+  // reordering, both of which the shard rejects with a monotonic-revision
+  // conflict. Advancing past the last value we issued keeps every write newer.
+  let lastRevision = 0
+  const nextRevision = () => (lastRevision = Math.max(Date.now(), lastRevision + 1))
 
   const emit = (event: RelayCoordinationEvent) => {
     if (!closed) listeners.forEach(listener => listener(event))
@@ -509,15 +515,18 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
       if (watchedDirectory === directory) watchedDirectory = ''
     },
     setRoom(directory, roomId, data) {
-      const revision = Date.now()
+      const revision = nextRevision()
       hostedRoom = { directory, roomId, revision }
-      void transport.publishRoom(roomId, revision, { data }).then(refreshRooms)
+      // A conflict means a newer revision already won (e.g. a re-announce
+      // racing the periodic heartbeat) — the listing is already current, so
+      // swallow it rather than let it surface as an unhandled rejection.
+      void transport.publishRoom(roomId, revision, { data }).then(refreshRooms).catch(() => {})
     },
     clearRoom(directory) {
       const room = hostedRoom
       if (!room || room.directory !== directory) return
       hostedRoom = null
-      void transport.deleteRoom(room.roomId, Date.now()).then(refreshRooms)
+      void transport.deleteRoom(room.roomId, nextRevision()).then(refreshRooms).catch(() => {})
     },
     watchChannel() {},
     unwatchChannel() {},

@@ -7,6 +7,13 @@ import {
 
 const PING = 'ping'
 const PONG = 'pong'
+// Coarse online-presence lease published to the (optional) presence-stats
+// shard: written on connect, renewed at half-life while a socket stays open,
+// and expired immediately on the last clean close. One hour tolerates a missed
+// close without inflating the online count for long. Apps that do not bind
+// PRESENCE_STATS (e.g. Peerly) never touch this.
+const PRESENCE_LEASE_MS = 60 * 60_000
+const PRESENCE_RENEW_MS = 30 * 60_000
 
 function nowMs() {
   return Date.now()
@@ -81,7 +88,24 @@ export class UserGatewayDO extends DurableObject {
     this.ctx.acceptWebSocket(server)
     const cid = crypto.randomUUID()
     server.serializeAttachment({ cid, dk, sid, v: 0, ackSeq: 0 })
+    // This account is now online — publish a fresh lease and make sure the
+    // alarm will wake to renew it while the socket stays open.
+    await this.renewPresence(now)
+    await this.scheduleNextAlarm()
     return new Response(null, { status: 101, webSocket: client })
+  }
+
+  /**
+   * Publish (or expire) this account's online-presence lease to the optional
+   * presence-stats shard. `online` writes a full lease; the last clean close
+   * writes an already-expired one so the count drops promptly instead of
+   * waiting out the lease. A no-op for apps that do not bind PRESENCE_STATS.
+   */
+  async renewPresence(now = nowMs(), online = this.ctx.getWebSockets().length > 0) {
+    if (!this.env.PRESENCE_STATS || !this.uidPart) return
+    await this.env.PRESENCE_STATS.getByName(`${this.appPart}:0`)
+      .presenceUpsert({ uid: this.uidPart, expiresAt: online ? now + PRESENCE_LEASE_MS : now })
+      .catch(() => {})
   }
 
   // ---- WebSocket handlers ----
@@ -129,6 +153,11 @@ export class UserGatewayDO extends DurableObject {
 
   async webSocketClose(ws) {
     this.buckets.delete(ws.deserializeAttachment()?.cid)
+    // The closing socket may still be listed here; only its departure leaving
+    // zero open sockets means the account went offline.
+    if (this.ctx.getWebSockets().filter(other => other !== ws).length === 0) {
+      await this.renewPresence(nowMs(), false)
+    }
   }
 
   async webSocketError(ws) {
@@ -199,7 +228,7 @@ export class UserGatewayDO extends DurableObject {
     )
     await this.scheduleNextAlarm()
     await Promise.allSettled(interests.map(interest => this.env.INTEREST_QUEUES.getByName(this.queueKey(interest))
-      .enqueue({ uid: this.uidPart, seekId: payload.seekId, dk: attachment.dk, exclusions: payload.exclusions ?? [], expiresAt })))
+      .enqueue({ interest, uid: this.uidPart, seekId: payload.seekId, dk: attachment.dk, exclusions: payload.exclusions ?? [], expiresAt })))
     return encodeAck(id)
   }
 
@@ -209,7 +238,7 @@ export class UserGatewayDO extends DurableObject {
     if (this.env.INTEREST_QUEUES && row && row.seek_id === payload.seekId) {
       const interests = JSON.parse(row.interests ?? '[]')
       await Promise.allSettled(interests.map(interest => this.env.INTEREST_QUEUES.getByName(this.queueKey(interest))
-        .dequeue({ uid: this.uidPart, seekId: payload.seekId })))
+        .dequeue({ interest, uid: this.uidPart, seekId: payload.seekId })))
     }
     return encodeAck(id)
   }
@@ -448,6 +477,9 @@ export class UserGatewayDO extends DurableObject {
         this.ctx.storage.sql.exec('DELETE FROM seek WHERE one = 1')
       }
     }
+    // Renew the online lease while any socket is still attached (half-life
+    // renewal keeps the coarse online count fresh without an app heartbeat).
+    await this.renewPresence(now)
     await this.scheduleNextAlarm()
   }
 
@@ -458,6 +490,11 @@ export class UserGatewayDO extends DurableObject {
       this.ctx.storage.sql.exec('SELECT MIN(expires_at) AS t FROM idempotency').toArray()[0]?.t,
       this.ctx.storage.sql.exec('SELECT expires_at AS t FROM seek WHERE one = 1').toArray()[0]?.t,
     ].filter(value => typeof value === 'number')
+    // Keep waking to renew the presence lease while connected, so a silent but
+    // still-open socket does not let the online count lapse at the lease TTL.
+    if (this.env.PRESENCE_STATS && this.ctx.getWebSockets().length > 0) {
+      candidates.push(nowMs() + PRESENCE_RENEW_MS)
+    }
     if (candidates.length === 0) return
     await this.ctx.storage.setAlarm(Math.min(...candidates))
   }
