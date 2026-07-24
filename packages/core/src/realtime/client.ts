@@ -129,7 +129,12 @@ export class RealtimeClient extends EventTarget {
 
   private async ensureCapability(): Promise<string> {
     const cached = await this.store.get('capability')
-    if (typeof cached === 'string') return cached
+    // A prior 401 clears this to '' (see establishSession) rather than
+    // deleting it — KvStore has no delete — so a truthy check here is load
+    // bearing: `typeof cached === 'string'` alone treats that cleared marker
+    // as a real capability and resends it forever, since the server always
+    // 400s an empty capability rather than 401ing it back into a re-enroll.
+    if (typeof cached === 'string' && cached) return cached
     this.setState('enrolling')
     const fetchImpl = this.config.fetchImpl ?? fetch
     const auth = await this.config.credentialProvider()
