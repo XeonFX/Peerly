@@ -82,10 +82,19 @@ export type GatewayStorage = {
   readonly mailbox: MailboxStore
 }
 
-/** One connected control socket, as the application sees it. */
+/**
+ * One connected control socket, as the application sees it.
+ *
+ * `negotiated` is a question asked of the socket rather than state the
+ * service keeps, because it has to survive hibernation: the runtime may evict
+ * every in-memory map between two frames on the same connection, and a socket
+ * that forgot it had already said hello would be told to say it again.
+ */
 export interface ControlSocket {
   readonly id: string
   readonly deviceKeyId: DeviceKeyId
+  negotiated(): boolean
+  markNegotiated(): void
   send(frame: string): void
   close(code: number, reason: string): void
 }
