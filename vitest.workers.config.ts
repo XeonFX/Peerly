@@ -2,7 +2,7 @@ import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config'
 
 export default defineWorkersConfig({
   test: {
-    include: ['packages/core/worker/realtime/**/*.workers.test.mjs'],
+    include: ['packages/core/worker/realtime/**/*.workers.test.{mjs,ts}'],
     poolOptions: {
       workers: {
         // The preview config is the one with Durable Object bindings; the
