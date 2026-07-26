@@ -93,9 +93,19 @@ export class SignalScopeDO extends DurableObject {
     // `topic` strings are ever read — the `message` beside them stays opaque,
     // exactly as before.
     if (Array.isArray(frame.payload?.subscribe)) {
-      const topics = frame.payload.subscribe
-        .filter(topic => typeof topic === 'string' && topic.length > 0 && topic.length <= 256)
-        .slice(0, LIMITS.topicsPerParticipant)
+      const topics = []
+      let budget = LIMITS.attachmentBytes - JSON.stringify(attachment).length
+      for (const topic of frame.payload.subscribe) {
+        if (typeof topic !== 'string' || !topic || topic.length > 256) continue
+        if (topics.length >= LIMITS.topicsPerParticipant) break
+        // A serialized attachment is hard-capped by the runtime, and exceeding
+        // it throws inside this handler rather than failing softly. Claim only
+        // what fits: dropping a topic costs a broadcast fallback, throwing
+        // costs the socket.
+        budget -= topic.length + 3
+        if (budget < 0) break
+        topics.push(topic)
+      }
       ws.serializeAttachment({ ...attachment, topics })
       return
     }
