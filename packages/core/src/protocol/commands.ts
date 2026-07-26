@@ -35,7 +35,14 @@ export function defineCommand<Payload>(
   return { type, validate }
 }
 
-const fail = (type: string): never => {
+/**
+ * A function declaration, not an arrow constant: TypeScript only narrows past
+ * a call when the callee's `never` return is visible at the call site, which
+ * it is for a declaration and is not for a `const` without an explicit type.
+ * That difference is what lets the validators below read a field once and have
+ * it narrowed for the return.
+ */
+function fail(type: string): never {
   throw new FrameError(`malformed payload for ${type}`)
 }
 
