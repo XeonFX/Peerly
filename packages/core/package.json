@@ -62,6 +62,9 @@
     "./realtime/app": {
       "types": "./dist/app/index.d.ts",
       "default": "./dist/app/index.js"
+    },
+    "./worker/realtime/gateway": {
+      "default": "./worker/realtime/gateway/userGateway.mjs"
     }
   },
   "files": [

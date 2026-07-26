@@ -23,9 +23,13 @@ const PONG = 'pong'
  * @param app.schema     extra DDL applied alongside the shared tables
  * @param app.handlers   built per request from the object's own collaborators
  * @param app.alarmCandidates  extra expiries for the single shared alarm
+ * @param app.rpc        extra RPC methods, built from the object's own state.
+ *                       Named separately in `app.rpcNames` because Durable
+ *                       Object RPC dispatches on the prototype, so the methods
+ *                       have to exist before any instance does.
  */
 export function defineUserGateway(app = {}) {
-  return class UserGatewayDO extends DurableObject {
+  class UserGatewayDO extends DurableObject {
     constructor(ctx, env) {
       super(ctx, env)
       ctx.blockConcurrencyWhile(async () => {
@@ -179,7 +183,28 @@ export function defineUserGateway(app = {}) {
       }, uid)
       return { ok: true }
     }
+
+    appRpc() {
+      if (!this._appRpc) {
+        this._appRpc = app.rpc?.({
+          sql: this.ctx.storage.sql,
+          clock: { nowMs: () => Date.now() },
+          env: this.env,
+          appName: this.appName,
+          emit: (events, mailbox, uid) => this.runtime.emit(events, mailbox, uid),
+          scheduleAlarm: () => this.runtime.scheduleAlarm(),
+        }) ?? {}
+      }
+      return this._appRpc
+    }
   }
+
+  for (const name of app.rpcNames ?? []) {
+    UserGatewayDO.prototype[name] = function callAppRpc(...args) {
+      return this.appRpc()[name](...args)
+    }
+  }
+  return UserGatewayDO
 }
 
 /** The gateway for an app with no commands of its own. */
