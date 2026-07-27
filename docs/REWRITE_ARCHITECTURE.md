@@ -139,9 +139,65 @@ serving until its replacement passes the same tests.
    - ✅ 5d — the browser half: two real contexts against a real gateway.
 6. ✅ Every module the two apps duplicated is now one module in core plus a
    per-app configuration. See below for what that turned up.
-7. ☐ The remaining product code in each app, which is not duplicated.
+7. ☐ Ship it. See "What is left" — the rewrite is not finished when the code
+   is clean, it is finished when it is serving traffic.
 
 Steps 1–5 are the shared foundation and are prerequisites for 6 and 7.
+
+## What is left
+
+**Production still runs `COORDINATION_BACKEND: "legacy-relay"`.** Everything
+above exists only on preview. Ordered by risk carried, not by effort.
+
+### A — close the verification gap, before anything ships
+
+| | Work | Why it is first |
+| --- | --- | --- |
+| A1 | ☐ HeyHubs browser harness, mirroring Peerly's `test:e2e:do` | HeyHubs' DO path has never run in a browser at all, and it is the app that actually *uses* matchmaking, the room directory and the interest queue — Peerly deploys most of that inert. Larger exposure, zero coverage. Assert HeyHubs' loops: two users match on a shared interest, a blocklist prevents a match, a room reaches the other's directory. |
+| A2 | ☐ TURN smoke test | `probeTurnCapability` with `iceTransportPolicy: 'relay'` against real coturn, on a schedule. The only check that catches the failure class that prompted this rewrite, and still absent. Two browsers on one host connect over host candidates and never touch TURN. Settle whether coturn is reachable at all while doing it. |
+| A3 | ☐ Pairing, sync and revocation in the harness | The riskiest changes of the de-duplication pass move account data between machines and are covered only by unit tests. Two contexts pairing, syncing, then revoking is what actually exercises them. |
+
+### B — production cutover
+
+| | Work | Note |
+| --- | --- | --- |
+| B1 | ☐ Move DO bindings + `migrations` into `wrangler.jsonc` | The append-only step the config comments warn about: migrations cannot appear there until this PR, because non-production branches deploy with `versions upload` and Cloudflare rejects versions carrying a DO migration. **One-way door** — its own PR, and after the `WorkspaceDO` decision. |
+| B2 | ☐ Flip `COORDINATION_BACKEND` per app | Peerly first: it uses less of the control plane, so a fault there is cheaper. Legacy relay keeps serving until the flip holds. |
+| B3 | ☐ Delete the legacy relay path | Only after B2 holds. Not before. |
+
+### C — designed but unbuilt
+
+From the audit's own open list. None is reachable-but-wrong; all are declared
+and never implemented.
+
+- ☐ **`WorkspaceDO` decision — build or delete.** Unreachable today: no
+  `workspace.*` command, no dispatch branch, no route. Shipping a Durable
+  Object nothing can reach is a migration that cannot be taken back, so this
+  is decided *before* B1.
+- ☐ `directory.change` — the push mechanism that removes the room-directory
+  poll entirely, and polling is what drives DO request count.
+- ☐ The other four unemitted delta kinds: `seek.state`, `invite.acked`,
+  `sync.notice`, `workspace.presence`.
+- ☐ The `bye` frame in §3.3 does not exist.
+- ☐ `invite.send`/mailbox has no consumer in either app.
+
+### D — remaining product code, deliberately scoped down
+
+The original step 7 read "rewrite the remaining product code" — about 19.6k
+lines in Peerly and 15.2k in HeyHubs.
+
+**That is not worth doing wholesale, and this records why.** The driver for
+the de-duplication pass was two copies drifting apart; every one of those is
+now a single module plus configuration. What remains is per-product code that
+works. Rewriting it trades known behaviour for unknown risk and buys style.
+
+What is worth it, on its own merits rather than as part of a rewrite:
+
+- ☐ `App.tsx` (410 lines in Peerly, 624 in HeyHubs) and HeyHubs'
+  `ProfilePage.tsx` (552). These do too much and are where new bugs will
+  land.
+
+The rest waits for a reason.
 
 ## What the de-duplication pass found
 
