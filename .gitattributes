@@ -1,0 +1,11 @@
+# Wrangler's generated binding + runtime types. Committed on purpose: CI runs
+# `wrangler types --check`, which fails when the checked-in file no longer
+# matches the config, so a new Durable Object binding cannot ship without its
+# types. That check is the reason these are not simply ignored.
+#
+# The cost is that ~14.7k of those lines are workerd's own API surface, so
+# every wrangler upgrade rewrites the whole file. Marking them generated keeps
+# that out of review: GitHub collapses the diff, and `-diff` stops git
+# producing a textual one at all.
+worker-configuration.d.ts linguist-generated=true -diff
+worker-configuration.preview.d.ts linguist-generated=true -diff
