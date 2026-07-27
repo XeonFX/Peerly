@@ -102,8 +102,11 @@ describe('friendsStore', () => {
       dmSecret: '0123456789abcdef0123456789abcdef',
       subjectDeviceKeyId: 'P-256:peer-key',
     })
-    expect(friend.category).toBeUndefined()
-    expect(friendDmSecret(friend)).toBe('0123456789abcdef0123456789abcdef')
+    // addFriend now refuses a self-add or an empty subject, so it can return
+    // null; a real entry is expected here.
+    expect(friend).not.toBeNull()
+    expect(friend!.category).toBeUndefined()
+    expect(friendDmSecret(friend ?? undefined)).toBe('0123456789abcdef0123456789abcdef')
     expect(dmDeviceKeyForFriend(list, 'secure')).toBe('P-256:peer-key')
   })
 })
