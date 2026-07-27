@@ -299,6 +299,7 @@ export {
   CONSECUTIVE_FLAGS_REQUIRED,
   createInferencePool,
   INITIAL_NSFW_SCAN_STATE,
+  LIVE_VIDEO_CADENCE,
   NSFW_CANVAS_MAX_EDGE,
   NSFW_EXPLICIT_THRESHOLD,
   NSFW_MAX_CONCURRENT_INFERENCES,
@@ -309,8 +310,15 @@ export {
   type InferencePool,
   type NsfwPrediction,
   type NsfwScreenScanState,
+  type VideoScreeningCadence,
   type VisualSource,
 } from './nsfwPolicy.js'
+export {
+  createNsfwScreen,
+  type NsfwClassifier,
+  type NsfwScreen,
+  type NsfwScreenConfig,
+} from './nsfwScreen.js'
 export { RealtimeClient } from './app/realtimeClient.js'
 export type { RealtimeClientConfig } from './realtime/transport.js'
 export { selectDurableObjectsTransport, type CoordinationTransport } from './realtime/transport.js'
