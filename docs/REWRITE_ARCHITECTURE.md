@@ -125,12 +125,54 @@ So the harness is part of the foundation, not a follow-up:
 Each step lands green and deployable; the previous implementation keeps
 serving until its replacement passes the same tests.
 
-1. `protocol/` — limits, frame codec, command registry, ids. *(in progress)*
-2. `domain/` — matching, succession, presence, id spaces.
-3. `ports/` + `adapters/` — DO storage, browser socket, webcrypto.
-4. `UserGatewayDO` on the injected registry; HeyHubs commands move out.
-5. Two-user E2E harness; then cut over and delete the old realtime modules.
-6. Peerly app rewrite on the new core.
-7. HeyHubs app rewrite on the new core.
+1. ✅ `protocol/` — limits, frame codec, command registry, ids.
+2. ✅ `domain/` — rate limiting, device registry, event stream, presence.
+3. ✅ `ports/` + `adapters/` — memory and SQLite storage behind one contract,
+   the gateway command loop, the Durable Object runtime.
+4. ✅ Gateway on the injected registry; the discovery commands now live in the
+   HeyHubs repository and are registered at composition time.
+5. Verification.
+   - ✅ 5a/5b — the rewritten gateway runs in real workerd, composed by both
+     apps, with two accounts matched end to end through the interest queue.
+   - ✅ 5c — two identities through the real routes: OIDC enrolment, session,
+     authenticated control socket, no hand-written account ids.
+   - ☐ 5d — the browser half (recipe below), then cut over and delete the
+     legacy gateway, its tests, and the `gateway_kind` migration column.
+6. ☐ Peerly app rewrite on the new core.
+7. ☐ HeyHubs app rewrite on the new core.
 
 Steps 1–5 are the shared foundation and are prerequisites for 6 and 7.
+
+### 5d — the browser harness, precisely
+
+The server half (5c) proves authentication and the control plane. What it
+cannot reach is the browser: `RealtimeClient`, Trystero, and ICE. That needs
+two real contexts, and the recipe is fixed by what 5c established:
+
+1. **Target**: `wrangler dev -c wrangler.preview.jsonc`, which gives real
+   Durable Objects, real SQLite and real alarms on localhost.
+2. **Identity**: the generic `oidc` provider, exactly as in
+   `twoAccount.workers.test.mjs` — `VITE_OIDC_CLIENT_ID`, `VITE_OIDC_ISSUER`
+   and `OIDC_JWKS_URL` set **only** in the E2E environment, with the JWKS
+   served from a fixture emitted into `dist/` by the E2E build. Production
+   sets none of them, so the provider resolves to `null` and the route 503s.
+   Test-only auth stays configuration, never a code branch.
+3. **Client wiring**: the E2E credential provider returns
+   `providerId: 'oidc'` and a token whose `nonce` is the device key id — the
+   binding the worker enforces. HeyHubs' existing `e2eKeys.ts` already fixes a
+   keypair for exactly this reason: two browser contexts must agree on one
+   issuer key.
+4. **Contexts**: two Playwright contexts with independent storage, so each
+   derives its own device key and therefore its own opaque account.
+5. **Assertions**: the product loops, not the plumbing — two users match on a
+   shared interest; one creates a room and the other's arrival is visible to
+   the creator; a blocklist prevents a match; revoking a device drops the
+   other session.
+
+**What it still will not prove.** Two Chromium contexts on one host connect
+over host candidates and never exercise TURN. A bad TURN URL, an expired
+credential or an unreachable coturn are invisible to it. That needs a separate
+scheduled check calling `probeTurnCapability` with
+`iceTransportPolicy: 'relay'` against the real server — cheap, no second user,
+and the only thing that catches the class of failure that prompted this
+rewrite.
