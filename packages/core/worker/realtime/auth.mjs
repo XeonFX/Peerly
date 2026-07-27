@@ -4,7 +4,7 @@ import {
   mintTurnCredential, readNetworkCookie, serializeNetworkCookie, sha256Hex,
   verifyCapability, verifyCookie, verifyDeviceSignature,
 } from './crypto.mjs'
-import { LIMITS } from './limits.mjs'
+import { LIMITS } from '../../dist/protocol/index.js'
 
 function json(body, init) {
   return Response.json(body, {
