@@ -290,7 +290,8 @@ export {
   type NsfwScreenScanState,
   type VisualSource,
 } from './nsfwPolicy.js'
-export { RealtimeClient, type RealtimeClientConfig } from './realtime/client.js'
+export { RealtimeClient } from './app/realtimeClient.js'
+export type { RealtimeClientConfig } from './realtime/transport.js'
 export { selectDurableObjectsTransport, type CoordinationTransport } from './realtime/transport.js'
 export { revokeRealtimeDevice } from './realtime/runtime.js'
 export {

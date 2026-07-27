@@ -1,5 +1,5 @@
 import { getRuntimeAuthCredential } from '../runtimeCredentials.js'
-import { RealtimeClient } from './client.js'
+import { RealtimeClient } from '../app/realtimeClient.js'
 import { selectDurableObjectsTransport, type CoordinationTransport } from './transport.js'
 import { FALLBACK_STUN_URL, type TurnServer } from '../relays.js'
 import { requireAppId, type Env } from '../env.js'

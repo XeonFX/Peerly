@@ -1,4 +1,14 @@
-import { RealtimeClient, type RealtimeClientConfig } from './client.js'
+import { RealtimeClient } from '../app/realtimeClient.js'
+import {
+  browserTimers, createBrowserChannelFactory, createBrowserSessionApi, createBrowserStore,
+} from '../adapters/browser/index.js'
+import type { OidcCredentialProvider } from './types.js'
+
+export type RealtimeClientConfig = {
+  app: string
+  credentialProvider: OidcCredentialProvider
+  fetchImpl?: typeof fetch
+}
 import type { RoomEntry, RoomPage, ScopeHandle, ScopeKind, SeekOptions, TransportDiagnostics } from './types.js'
 
 export interface CoordinationTransport {
@@ -22,7 +32,16 @@ class DurableObjectTransport implements CoordinationTransport {
   private readonly client: RealtimeClient
 
   constructor(config: RealtimeClientConfig) {
-    this.client = new RealtimeClient(config)
+    this.client = new RealtimeClient({
+      api: createBrowserSessionApi({
+        app: config.app,
+        credentials: config.credentialProvider,
+        ...(config.fetchImpl ? { fetchImpl: config.fetchImpl } : {}),
+      }),
+      channels: createBrowserChannelFactory('/api/realtime/control'),
+      store: createBrowserStore(config.app),
+      timers: browserTimers,
+    })
   }
 
   get events(): EventTarget {
@@ -30,7 +49,8 @@ class DurableObjectTransport implements CoordinationTransport {
   }
 
   get diagnostics(): TransportDiagnostics {
-    return this.client.diagnostics
+    const state = this.client.currentState
+    return { state, reconnectCount: 0, lastEventAt: null, degraded: state !== 'ready' }
   }
 
   connect(): Promise<void> {

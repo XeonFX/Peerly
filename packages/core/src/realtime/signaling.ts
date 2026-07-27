@@ -3,7 +3,7 @@ import {
   type BaseRoomConfig,
   type StrategyMessage,
 } from '@trystero-p2p/core'
-import { encodeCommand, decodeFrame } from './protocol.js'
+import { createIdSource, decodeFrame, encodeFrame } from '../protocol/index.js'
 import { getDurableObjectsTransport } from './runtime.js'
 import type { ScopeKind } from './types.js'
 
@@ -18,6 +18,9 @@ type DurableObjectsRoomConfig = BaseRoomConfig & {
 }
 
 type TopicHandler = (topic: string, message: StrategyMessage) => void | Promise<void>
+
+/** Frame ids only need to be unique per socket; the scope never replays them. */
+const ids = createIdSource()
 
 class ScopeSocket {
   readonly handlers = new Map<string, Set<TopicHandler>>()
@@ -63,7 +66,7 @@ class ScopeSocket {
 
   send(topic: string, message: StrategyMessage): void {
     if (this.socket?.readyState !== WebSocket.OPEN) return
-    this.socket.send(encodeCommand('signal', { topic, message }).text)
+    this.socket.send(encodeFrame('signal', { id: ids.next(), payload: { topic, message } }))
   }
 
   /**
@@ -74,7 +77,7 @@ class ScopeSocket {
    */
   claimTopics(): void {
     if (this.socket?.readyState !== WebSocket.OPEN) return
-    this.socket.send(encodeCommand('signal', { subscribe: [...this.handlers.keys()] }).text)
+    this.socket.send(encodeFrame('signal', { id: ids.next(), payload: { subscribe: [...this.handlers.keys()] } }))
   }
 
   close(): void {
