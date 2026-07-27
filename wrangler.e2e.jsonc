@@ -1,0 +1,59 @@
+{
+  // The browser E2E target: the same worker, the same Durable Objects and the
+  // same routes as preview, running on localhost.
+  //
+  // It exists because every other test of the control plane either calls a
+  // Durable Object's RPCs directly or runs the client with the DO backend
+  // switched off. Neither can catch a fault that only appears when a real
+  // browser talks to a real gateway — which is the class of fault this whole
+  // migration was chasing.
+  //
+  //   npm run test:e2e:do
+  //
+  // Never deployed. It has no routes, and it configures a test identity
+  // provider whose JWKS is served from its own origin — which is safe only
+  // because that origin is a loopback address that exists for one test run.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "peerly-e2e",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-07-22",
+  "vars": {
+    "APP_ID": "peerly",
+    "COORDINATION_BACKEND": "durable-objects",
+
+    // The harness's own origin, matched as one exact string. Production sets
+    // nothing here and so allows nothing extra — see worker/index.mjs.
+    "E2E_ALLOWED_ORIGIN": "http://127.0.0.1:17275",
+
+    // The generic OIDC provider, configured only here. A deployment that sets
+    // none of these resolves the provider to `null` and the route 503s, so
+    // test-only auth stays configuration rather than a code branch.
+    "VITE_OIDC_CLIENT_ID": "peerly-e2e-client",
+    "VITE_OIDC_ISSUER": "http://127.0.0.1:17275",
+    "OIDC_JWKS_URL": "http://127.0.0.1:17275/.well-known/jwks.json"
+
+    // TURN_URLS is deliberately absent: two Chromium contexts on one host
+    // connect over host candidates and never exercise a relay, so offering
+    // one here would only make the test look like it covered something it
+    // cannot. See docs/REWRITE_ARCHITECTURE.md.
+  },
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "USER_GATEWAYS", "class_name": "UserGatewayDO" },
+      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" },
+      { "name": "WORKSPACES", "class_name": "WorkspaceDO" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "realtime-v1",
+      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO", "WorkspaceDO"]
+    }
+  ]
+}

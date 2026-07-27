@@ -1,4 +1,5 @@
 import { getRelaySockets as getNostrSockets } from '@trystero-p2p/nostr'
+import { isRealtimeTransportOnline } from './realtime/liveness.js'
 import type { SignalingStrategy } from './signaling.js'
 
 type SocketMap = ReturnType<typeof getNostrSockets>
@@ -33,6 +34,11 @@ export function createRelayHealth(strategy: SignalingStrategy): RelayHealth {
     if (strategy === 'supabase') {
       return ['supabase-realtime']
     }
+    // One control socket, not a set of relays. Naming it keeps the endpoint
+    // count in the UI honest rather than showing zero.
+    if (strategy === 'durable-objects') {
+      return isRealtimeTransportOnline() ? ['durable-objects-control'] : []
+    }
 
     const sockets = getRelaySockets()
     return Object.entries(sockets)
@@ -42,6 +48,10 @@ export function createRelayHealth(strategy: SignalingStrategy): RelayHealth {
 
   function isRelayOnline(): boolean {
     if (strategy === 'supabase') return true
+    // Without this case the poll asked the Nostr socket map, which is empty on
+    // this strategy, and the app reported "Signaling offline" throughout a
+    // working session.
+    if (strategy === 'durable-objects') return isRealtimeTransportOnline()
     return getConnectedRelayUrls().length > 0
   }
 

@@ -32,13 +32,26 @@ const authConfig = {
   title: 'Peerly preview sign-in',
 }
 
-const realtimeConfig = { app: 'peerly', allowedOrigin: allowedAuthParent }
+/**
+ * The browser E2E harness runs the worker on localhost over plain http, which
+ * `allowedAuthParent` rejects — correctly, for anything deployed.
+ *
+ * So the harness names its own origin in `E2E_ALLOWED_ORIGIN`, and it is
+ * matched as one exact string, never a pattern. A deployment that does not set
+ * the variable allows nothing extra, which is why this can be configuration
+ * rather than a build-time branch: there is no code path to disable.
+ */
+function originAllowedBy(env) {
+  const extra = typeof env.E2E_ALLOWED_ORIGIN === 'string' ? env.E2E_ALLOWED_ORIGIN.trim() : ''
+  return origin => allowedAuthParent(origin) || (extra !== '' && origin === extra)
+}
 
 export default {
   async fetch(request, env, context) {
     const url = new URL(request.url)
     if (url.pathname === NETWORK_CREDENTIALS_PATH) return issueNetworkCredentials(request, env)
     if (url.pathname === RENDEZVOUS_LOOKUP_PATH) return lookupRendezvous(request, env)
+    const realtimeConfig = { app: 'peerly', allowedOrigin: originAllowedBy(env) }
     const realtimeResponse = await handleRealtimeRoute(request, env, realtimeConfig)
     if (realtimeResponse) return realtimeResponse
     const authResponse = await handleGoogleAuthRoute(request, env, context, authConfig)

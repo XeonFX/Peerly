@@ -2,7 +2,9 @@ import type { PeerHandshake } from '@trystero-p2p/core'
 import { DeviceIdentity, type DeviceKeyId } from './deviceIdentity'
 import { signAllowList, verifyAllowList, newerAllowList, type SignedAllowList } from './allowList'
 import {
+  e2eOidcTarget,
   issueE2eGoogleToken,
+  issueE2eOidcToken,
   getE2eJwksFetcher,
   isE2eAuthBypass,
   E2E_GOOGLE_CLIENT_ID,
@@ -127,8 +129,13 @@ export class WorkspaceAuthManager {
       throw new Error('E2E auth bypass is not enabled')
     }
     const keyId = await this.deviceKeyId()
-    const token = await issueE2eGoogleToken(email, keyId)
-    return this.verifyAndStoreIdToken(token, 'google')
+    // The nonce is the device key id throughout: it is the binding the worker
+    // enforces, so a token minted for one device cannot enrol another.
+    const oidc = e2eOidcTarget()
+    if (oidc) {
+      return this.verifyAndStoreIdToken(await issueE2eOidcToken(oidc, email, keyId), 'oidc')
+    }
+    return this.verifyAndStoreIdToken(await issueE2eGoogleToken(email, keyId), 'google')
   }
 
   buildPeerHandshake(handlers?: {

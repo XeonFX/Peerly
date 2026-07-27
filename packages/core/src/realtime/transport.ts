@@ -2,6 +2,7 @@ import { RealtimeClient } from '../app/realtimeClient.js'
 import {
   browserTimers, createBrowserChannelFactory, createBrowserSessionApi, createBrowserStore,
 } from '../adapters/browser/index.js'
+import { publishRealtimeTransportState } from './liveness.js'
 import type { OidcCredentialProvider } from './types.js'
 
 export type RealtimeClientConfig = {
@@ -50,15 +51,23 @@ class DurableObjectTransport implements CoordinationTransport {
 
   get diagnostics(): TransportDiagnostics {
     const state = this.client.currentState
+    // Read here rather than pushed on every change: `currentState` is the one
+    // authority, and the indicator polls anyway.
+    publishRealtimeTransportState(state)
     return { state, reconnectCount: 0, lastEventAt: null, degraded: state !== 'ready' }
   }
 
-  connect(): Promise<void> {
-    return this.client.connect()
+  async connect(): Promise<void> {
+    try {
+      await this.client.connect()
+    } finally {
+      publishRealtimeTransportState(this.client.currentState)
+    }
   }
 
   close(): void {
     this.client.close()
+    publishRealtimeTransportState('offline')
   }
 
   async requestScope(kind: ScopeKind, capability: string): Promise<ScopeHandle> {

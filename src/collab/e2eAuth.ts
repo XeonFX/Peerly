@@ -59,3 +59,32 @@ export async function issueE2eGoogleToken(
   const { mintE2eToken } = await loadE2eKeys()
   return mintE2eToken(email, nonce, overrides)
 }
+
+/**
+ * The browser E2E harness that runs against real Durable Objects signs in
+ * through the generic `oidc` provider rather than the Google one, because the
+ * *worker* has to verify the token too and it can only fetch a JWKS from a URL
+ * it is given. The harness serves one at its own origin and points both halves
+ * at it.
+ *
+ * Configuration, not a code branch: a build that sets neither variable gets
+ * `null` here and the Google path as before, and a deployment that sets
+ * neither resolves the provider itself to `null` and 503s.
+ */
+export function e2eOidcTarget(): { issuer: string; clientId: string } | null {
+  const issuer = import.meta.env.VITE_OIDC_ISSUER
+  const clientId = import.meta.env.VITE_OIDC_CLIENT_ID
+  if (typeof issuer !== 'string' || !issuer.trim()) return null
+  if (typeof clientId !== 'string' || !clientId.trim()) return null
+  return { issuer: issuer.trim().replace(/\/$/, ''), clientId: clientId.trim() }
+}
+
+/** An id token the generic `oidc` provider — and the worker — will accept. */
+export async function issueE2eOidcToken(
+  target: { issuer: string; clientId: string },
+  email: string,
+  nonce: string
+): Promise<string> {
+  const { mintE2eToken } = await loadE2eKeys()
+  return mintE2eToken(email, nonce, { iss: target.issuer, aud: target.clientId })
+}
