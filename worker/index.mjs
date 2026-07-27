@@ -4,9 +4,6 @@ import { lookupRendezvous } from '../packages/core/worker/rendezvous.mjs'
 import { handleRealtimeRoute } from '../packages/core/worker/realtime/index.mjs'
 
 export { UserGatewayDO, SignalScopeDO, WorkspaceDO } from '../packages/core/worker/realtime/index.mjs'
-// The rewritten gateway runs beside the current one until it has passed
-// everything the original does; see docs/REWRITE_ARCHITECTURE.md step 5.
-export { UserGatewayDO as RewrittenUserGatewayDO } from '../packages/core/worker/realtime/gateway/userGateway.mjs'
 
 const NETWORK_CREDENTIALS_PATH = '/api/network/credentials'
 const RENDEZVOUS_LOOKUP_PATH = '/api/rendezvous/lookup'

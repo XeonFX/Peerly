@@ -16,7 +16,7 @@ const ACCOUNT = 'a'.repeat(43)
 const DEVICE = `P-256:${'b'.repeat(43)}:${'c'.repeat(43)}`
 
 function gateway(name) {
-  return env.REWRITTEN_GATEWAYS.getByName(`peerly:${name}`)
+  return env.USER_GATEWAYS.getByName(`peerly:${name}`)
 }
 
 /** Opens an authenticated socket and completes the hello handshake. */
@@ -50,7 +50,7 @@ function send(ws, frames, type, payload, id = crypto.randomUUID()) {
   })
 }
 
-describe('rewritten UserGatewayDO', () => {
+describe('UserGatewayDO', () => {
   it('creates its schema and issues a session', async () => {
     const stub = gateway('rw-session')
     const result = await stub.registerSession({ dk: DEVICE, now: Date.now(), ttlMs: 60_000, uid: ACCOUNT })

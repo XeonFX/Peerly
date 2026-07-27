@@ -48,16 +48,13 @@
     "bindings": [
       { "name": "USER_GATEWAYS", "class_name": "UserGatewayDO" },
       { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" },
-      { "name": "WORKSPACES", "class_name": "WorkspaceDO" },
-      // Rewritten gateway, bound alongside the current one so both serve until
-      // the replacement has passed everything the original does.
-      { "name": "REWRITTEN_GATEWAYS", "class_name": "RewrittenUserGatewayDO" }
+      { "name": "WORKSPACES", "class_name": "WorkspaceDO" }
     ]
   },
   "migrations": [
     {
       "tag": "realtime-v1",
-      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO", "WorkspaceDO", "RewrittenUserGatewayDO"]
+      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO", "WorkspaceDO"]
     }
   ],
   "secrets": {
