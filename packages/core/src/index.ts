@@ -53,6 +53,24 @@ export {
 } from './p2pIndicator.js'
 export { probeTurnCapability, resolveProbeIceServers, type TurnCapability } from './turnCapability.js'
 export {
+  allocateRequest,
+  attributeText,
+  authenticatedAllocateRequest,
+  decodeStun,
+  encodeStun,
+  errorCode,
+  randomTransactionId,
+  readChallenge,
+  STUN_ATTR,
+  STUN_CLASS,
+  STUN_METHOD,
+  turnRestCredential,
+  xorRelayedAddress,
+  type AuthChallenge,
+  type StunAttributes,
+  type StunMessage,
+} from './turnAllocate.js'
+export {
   canonicalizePublicKey,
   DeviceIdentity,
   verifyWithDeviceKeyId,

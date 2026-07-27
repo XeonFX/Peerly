@@ -72,6 +72,7 @@
     "server",
     "worker",
     "scripts/check-vite-bundle.mjs",
+    "scripts/turn-smoke.mjs",
     "README.md",
     "LICENSE"
   ],
