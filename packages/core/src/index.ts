@@ -127,6 +127,17 @@ export {
 } from './friendsStore.js'
 export { createDeviceSelection, type DeviceSelection } from './deviceSelection.js'
 export {
+  createDeviceSync,
+  type ArrayMergeRule,
+  type CopyRule,
+  type DeviceSync,
+  type DeviceSyncConfig,
+  type DeviceSyncSnapshot,
+  type EnvelopeMergeRule,
+  type MergeRule,
+  type ObjectMergeRule,
+} from './deviceSync.js'
+export {
   createDeviceAuthorization,
   deviceFingerprint,
   grantAuthorizes,
