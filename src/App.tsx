@@ -1,10 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { base64UrlToBytes, configureRuntimeAuthCredentialProvider } from '@peerly/core'
-import { deriveUserId } from './collab/userId'
-import { isE2eAuthBypass } from './collab/e2eAuth'
+import { configureRuntimeAuthCredentialProvider } from '@peerly/core'
 import { DeviceIdentity } from './collab/deviceIdentity'
 import { loadStoredProfile } from './collab/profileStore'
-import { WorkspaceAuthManager } from './collab/workspaceAuth'
+import { shouldRaiseNotification } from './collab/attentionPolicy'
 import { ConsentBanner } from './components/ConsentBanner'
 import { HomeView } from './components/HomeView'
 import { JoinScreen } from './components/JoinScreen'
@@ -15,29 +13,23 @@ import { defaultWorkspaceRoute } from './routing'
 import { useAppRouting } from './hooks/useAppRouting'
 import { useApprovedDeviceSync } from './hooks/useApprovedDeviceSync'
 import { useFriends } from './hooks/useFriends'
+import { useSessionBootstrap } from './hooks/useSessionBootstrap'
+import { useWorkspaceNavigation } from './hooks/useWorkspaceNavigation'
 import { usePresenceLobby } from './hooks/usePresenceLobby'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
-import { enterStoredWorkspace } from './collab/enterWorkspace'
 import {
   rememberWorkspace,
   snapshotWorkspace,
   workspacesForEmail,
-  type StoredWorkspace,
 } from './collab/workspaceStore'
 import {
-  clearActiveWorkspace,
-  clearIdCredentials,
   hydrateSessionAvatar,
   loadIdentityEmail,
   loadIdentityProvider,
   loadIdentityUserId,
   loadIdToken,
-  loadSession,
   loadSignedInIdentity,
-  migrateLegacySession,
-  saveIdCredentials,
   saveSession,
-  type Session,
 } from './session'
 import type { IncomingFriendInvite } from './collab/friendInviteStore'
 import { loadDmNotificationsEnabled } from './collab/notificationPreference'
@@ -57,8 +49,7 @@ configureRuntimeAuthCredentialProvider(() => {
 })
 
 function App() {
-  const [session, setSession] = useState<Session | null>(null)
-  const [ready, setReady] = useState(false)
+  const { session, setSession, ready } = useSessionBootstrap()
   const [, setIdentityVersion] = useState(0)
   const signedIn = Boolean(loadSignedInIdentity())
   const { route, navigate, pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
@@ -96,22 +87,23 @@ function App() {
 
   const notifyFriendInvite = (invite: IncomingFriendInvite) => {
     setFriendInviteNotice(invite)
-    if (
-      document.visibilityState !== 'visible' &&
-      loadDmNotificationsEnabled() &&
-      typeof Notification !== 'undefined' &&
-      Notification.permission === 'granted'
-    ) {
-      const notification = new Notification('New Peerly friend request', {
-        body: `${invite.fromName} sent you a friend request.`,
-        icon: '/icon-192.png',
-        tag: `peerly-friend-${invite.inviteId}`,
-      })
-      notification.onclick = () => {
-        window.focus()
-        navigate({ screen: 'home' })
-        notification.close()
-      }
+    const supported = typeof Notification !== 'undefined'
+    if (!shouldRaiseNotification({
+      visibility: document.visibilityState,
+      enabled: loadDmNotificationsEnabled(),
+      supported,
+      permission: supported ? Notification.permission : 'denied',
+    })) return
+
+    const notification = new Notification('New Peerly friend request', {
+      body: `${invite.fromName} sent you a friend request.`,
+      icon: '/icon-192.png',
+      tag: `peerly-friend-${invite.inviteId}`,
+    })
+    notification.onclick = () => {
+      window.focus()
+      navigate({ screen: 'home' })
+      notification.close()
     }
   }
 
@@ -141,65 +133,16 @@ function App() {
       })
     })
 
-  useEffect(() => {
-    void (async () => {
-      await migrateLegacySession()
-      // A session without a live token is still a session: the user lands back
-      // in their workspace and the ReauthBanner ('expired' phase) handles
-      // getting a fresh token for new handshakes. E2E keeps its silent mint.
-      const loaded = loadSession()
-      if (loaded && !loadIdToken() && isE2eAuthBypass()) {
-        const manager = new WorkspaceAuthManager({
-          workspaceId: loaded.workspaceId,
-          creatorKeyId: loaded.creatorKeyId,
-          allowList: loaded.allowList,
-        })
-        await manager.signInWithE2eEmail(loaded.identityEmail)
-        const token = manager.getIdToken()
-        if (token) {
-          saveIdCredentials(token, loaded.identityProvider, loaded.identityEmail, loaded.identityUserId)
-          saveSession(loaded)
-        }
-      }
-      // Older sessions predate durable identity metadata. Backfill the user id
-      // while the verified workspace session and live token are both present,
-      // so leaving the workspace can still render the Home/DM experience.
-      const liveToken = loadIdToken()
-      if (loaded?.identityUserId && liveToken && !loadIdentityUserId()) {
-        saveIdCredentials(liveToken, loaded.identityProvider, loaded.identityEmail, loaded.identityUserId)
-      }
-      // A signed-in user with no workspace has no stored session to backfill
-      // from, so if the opaque user id is still missing (e.g. localStorage was
-      // cleared while a token lingered in sessionStorage) derive it from the
-      // live token's already-verified claims. Without it lobbyProfile stays
-      // null and Home wrongly falls through to the create-workspace screen.
-      const provider = loadIdentityProvider()
-      const email = loadIdentityEmail()
-      if (liveToken && provider && email && !loadIdentityUserId()) {
-        try {
-          const claims = JSON.parse(new TextDecoder().decode(base64UrlToBytes(liveToken.split('.')[1] ?? '')))
-          if (typeof claims.iss === 'string' && typeof claims.sub === 'string') {
-            saveIdCredentials(liveToken, provider, email, await deriveUserId(claims.iss, claims.sub))
-          }
-        } catch {
-          // Malformed token — leave the user id unset; re-auth restores it.
-        }
-      }
-      if (loaded) {
-        setSession(await hydrateSessionAvatar(loaded))
-      }
-      setReady(true)
-    })()
-  }, [])
-
-  const updateSession = (patch: Partial<Session>) => {
-    setSession(prev => {
-      if (!prev) return prev
-      const next = { ...prev, ...patch }
-      saveSession(next)
-      return next
-    })
-  }
+  const {
+    updateSession, goHome, switchWorkspace, createWorkspace, signOut,
+  } = useWorkspaceNavigation({
+    currentWorkspaceId: session?.workspaceId,
+    setSession,
+    onIdentityChanged: () => setIdentityVersion(version => version + 1),
+    navigate,
+    enterWorkspace,
+    leaveToPicker,
+  })
 
   // Rail data: the signed-in email drives which workspaces to offer, and it
   // survives leaving a workspace (identity outlives the active session), so the
@@ -209,50 +152,6 @@ function App() {
   // Reads localStorage each render (cheap: a small JSON parse + filter), so it
   // reflects joins/switches immediately without a reactive store.
   const railWorkspaces = identityEmail ? workspacesForEmail(identityEmail) : []
-
-  /** Close the active workspace, stay signed in, land on the home/DM view. */
-  const goHome = () => {
-    clearActiveWorkspace()
-    setSession(null)
-    leaveToPicker()
-  }
-
-  /** Switch to another remembered workspace in place — no sign-out round trip. */
-  const switchWorkspace = async (workspace: StoredWorkspace) => {
-    if (workspace.workspaceId === session?.workspaceId) {
-      enterWorkspace()
-      return
-    }
-    const identity = loadSignedInIdentity()
-    // Token expired (ReauthBanner territory) — send them home to re-authenticate
-    // rather than persist a workspace we cannot hand a live token.
-    if (!identity) {
-      goHome()
-      return
-    }
-    try {
-      const next = await enterStoredWorkspace(workspace, identity)
-      setSession(await hydrateSessionAvatar(next))
-      enterWorkspace()
-    } catch {
-      // Invalid signature / no longer on the allow-list — bounce home to re-pick.
-      goHome()
-    }
-  }
-
-  const createWorkspace = () => {
-    clearActiveWorkspace()
-    setSession(null)
-    navigate({ screen: 'picker', tab: 'create' })
-  }
-
-  const signOut = () => {
-    clearActiveWorkspace()
-    clearIdCredentials()
-    setSession(null)
-    setIdentityVersion(version => version + 1)
-    navigate({ screen: 'login' }, { replace: true })
-  }
 
   // Public legal pages render regardless of session/hydration state.
   if (route.screen === 'legal') {

@@ -54,7 +54,8 @@
     "worker:check": "wrangler types --check && wrangler types worker-configuration.preview.d.ts -c wrangler.preview.jsonc --env-interface PreviewEnv --check && wrangler deploy --dry-run --env='' && wrangler deploy --dry-run -c wrangler.preview.jsonc",
     "test:bump": "node --test scripts/bump-version.test.mjs",
     "test:e2e:do": "VITE_APP_ID=peerly playwright test -c playwright.do.config.ts",
-    "turn:smoke": "node packages/core/scripts/turn-smoke.mjs"
+    "turn:smoke": "node packages/core/scripts/turn-smoke.mjs",
+    "typecheck": "VITE_APP_ID=peerly tsc -b"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
