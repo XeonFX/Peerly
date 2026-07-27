@@ -25,6 +25,20 @@ export function safeAvatarUrl(avatar: string | undefined): string | undefined {
 }
 
 /**
+ * Safe to render from a peer *and* willing to accept a provider-hosted photo:
+ * a re-encoded inline image (preferred), or a profile photo on a provider host
+ * we already trust, for when an import failed — usually CORS.
+ *
+ * Strictly more permissive than `isSafeAvatarUrl`, which is the right default.
+ * An app choosing this one is trading a narrow, known host for showing more
+ * avatars; anything peer-controlled is still refused.
+ */
+export function isRenderableAvatarUrl(url: string | undefined): boolean {
+  if (!url) return false
+  return isSafeAvatarUrl(url) || isAllowedGoogleAvatarUrl(url)
+}
+
+/**
  * OIDC Google profile photo hosts (https only). Used when importing a provider
  * picture into the local avatar store — not for peer-supplied img src.
  */

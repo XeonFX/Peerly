@@ -138,9 +138,15 @@ export {
 export { openIndexedDb } from './idb.js'
 export {
   isAllowedGoogleAvatarUrl,
+  isRenderableAvatarUrl,
   isSafeAvatarUrl,
   safeAvatarUrl,
 } from './avatarSafety.js'
+export {
+  createAvatarService,
+  type AvatarService,
+  type AvatarUpload,
+} from './avatarService.js'
 export { processAvatarBlob, processAvatarImage } from './avatarImage.js'
 export {
   base64UrlToBytes,
