@@ -121,6 +121,10 @@ export {
 export { createKvStore, type KvStore } from './kvStore.js'
 export { createBlobStore } from './blobStore.js'
 export { createAvatarStore, type AvatarStore } from './avatarStore.js'
+export {
+  createFriendsStore,
+  type AddFriendInput, type Friend, type FriendsStore, type FriendsStoreConfig,
+} from './friendsStore.js'
 export { createDeviceSelection, type DeviceSelection } from './deviceSelection.js'
 export { openIndexedDb } from './idb.js'
 export {
