@@ -43,6 +43,14 @@ export { isReplaceOnlyUpgrade, planTrackOps, type TrackOp } from './mediaTracks.
 export { createRelayHealth, type RelayHealth } from './relayHealth.js'
 export { probeNostrRelay, probeNostrRelays, type RelayProbeResult } from './relayProbe.js'
 export { probeP2pCapability, type P2pCapability } from './p2pCapability.js'
+export {
+  p2pIndicatorState,
+  p2pIndicatorTone,
+  p2pProbeIsUnproven,
+  type P2pIndicatorInput,
+  type P2pIndicatorState,
+  type P2pIndicatorTone,
+} from './p2pIndicator.js'
 export { probeTurnCapability, resolveProbeIceServers, type TurnCapability } from './turnCapability.js'
 export {
   canonicalizePublicKey,
