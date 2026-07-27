@@ -131,6 +131,11 @@ export {
   sendActionInBackground,
   sendActionSafely,
 } from './safeActionSend.js'
+export {
+  createLegalConsent,
+  type LegalConsent,
+  type LegalConsentConfig,
+} from './legalConsent.js'
 export { createKvStore, type KvStore } from './kvStore.js'
 export { createBlobStore } from './blobStore.js'
 export { createAvatarStore, type AvatarStore } from './avatarStore.js'
