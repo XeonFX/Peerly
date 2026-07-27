@@ -138,10 +138,38 @@ serving until its replacement passes the same tests.
      authenticated control socket, no hand-written account ids.
    - ☐ 5d — the browser half (recipe below), then cut over and delete the
      legacy gateway, its tests, and the `gateway_kind` migration column.
-6. ☐ Peerly app rewrite on the new core.
-7. ☐ HeyHubs app rewrite on the new core.
+6. ✅ Every module the two apps duplicated is now one module in core plus a
+   per-app configuration. See below for what that turned up.
+7. ☐ The remaining product code in each app, which is not duplicated.
 
 Steps 1–5 are the shared foundation and are prerequisites for 6 and 7.
+
+## What the de-duplication pass found
+
+Each duplicated module was reconciled to the stricter of the two behaviours
+rather than to whichever was shorter. Most pairs agreed on the mechanism and
+disagreed on a guard — and a missing guard is a bug in the app that missed it,
+not a style difference. What is genuinely app-owned is now explicit and small:
+a scheme, a storage key, wording, styling.
+
+Bugs this surfaced, each fixed for both apps:
+
+| Area | What was wrong |
+|---|---|
+| Device sync | The key list was a deny-list, so every key a future feature invents synced by default. This browser's own peer ids were being copied between machines. Now closed and stated key by key, and re-checked on the way in. |
+| DM ring | One app accepted a ring only from the exact device recorded at friending time, so the moment a friend added a second device their DMs stopped ringing — silently. |
+| Approved-device sync | One app never checked how old a hello was, so a captured one stayed good forever. |
+| Connectivity pill | One app asked only the local probe, which cannot see a strict NAT or a firewall, and so reported "supported" on the very networks where nothing connects. |
+| Friends list | One app let you befriend yourself; a DM credential could outlive the friendship that justified it. |
+| Device grants | Key, id and signature lengths were unbounded before reaching the crypto layer. |
+| Avatars | Adopting an inline avatar fetched whatever it was handed, so an https URL would have reached its host. |
+| Scan cadence | One app had two modules exporting the same two names with different values, and the one under test was not the one in use. |
+
+Two pairs share a filename and nothing else — `useAppRouting` and
+`profileStore`. One app routes screens of a workspace and the other rooms of a
+lobby; one keeps a single profile and the other per-account extras. Only the
+address-bar plumbing under `useAppRouting` was ever common, and that is what
+was lifted. Forcing the rest together would be an abstraction over nothing.
 
 ### 5d — the browser harness, precisely
 
