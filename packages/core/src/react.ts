@@ -706,3 +706,9 @@ export function useSpeakingStreams(
 
   return speaking
 }
+
+export {
+  useApprovedDeviceSync,
+  type ApprovedDeviceSyncConfig,
+  type SyncHello,
+} from './reactDeviceSync.js'

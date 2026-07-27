@@ -118,6 +118,11 @@ export {
   type RoomMediaDeviceIds,
   type RoomMediaState,
 } from './roomMedia.js'
+export {
+  isExpectedActionSendError,
+  sendActionInBackground,
+  sendActionSafely,
+} from './safeActionSend.js'
 export { createKvStore, type KvStore } from './kvStore.js'
 export { createBlobStore } from './blobStore.js'
 export { createAvatarStore, type AvatarStore } from './avatarStore.js'
