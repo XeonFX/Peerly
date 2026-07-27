@@ -219,11 +219,27 @@ the de-duplication pass was two copies drifting apart; every one of those is
 now a single module plus configuration. What remains is per-product code that
 works. Rewriting it trades known behaviour for unknown risk and buys style.
 
-What is worth it, on its own merits rather than as part of a rewrite:
+What was worth it, on its own merits rather than as part of a rewrite — the
+three files doing too much, where new bugs would land:
 
-- ☐ `App.tsx` (410 lines in Peerly, 624 in HeyHubs) and HeyHubs'
-  `ProfilePage.tsx` (552). These do too much and are where new bugs will
-  land.
+- ✅ Peerly `App.tsx`, 410 → 309. Out came `useSessionBootstrap` (the one
+  effect answering what this browser already knows about who is signed in,
+  across four eras of how that was stored), `useWorkspaceNavigation` (the
+  four actions that change session and route together — getting one right
+  and not the other is how you render a workspace that is no longer open),
+  and `shouldRaiseNotification`, now testable without a browser.
+- ✅ HeyHubs `App.tsx`, 626 → 556. Out came `useDmRingToasts` (one toast per
+  conversation out of a stream of identical rings) and `useRandomChat`
+  (start, match, and resume-after-refresh — the last matters because the
+  view survives a reload and the seek does not).
+- ✅ HeyHubs `ProfilePage.tsx`, 552 → 492. Out came `useBlocklistSharing`
+  and `useProfileEditor`.
+
+Two bugs surfaced in the writing rather than the reading: the blocklist
+feedback timers were never cancelled on unmount, and a first pass at the
+broadcast-avatar switch would have persisted the previous value through a
+stale closure. Both are the kind that only appear once the logic is stated
+plainly enough to look at.
 
 The rest waits for a reason.
 
