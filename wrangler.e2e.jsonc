@@ -46,14 +46,17 @@
   "durable_objects": {
     "bindings": [
       { "name": "USER_GATEWAYS", "class_name": "UserGatewayDO" },
-      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" },
-      { "name": "WORKSPACES", "class_name": "WorkspaceDO" }
+      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" }
     ]
   },
+  // No applied history to respect — this namespace is created fresh on every
+  // run — so it carries the migration production will get rather than
+  // preview's create-then-delete. That makes the harness a faithful stand-in
+  // for the deployment that matters.
   "migrations": [
     {
       "tag": "realtime-v1",
-      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO", "WorkspaceDO"]
+      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO"]
     }
   ]
 }

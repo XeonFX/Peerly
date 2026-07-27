@@ -56,7 +56,6 @@ export type RealtimeDeltaEvent =
       }
     }
   | { kind: 'directory.change'; body: Record<string, unknown> }
-  | { kind: 'workspace.presence'; body: { uid: string; state: string } }
   | { kind: 'device.revoked'; body: Record<string, unknown> }
   | { kind: 'sync.notice'; body: Record<string, unknown> }
 

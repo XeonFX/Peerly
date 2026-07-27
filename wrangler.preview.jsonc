@@ -47,14 +47,22 @@
   "durable_objects": {
     "bindings": [
       { "name": "USER_GATEWAYS", "class_name": "UserGatewayDO" },
-      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" },
-      { "name": "WORKSPACES", "class_name": "WorkspaceDO" }
+      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" }
     ]
   },
+  // Append-only. `realtime-v1` stays exactly as it was applied — editing an
+  // applied tag is how a namespace ends up disagreeing with its config — so
+  // dropping WorkspaceDO takes a second tag rather than a smaller first one.
+  // It was never reachable and is now deleted from the source; see
+  // docs/DURABLE_OBJECTS_AUDIT.md.
   "migrations": [
     {
       "tag": "realtime-v1",
       "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO", "WorkspaceDO"]
+    },
+    {
+      "tag": "realtime-v2",
+      "deleted_classes": ["WorkspaceDO"]
     }
   ],
   "secrets": {

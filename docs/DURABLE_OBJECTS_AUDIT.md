@@ -311,13 +311,31 @@ dispatch branch, and no route; the only non-test reference to `env.WORKSPACES`
 is its own test file. Peerly nonetheless binds it and ships an append-only
 migration tag for it.
 
-Decision: **do not wire it up, and do not include it in the production cutover
-config.** Its one product use would be ICE-independent workspace presence, and
-`useRelayWorkspacePresence` deliberately returns no peers on this backend
-today — adding that is a feature decision, not a migration fix. Since
-production has no tag history yet (D6), the Phase 5 config can simply omit the
-class rather than inherit a permanently orphaned one. The preview namespace
-keeps its existing tag; that is harmless.
+Decision: **deleted.** Its one product use would be ICE-independent workspace
+presence, and `useRelayWorkspacePresence` deliberately returns no peers on this
+backend today — adding that is a feature decision, not a migration fix. It
+would also move membership and presence onto the server, which is the opposite
+of what this product is: today the control plane knows opaque account ids and
+scope route ids, and not who is in which workspace.
+
+Resolved (2026-07-27), going further than "leave it dormant":
+
+- `workspace.mjs` and its test are gone, along with the `workspace.presence`
+  delta kind, which existed only to be emitted by it.
+- `wrangler.preview.jsonc` gains a `realtime-v2` tag with
+  `deleted_classes: ["WorkspaceDO"]`. `realtime-v1` is left exactly as
+  applied — editing an applied tag is how a namespace ends up disagreeing
+  with its config.
+- `wrangler.e2e.jsonc` never had applied history, so it carries the single
+  migration production will get, which makes the harness a faithful stand-in
+  for the deployment that matters.
+
+Timing was the deciding factor. A class in an applied migration is permanent,
+and production has no tag history yet, so removing it now is free. Adding a
+Durable Object class back later is one new tag; removing a live one is not.
+
+The storage-contract suite borrowed `env.WORKSPACES` for a SQL handle and now
+uses `SIGNAL_SCOPES` — it wants a handle, not that class.
 
 ## Prioritized fix list
 

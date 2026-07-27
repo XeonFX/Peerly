@@ -173,14 +173,17 @@ above exists only on preview. Ordered by risk carried, not by effort.
 From the audit's own open list. None is reachable-but-wrong; all are declared
 and never implemented.
 
-- ☐ **`WorkspaceDO` decision — build or delete.** Unreachable today: no
-  `workspace.*` command, no dispatch branch, no route. Shipping a Durable
-  Object nothing can reach is a migration that cannot be taken back, so this
-  is decided *before* B1.
+- ✅ **`WorkspaceDO` — deleted**, along with the `workspace.presence` delta
+  kind that existed only for it. It was unreachable, and wiring it up would
+  have put workspace membership and presence on the server, which is the
+  opposite of what this product is. Removing it now is free because
+  production has no tag history yet; preview takes a `realtime-v2` tag with
+  `deleted_classes`. Adding a class back later is one tag — removing a live
+  one is not, which is why this came before B1.
 - ☐ `directory.change` — the push mechanism that removes the room-directory
   poll entirely, and polling is what drives DO request count.
-- ☐ The other four unemitted delta kinds: `seek.state`, `invite.acked`,
-  `sync.notice`, `workspace.presence`.
+- ☐ The other three unemitted delta kinds: `seek.state`, `invite.acked`,
+  `sync.notice`.
 - ☐ The `bye` frame in §3.3 does not exist.
 - ☐ `invite.send`/mailbox has no consumer in either app.
 
