@@ -127,7 +127,11 @@ export function useDevicePairing(options: {
   const approve = useCallback(async () => {
     if (!remote || !role) return
     const pairingId = role === 'source' ? pairingIdRef.current : remote.pairingId
-    const grant = await signDeviceGrant(identity, userId, remote.deviceKeyId, pairingId)
+    const grant = await signDeviceGrant(identity, {
+      userId,
+      subjectDeviceKeyId: remote.deviceKeyId,
+      pairingId,
+    })
     await saveDeviceGrant(grant)
     grantSendRef.current(grant)
     setSent(true)

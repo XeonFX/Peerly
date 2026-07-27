@@ -126,6 +126,15 @@ export {
   type AddFriendInput, type Friend, type FriendsStore, type FriendsStoreConfig,
 } from './friendsStore.js'
 export { createDeviceSelection, type DeviceSelection } from './deviceSelection.js'
+export {
+  createDeviceAuthorization,
+  deviceFingerprint,
+  grantAuthorizes,
+  type ApprovedDevice,
+  type DeviceAuthorization,
+  type DeviceAuthorizationConfig,
+  type DeviceGrant,
+} from './deviceAuthorization.js'
 export { openIndexedDb } from './idb.js'
 export {
   isAllowedGoogleAvatarUrl,

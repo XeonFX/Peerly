@@ -84,12 +84,11 @@ describe('messageSigning', () => {
     const original = new DeviceIdentity(memoryStore())
     const approved = new DeviceIdentity(memoryStore())
     const { signDeviceGrant } = await import('./deviceAuthorization')
-    const grant = await signDeviceGrant(
-      original,
-      'user-alice',
-      await approved.publicKeyId(),
-      'pairing-id-1234567890'
-    )
+    const grant = await signDeviceGrant(original, {
+      userId: 'user-alice',
+      subjectDeviceKeyId: await approved.publicKeyId(),
+      pairingId: 'pairing-id-1234567890',
+    })
     const entry = await signedEntry(approved, { editedAt: 2000, deviceGrant: grant })
     expect(await verifyHistoryEntry(entry)).toBe('valid')
     expect(await verifyHistoryEntry({ ...entry, deviceGrant: { ...grant, pairingId: 'changed-pairing-id-1234' } })).toBe('invalid')
