@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useBrowserHistory } from '@peerly/core/react'
 import {
   defaultWorkspaceRoute,
   hasInviteHash,
@@ -11,51 +12,44 @@ import {
   type WorkspaceRoute,
 } from '../routing'
 
+/** Where a route lives in the address bar. An invite hash is carried over on
+ *  request: it is how a fresh visitor's invite survives the first navigation. */
+function urlForRoute(route: AppRoute, preserveHash = false): string {
+  return preserveHash ? pathWithHash(pathForRoute(route)) : pathForRoute(route)
+}
+
 export function useAppRouting(inWorkspace: boolean, signedIn: boolean, ready: boolean) {
   const [route, setRoute] = useState<AppRoute>(() => resolveInitialRoute(inWorkspace, signedIn))
-  const urlSeededRef = useRef(false)
 
-  const syncUrl = useCallback((next: AppRoute, replace = false, preserveHash = false) => {
-    const path = preserveHash ? pathWithHash(pathForRoute(next)) : pathForRoute(next)
-    if (replace) {
-      history.replaceState(null, '', path)
-    } else {
-      history.pushState(null, '', path)
-    }
-  }, [])
+  const addressBar = useBrowserHistory({
+    seedPath: () => urlForRoute(route, hasInviteHash()),
+    onPopState: () => {
+      const parsed = routeFromLocation(window.location)
+      const signedInHome: AppRoute = signedIn ? { screen: 'home' } : { screen: 'login' }
+      if (!parsed) {
+        setRoute(inWorkspace ? defaultWorkspaceRoute() : signedInHome)
+        return
+      }
+      // A workspace URL is only reachable once one is actually open; going
+      // Back into one we have left would render an empty workspace.
+      if (ready && !inWorkspace && parsed.screen === 'workspace') {
+        setRoute(signedInHome)
+        addressBar.replace(urlForRoute(signedInHome))
+        return
+      }
+      setRoute(parsed)
+    },
+  })
 
   const navigate = useCallback(
     (next: AppRoute, options?: { replace?: boolean; preserveHash?: boolean }) => {
       setRoute(next)
-      syncUrl(next, options?.replace, options?.preserveHash)
+      const path = urlForRoute(next, options?.preserveHash)
+      if (options?.replace) addressBar.replace(path)
+      else addressBar.push(path)
     },
-    [syncUrl]
+    [addressBar]
   )
-
-  useEffect(() => {
-    if (urlSeededRef.current) return
-    urlSeededRef.current = true
-    syncUrl(route, true, hasInviteHash())
-  }, [route, syncUrl])
-
-  useEffect(() => {
-    const onPopState = () => {
-      const parsed = routeFromLocation(window.location)
-      if (!parsed) {
-        setRoute(inWorkspace ? defaultWorkspaceRoute() : signedIn ? { screen: 'home' } : { screen: 'login' })
-        return
-      }
-      if (ready && !inWorkspace && parsed.screen === 'workspace') {
-        const fallback: AppRoute = signedIn ? { screen: 'home' } : { screen: 'login' }
-        setRoute(fallback)
-        syncUrl(fallback, true)
-        return
-      }
-      setRoute(parsed)
-    }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [inWorkspace, signedIn, ready, syncUrl])
 
   useEffect(() => {
     if (!ready) return

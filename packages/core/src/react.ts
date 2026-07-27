@@ -1,11 +1,62 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 /** Keeps a ref synced with the latest value — avoids stale closures in long-lived subscriptions. */
 export function useLatest<T>(value: T) {
   const ref = useRef(value)
   ref.current = value
   return ref
+}
+
+export type BrowserHistoryOptions = {
+  /** Path for whatever is on screen right now, written once on first paint. */
+  seedPath(): string
+  /** Back/forward pressed. The app decides what the new location means. */
+  onPopState(): void
+}
+
+export type BrowserHistory = {
+  /** Adds a history entry, so Back returns to where the user was. */
+  push(path: string): void
+  /** Rewrites the current entry, leaving nothing to go Back to. */
+  replace(path: string): void
+}
+
+/**
+ * The address-bar half of routing: seed the URL on first paint so a refresh
+ * keeps the deep link, write it on navigation, and report back/forward.
+ *
+ * Takes paths rather than routes on purpose. The two apps route entirely
+ * different things — screens of a workspace, and rooms of a lobby — and only
+ * this plumbing was ever the same; rendering a route as a path, hashes and
+ * all, stays with the app that understands it.
+ */
+export function useBrowserHistory(options: BrowserHistoryOptions): BrowserHistory {
+  const seedPathRef = useLatest(options.seedPath)
+  const onPopStateRef = useLatest(options.onPopState)
+  const seededRef = useRef(false)
+
+  useEffect(() => {
+    // Replace, not push: the entry being seeded is the one already showing,
+    // so pushing would put a duplicate behind the user's Back button.
+    if (seededRef.current) return
+    seededRef.current = true
+    history.replaceState(null, '', seedPathRef.current())
+  }, [seedPathRef])
+
+  useEffect(() => {
+    const handler = () => onPopStateRef.current()
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [onPopStateRef])
+
+  return useMemo(
+    () => ({
+      push: path => history.pushState(null, '', path),
+      replace: path => history.replaceState(null, '', path),
+    }),
+    []
+  )
 }
 
 const DIALOG_FOCUSABLE = [
