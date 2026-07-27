@@ -158,7 +158,7 @@ above exists only on preview. Ordered by risk carried, not by effort.
 | --- | --- | --- |
 | A1 | ✅ HeyHubs browser harness (`npm run test:integration:do`) | This app's half of the control plane — the interest queue, the room directory, presence stats — had never run in a browser, and Peerly deploys most of it inert. Standing it up found the provider id hardcoded to `'google'` in four more places, which is invisible while there is one provider and stops a matched pair connecting the moment there are two. |
 | A2 | ✅ TURN smoke test (`npm run turn:smoke -- <urls>`) | Speaks TURN directly rather than through a browser, so it runs on a schedule with no page, no session and no second user. Confirmed live: `turn.peerly.cc` answers on 3478/udp and 5349/tls, and the certificate validates. **Still to do: one run with the real `TURN_AUTH_SECRET`** — a dummy secret proves everything up to the credential comparison and stops there, and a wrong secret and a wrong MESSAGE-INTEGRITY both return 401. |
-| A3 | ☐ Pairing, sync and revocation in the harness | The riskiest changes of the de-duplication pass move account data between machines and are covered only by unit tests. Two contexts pairing, syncing, then revoking is what actually exercises them. |
+| A3 | ✅ Pairing, sync and revocation in the harness | Two contexts on one account with different device keys: they pair, exchange grants, sync, and revoke. One assertion per sync rule — a value the other device lacks arrives, a preference it already chose is left alone, and a key no rule names does not travel. That last one is what closing the allow-list was for. |
 
 ### B — production cutover
 
