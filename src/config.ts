@@ -12,6 +12,13 @@ import {
 export const APP_NAME = 'Peerly'
 
 /**
+ * Prefix for this app's browser-local storage: IndexedDB databases,
+ * localStorage keys and DOM event names. Shared factories in @peerly/core take
+ * it as a parameter so two products in one browser never collide.
+ */
+export const APP_STORAGE_SCOPE = 'peerly'
+
+/**
  * Build identity, injected by vite.config.ts. Version alone does not move on
  * every push, so the commit is what actually answers "is the deployed app
  * running my latest code?".
