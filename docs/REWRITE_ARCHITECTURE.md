@@ -136,8 +136,7 @@ serving until its replacement passes the same tests.
      apps, with two accounts matched end to end through the interest queue.
    - ✅ 5c — two identities through the real routes: OIDC enrolment, session,
      authenticated control socket, no hand-written account ids.
-   - ☐ 5d — the browser half (recipe below), then cut over and delete the
-     legacy gateway, its tests, and the `gateway_kind` migration column.
+   - ✅ 5d — the browser half: two real contexts against a real gateway.
 6. ✅ Every module the two apps duplicated is now one module in core plus a
    per-app configuration. See below for what that turned up.
 7. ☐ The remaining product code in each app, which is not duplicated.
@@ -171,36 +170,41 @@ lobby; one keeps a single profile and the other per-account extras. Only the
 address-bar plumbing under `useAppRouting` was ever common, and that is what
 was lifted. Forcing the rest together would be an abstraction over nothing.
 
-### 5d — the browser harness, precisely
+### 5d — the browser harness
 
-The server half (5c) proves authentication and the control plane. What it
-cannot reach is the browser: `RealtimeClient`, Trystero, and ICE. That needs
-two real contexts, and the recipe is fixed by what 5c established:
+✅ `npm run test:e2e:do`. The server half (5c) proved authentication and the
+control plane; this reaches what it could not — `RealtimeClient`, Trystero and
+ICE in a real browser.
 
-1. **Target**: `wrangler dev -c wrangler.preview.jsonc`, which gives real
-   Durable Objects, real SQLite and real alarms on localhost.
-2. **Identity**: the generic `oidc` provider, exactly as in
-   `twoAccount.workers.test.mjs` — `VITE_OIDC_CLIENT_ID`, `VITE_OIDC_ISSUER`
-   and `OIDC_JWKS_URL` set **only** in the E2E environment, with the JWKS
-   served from a fixture emitted into `dist/` by the E2E build. Production
-   sets none of them, so the provider resolves to `null` and the route 503s.
-   Test-only auth stays configuration, never a code branch.
-3. **Client wiring**: the E2E credential provider returns
-   `providerId: 'oidc'` and a token whose `nonce` is the device key id — the
-   binding the worker enforces. HeyHubs' existing `e2eKeys.ts` already fixes a
-   keypair for exactly this reason: two browser contexts must agree on one
-   issuer key.
+1. **Target**: `wrangler.e2e.jsonc` under `wrangler dev`, giving real Durable
+   Objects, real SQLite and real alarms on localhost. The worker serves a
+   *build*, not a dev server, so what the suite drives is the artefact a
+   deployment would serve.
+2. **Identity**: the generic `oidc` provider — `VITE_OIDC_CLIENT_ID`,
+   `VITE_OIDC_ISSUER` and `OIDC_JWKS_URL` set only in that config, with the
+   JWKS emitted into `dist/` after the build. Browser and worker then verify
+   through the same real fetch. A deployment that sets none of them resolves
+   the provider to `null` and the route 503s, so test-only auth stays
+   configuration rather than a code branch.
+3. **Origin**: the harness names its own in `E2E_ALLOWED_ORIGIN`, matched as
+   one exact string. Production sets nothing and allows nothing extra.
 4. **Contexts**: two Playwright contexts with independent storage, so each
-   derives its own device key and therefore its own opaque account.
-5. **Assertions**: the product loops, not the plumbing — two users match on a
-   shared interest; one creates a room and the other's arrival is visible to
-   the creator; a blocklist prevents a match; revoking a device drops the
-   other session.
+   derives its own device key and its own opaque account.
+5. **Assertions**: the product loops, not the plumbing. Nothing reaches into
+   a socket or asserts on a frame.
+
+It earned its keep immediately. The connection indicator polls a relay-socket
+map that this transport does not populate, so the app displayed "Signaling
+offline" for the entire life of a working session and held
+`useConnectionHealth` in a permanent error state. Every request succeeded. No
+existing test could see it: the workers suite has no UI, the unit suite has no
+transport, and the other browser suite runs on ws-relay.
 
 **What it still will not prove.** Two Chromium contexts on one host connect
 over host candidates and never exercise TURN. A bad TURN URL, an expired
-credential or an unreachable coturn are invisible to it. That needs a separate
-scheduled check calling `probeTurnCapability` with
-`iceTransportPolicy: 'relay'` against the real server — cheap, no second user,
-and the only thing that catches the class of failure that prompted this
-rewrite.
+credential or an unreachable coturn are invisible to it — which is why
+`wrangler.e2e.jsonc` deliberately configures no TURN at all rather than
+offering one the test cannot reach. That needs a separate scheduled check
+calling `probeTurnCapability` with `iceTransportPolicy: 'relay'` against the
+real server: cheap, no second user, and the only thing that catches the class
+of failure that prompted this rewrite.
