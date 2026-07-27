@@ -295,14 +295,22 @@ Findings from the behavioural pass, all fixed:
 | F8 | The mailbox was write-only (`invite.ack` was a no-op), so its cap silently evicted unread invites. `scope.leave` was a no-op, leaving authorizations live for their full lease. Both now do what they say. |
 | F9 | Polling was neither demand-driven nor visibility-gated, contrary to the plan's own constraint. `directory.list` costs a cross-object request per tab per poll — ~8,600 DO requests/day for one idle background tab. Now split (stats 10s / rooms 30s), stopped while the tab is hidden, and caught up on becoming visible. |
 
-**Still open, deliberately:** 5 of 9 declared delta event kinds are never
-emitted (`directory.change`, `seek.state`, `invite.acked`, `sync.notice`, and
-`workspace.presence` — the last only from `WorkspaceDO`, see below); the `bye`
-frame in §3.3 does not exist; `invite.send`/mailbox has no consumer in either
-app (Peerly delivers friend invites peer-to-peer over the presence lobby).
-None of these is reachable-but-wrong; they are designed-but-unbuilt, and
-`directory.change` in particular is the push mechanism that would remove the
-room-directory poll entirely.
+RESOLVED (2026-07-27). Of the five delta kinds nothing emitted, four are
+deleted from `RealtimeDeltaEvent` and the fifth went with `WorkspaceDO`. Each
+was an impossible case every exhaustive handler carried and no test could
+reach. `directory.change` remains real planned work — the push that would
+retire the room-directory poll — and is tracked in REWRITE_ARCHITECTURE.md,
+deliberately after the cutover.
+
+The `bye` frame recorded here as missing **exists**: `encodeBye` in
+`protocol/frames.ts`, sent by `app/gatewayService.ts`, handled in
+`app/realtimeClient.ts`. It was built during the rewrite and this entry was
+stale.
+
+`invite.send`/mailbox is still built server-side with no client caller (Peerly
+delivers friend invites peer-to-peer over the presence lobby). That is
+built-and-unused rather than declared-and-missing, so it costs a registry
+entry and is left alone.
 
 ### `WorkspaceDO` — decision
 

@@ -164,9 +164,19 @@ above exists only on preview. Ordered by risk carried, not by effort.
 
 | | Work | Note |
 | --- | --- | --- |
-| B1 | ☐ Move DO bindings + `migrations` into `wrangler.jsonc` | The append-only step the config comments warn about: migrations cannot appear there until this PR, because non-production branches deploy with `versions upload` and Cloudflare rejects versions carrying a DO migration. **One-way door** — its own PR, and after the `WorkspaceDO` decision. |
-| B2 | ☐ Flip `COORDINATION_BACKEND` per app | Peerly first: it uses less of the control plane, so a fault there is cheaper. Legacy relay keeps serving until the flip holds. |
-| B3 | ☐ Delete the legacy relay path | Only after B2 holds. Not before. |
+Written up step by step, with verification and rollback, in
+**`DURABLE_OBJECTS_CUTOVER.md`**. It is a runbook rather than a prepared
+commit for a concrete reason: a branch carrying DO migrations fails to build
+from the moment it is pushed, because Workers Builds deploys non-production
+branches with `versions upload` and Cloudflare rejects versions containing a
+migration (10211). So B1 is applied in its own PR and merged promptly, never
+staged ahead of time.
+
+| | Work | Note |
+| --- | --- | --- |
+| B1 | ☐ Bindings + `migrations` into `wrangler.jsonc` | Own PR per app, `COORDINATION_BACKEND` unchanged. Creates the namespaces and changes no behaviour, which is what makes it safe to land alone. |
+| B2 | ☐ Flip `COORDINATION_BACKEND` per app | Peerly first: it uses less of the control plane, so a fault there is cheaper to read. Legacy relay keeps serving until the flip holds. |
+| B3 | ☐ Delete the legacy relay path | Only after B2 holds. Removing it first leaves nothing to roll back to. |
 
 ### C — designed but unbuilt
 
@@ -180,12 +190,24 @@ and never implemented.
   production has no tag history yet; preview takes a `realtime-v2` tag with
   `deleted_classes`. Adding a class back later is one tag — removing a live
   one is not, which is why this came before B1.
-- ☐ `directory.change` — the push mechanism that removes the room-directory
-  poll entirely, and polling is what drives DO request count.
-- ☐ The other three unemitted delta kinds: `seek.state`, `invite.acked`,
-  `sync.notice`.
-- ☐ The `bye` frame in §3.3 does not exist.
-- ☐ `invite.send`/mailbox has no consumer in either app.
+- ✅ The four delta kinds nothing emitted — `invite.acked`, `seek.state`,
+  `directory.change`, `sync.notice` — are out of `RealtimeDeltaEvent`. Each
+  was an impossible case that every exhaustive handler carried and no test
+  could reach. A type union is a claim about what the system does; intentions
+  belong in this file.
+- ✅ The `bye` frame the audit recorded as missing **exists**: `encodeBye` in
+  `protocol/frames.ts`, sent by `app/gatewayService.ts` on malformed frames,
+  version mismatch and typed errors, handled in `app/realtimeClient.ts`. It
+  was built during the rewrite; the audit entry was stale.
+- ☐ `directory.change` — the push that would retire the room-directory poll
+  (30s per visible tab), and polling is what drives DO request count.
+  Deliberately **after** the cutover: shipping a new push mechanism in the
+  same release that moves the control plane gives one symptom two suspects,
+  and the traffic that would show whether it helped does not exist yet.
+- ☐ `invite.send`/mailbox is built and tested server-side but has no client
+  caller — Peerly delivers friend invites peer-to-peer over the presence
+  lobby. Built-and-unused, not declared-and-missing, so it costs a registry
+  entry and nothing else. Left alone.
 
 ### D — remaining product code, deliberately scoped down
 

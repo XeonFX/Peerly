@@ -41,11 +41,20 @@ export type SeekOptions = {
   exclusions?: string[]
 }
 
+/**
+ * Every event the gateway can actually deliver — and only those.
+ *
+ * Four more used to be listed here: `invite.acked`, `seek.state`,
+ * `directory.change` and `sync.notice`. Nothing emitted any of them, in either
+ * runtime, so each was an impossible case that every exhaustive handler had to
+ * carry and no test could reach. `directory.change` in particular is real
+ * planned work — the push that would retire the room-directory poll — and is
+ * recorded in docs/REWRITE_ARCHITECTURE.md, which is where a plan belongs. A
+ * type union is a claim about what the system does, not a list of intentions.
+ */
 export type RealtimeDeltaEvent =
   | { kind: 'invite'; body: { inviteId: string; from: string; kind: string; body: object } }
-  | { kind: 'invite.acked'; body: { inviteId: string } }
   | { kind: 'ring'; body: { from: string; roomRoute: string } }
-  | { kind: 'seek.state'; body: Record<string, unknown> }
   | {
       kind: 'match.commit'
       body: {
@@ -55,9 +64,7 @@ export type RealtimeDeltaEvent =
         peer: { opaqueUserId: string; memberId?: string }
       }
     }
-  | { kind: 'directory.change'; body: Record<string, unknown> }
   | { kind: 'device.revoked'; body: Record<string, unknown> }
-  | { kind: 'sync.notice'; body: Record<string, unknown> }
 
 export type TransportState = 'offline' | 'enrolling' | 'session' | 'connecting' | 'ready' | 'backoff' | 'upgrade-required'
 
