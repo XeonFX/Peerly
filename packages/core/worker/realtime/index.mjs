@@ -11,7 +11,7 @@
 // leak/no-leak line against; core is simply where all DO classes are
 // implemented, HeyHubs-only ones excepted.
 export { defineUserGateway, UserGatewayDO } from './gateway/userGateway.mjs'
-export { SignalScopeDO } from './signalScope.mjs'
+export { SignalScopeDO } from './gateway/signalScope.mjs'
 export { WorkspaceDO } from './workspace.mjs'
 export { handleRealtimeRoute } from './router.mjs'
 export { LIMITS } from './limits.mjs'

@@ -22,3 +22,7 @@ export {
   expiredLease, isLastSocket, leaseFor, renewAtMs,
   type PresenceLease,
 } from './presence.js'
+export {
+  claimableTopics, isScopeAbandoned, routeSignal,
+  type Participant, type Routing,
+} from './signalRouting.js'
