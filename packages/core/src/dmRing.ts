@@ -1,11 +1,19 @@
 import { encodeCanonicalLines } from './canonical.js'
 import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity.js'
+import { grantAuthorizes, type DeviceAuthorization, type DeviceGrant } from './deviceAuthorization.js'
 import type { DeviceSigner } from './textChatSigning.js'
 
 /**
- * Lobby-level DM ring protocol. The DM itself lives in a private Trystero room
- * (see dmRoomCode); the ring only tells a friend "open this room" over a shared
- * presence lobby. Wire shape is app-shared; schemes for room codes stay app-owned.
+ * Lobby-level DM ring protocol. The DM itself lives in a private room (see
+ * dmRoomCode); the ring only tells a friend "open this room" over a shared
+ * presence lobby.
+ *
+ * A ring is signed, and the recipient only honours one from the device their
+ * friend was recorded under. That breaks the moment the friend picks up a
+ * second device, so a ring sent from anywhere other than the recorded device
+ * carries the grant that authorises it — the same device-pairing proof used
+ * for chat messages. One app did this and the other did not, which meant
+ * rings from a friend's second device were dropped in silence.
  */
 
 export type DmRingReason = 'open' | 'message'
@@ -19,36 +27,88 @@ export type DmRingPayload = {
   preview?: string
   deviceKeyId: string
   sig: string
+  /** Present only when sending from a device other than the recorded one. */
+  deviceGrant?: DeviceGrant
 }
 
-export function dmRingBytes(scheme: string, ring: Omit<DmRingPayload, 'sig'>): Uint8Array {
-  return encodeCanonicalLines([
-    scheme,
-    ring.toUserId,
-    ring.fromUserId,
-    ring.fromName,
-    ring.reason,
-    ring.preview ?? '',
-    ring.deviceKeyId,
-  ])
+export type DmRingConfig = {
+  /** Signed into every ring. Distinct per app. */
+  readonly scheme: string
+  /** Checks the grant a non-primary device attaches to its ring. */
+  readonly grants: Pick<DeviceAuthorization, 'verify'>
 }
 
-export async function signDmRing(
-  signer: DeviceSigner,
-  scheme: string,
-  fields: Omit<DmRingPayload, 'deviceKeyId' | 'sig'>
-): Promise<DmRingPayload> {
-  const deviceKeyId = await signer.publicKeyId()
-  const body = { ...fields, deviceKeyId }
-  return { ...body, sig: await signer.sign(dmRingBytes(scheme, body)) }
+export type DmRing = {
+  /** Canonical signing input. Exposed so tests can forge and tamper. */
+  bytes(ring: Omit<DmRingPayload, 'sig'>): Uint8Array
+  sign(
+    signer: DeviceSigner,
+    fields: Omit<DmRingPayload, 'deviceKeyId' | 'sig'>
+  ): Promise<DmRingPayload>
+  /** Signature and, when attached, the grant that backs the sending device. */
+  verify(ring: DmRingPayload): Promise<boolean>
+  /**
+   * Whether the signing device may ring on this sender's behalf: either it is
+   * the device the recipient recorded, or that device granted it. Call after
+   * `verify` — this trusts the grant's contents.
+   */
+  authorizedBy(ring: DmRingPayload, recordedDeviceKeyId: string | undefined): boolean
 }
 
-export async function verifyDmRing(scheme: string, ring: DmRingPayload): Promise<boolean> {
-  return verifyWithDeviceKeyId(
-    ring.deviceKeyId as DeviceKeyId,
-    dmRingBytes(scheme, ring),
-    ring.sig
-  )
+/** The grant fields, appended so a ring cannot be replayed with a different
+ *  grant swapped in. Empty when no grant is attached, which keeps the input
+ *  byte-identical to a ring sent from the recorded device. */
+function grantLines(grant: DeviceGrant | undefined): string[] {
+  return grant
+    ? [grant.issuerDeviceKeyId, grant.subjectDeviceKeyId, grant.pairingId, grant.sig]
+    : []
+}
+
+export function createDmRing(config: DmRingConfig): DmRing {
+  function bytes(ring: Omit<DmRingPayload, 'sig'>): Uint8Array {
+    return encodeCanonicalLines([
+      config.scheme,
+      ring.toUserId,
+      ring.fromUserId,
+      ring.fromName,
+      ring.reason,
+      ring.preview ?? '',
+      ring.deviceKeyId,
+      ...grantLines(ring.deviceGrant),
+    ])
+  }
+
+  return {
+    bytes,
+
+    async sign(signer, fields) {
+      const deviceKeyId = await signer.publicKeyId()
+      const body = { ...fields, deviceKeyId }
+      return { ...body, sig: await signer.sign(bytes(body)) }
+    },
+
+    async verify(ring) {
+      if (ring.deviceGrant) {
+        if (!(await config.grants.verify(ring.deviceGrant))) return false
+        // The grant must be about this sender, and about the very device that
+        // signed this ring — otherwise any valid grant would do.
+        if (ring.deviceGrant.userId !== ring.fromUserId) return false
+        if (ring.deviceGrant.subjectDeviceKeyId !== ring.deviceKeyId) return false
+      }
+      return verifyWithDeviceKeyId(ring.deviceKeyId as DeviceKeyId, bytes(ring), ring.sig)
+    },
+
+    authorizedBy(ring, recordedDeviceKeyId) {
+      if (!recordedDeviceKeyId) return false
+      if (ring.deviceKeyId === recordedDeviceKeyId) return true
+      return grantAuthorizes(
+        ring.deviceGrant,
+        ring.fromUserId,
+        recordedDeviceKeyId,
+        ring.deviceKeyId
+      )
+    },
+  }
 }
 
 const CODE_RE = /^[0-9a-f]{32}$/i
@@ -63,26 +123,30 @@ export function parseDmRingPayload(raw: unknown): DmRingPayload | null {
   const msg = raw as Partial<DmRingPayload>
   if (typeof msg.toUserId !== 'string' || !msg.toUserId.trim()) return null
   if (typeof msg.fromUserId !== 'string' || !msg.fromUserId.trim()) return null
-  if (msg.toUserId === msg.fromUserId) return null
+  // Compared after trimming: otherwise a padded id is a self-ring that slips
+  // through, and both fields are trimmed on the way out anyway.
+  if (msg.toUserId.trim() === msg.fromUserId.trim()) return null
   if (msg.reason !== 'open' && msg.reason !== 'message') return null
   if (typeof msg.deviceKeyId !== 'string' || !msg.deviceKeyId || msg.deviceKeyId.length > 512) return null
   if (typeof msg.sig !== 'string' || !msg.sig || msg.sig.length > 512) return null
-  const fromName =
-    typeof msg.fromName === 'string' && msg.fromName.trim()
-      ? msg.fromName.trim().slice(0, 80)
-      : msg.fromUserId.slice(0, 12)
-  const preview =
-    typeof msg.preview === 'string' && msg.preview.trim()
-      ? msg.preview.trim().slice(0, 120)
-      : undefined
   return {
     toUserId: msg.toUserId.trim(),
     fromUserId: msg.fromUserId.trim(),
-    fromName,
+    fromName:
+      typeof msg.fromName === 'string' && msg.fromName.trim()
+        ? msg.fromName.trim().slice(0, 80)
+        : msg.fromUserId.trim().slice(0, 12),
     reason: msg.reason,
-    preview,
     deviceKeyId: msg.deviceKeyId,
     sig: msg.sig,
+    // Carried through unchecked: the grant is validated where it is verified,
+    // not here, and dropping it silently is what broke second devices.
+    ...(msg.deviceGrant && typeof msg.deviceGrant === 'object' && !Array.isArray(msg.deviceGrant)
+      ? { deviceGrant: msg.deviceGrant as DeviceGrant }
+      : {}),
+    ...(typeof msg.preview === 'string' && msg.preview.trim()
+      ? { preview: msg.preview.trim().slice(0, 120) }
+      : {}),
   }
 }
 

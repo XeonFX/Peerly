@@ -216,13 +216,13 @@ export {
   type DmCredentialStore,
 } from './dmCredentials.js'
 export {
+  createDmRing,
   decideDmRingToast,
-  dmRingBytes,
   DM_RING_TOAST_COOLDOWN_MS,
   isValidDmRoomCode,
   parseDmRingPayload,
-  signDmRing,
-  verifyDmRing,
+  type DmRing,
+  type DmRingConfig,
   type DmRingPayload,
   type DmRingReason,
   type DmRingToastDecision,

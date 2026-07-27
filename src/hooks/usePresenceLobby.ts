@@ -4,11 +4,9 @@ import {
   lookupRendezvousId,
   PRESENCE_INTERVAL_MS,
   signControl,
-  signDmRing,
   verifySignedControl,
   verifyOidcDeviceBinding,
   type OidcDeviceAttestation,
-  verifyDmRing,
   type PresencePayload,
   type SignedControl,
 } from '@peerly/core'
@@ -41,19 +39,23 @@ import {
 import { isPlausibleEmail, normalizeEmail } from '../collab/emailHash'
 import {
   parseDmRingPayload,
+  ringAuthorizedBy,
+  signDmRing,
+  verifyDmRing,
   type DmRingPayload,
   type DmRingReason,
 } from '../collab/dmRing'
+import { findDeviceGrant } from '../collab/deviceAuthorization'
 import { LOBBY_ROOM_ID } from '../collab/mesh'
 import {
   addFriend,
   dmDeviceKeyForFriend,
   dmSecretForFriend,
   isFriend,
+  listFriends,
   loadFriends,
 } from '../collab/friendsStore'
 
-const DM_RING_SCHEME = 'peerly-dm-ring-v2'
 const PRESENCE_SCHEME = 'peerly-presence-v1'
 
 /** Re-send undelivered (or re-deliver) invites while the peer stays online. */
@@ -283,10 +285,12 @@ export function usePresenceLobby({
       const friends = loadFriends()
       if (!isFriend(friends, parsed.fromUserId)) return
       if (presence.get(peerId)?.userId !== parsed.fromUserId) return
-      if (dmDeviceKeyForFriend(friends, parsed.fromUserId) !== parsed.deviceKeyId) return
+      // The recorded device, or one it granted — otherwise a friend's second
+      // device could never reach us.
+      if (!ringAuthorizedBy(parsed, dmDeviceKeyForFriend(friends, parsed.fromUserId))) return
       const secret = dmSecretForFriend(friends, parsed.fromUserId)
       if (!secret) return
-      void verifyDmRing(DM_RING_SCHEME, parsed).then(valid => {
+      void verifyDmRing(parsed).then(valid => {
         if (valid) onDmRingRef.current?.(parsed)
       })
     }
@@ -600,15 +604,27 @@ export function usePresenceLobby({
       if (peerIds.length === 0) return false
       const identity = identityRef.current
       if (!identity) return false
-      void signDmRing(identity, DM_RING_SCHEME, {
-        toUserId,
-        fromUserId: me.userId,
-        fromName: me.name,
-        reason,
-        preview: preview?.trim().slice(0, 120) || undefined,
-      }).then(payload => {
+      void (async () => {
+        // The recipient only trusts the device that recorded the friendship.
+        // Ringing from any other one needs the grant that authorises it.
+        const entry = listFriends(loadFriends()).find(f => f.subjectUserId === toUserId)
+        const currentDeviceKeyId = await identity.publicKeyId()
+        // Their record of us is the device that signed our own entry for them —
+        // both are written in the same exchange — so that is the grant issuer
+        // they will check against.
+        const deviceGrant = entry && entry.deviceKeyId !== currentDeviceKeyId
+          ? findDeviceGrant(me.userId, entry.deviceKeyId, currentDeviceKeyId)
+          : undefined
+        const payload = await signDmRing(identity, {
+          toUserId,
+          fromUserId: me.userId,
+          fromName: me.name,
+          reason,
+          preview: preview?.trim().slice(0, 120) || undefined,
+          ...(deviceGrant ? { deviceGrant } : {}),
+        })
         for (const peerId of peerIds) senders.dmRing(payload, peerId)
-      })
+      })()
       return true
     },
     [profileRef, identityRef]
