@@ -153,7 +153,7 @@ above exists only on preview. Ordered by risk carried, not by effort.
 
 | | Work | Why it is first |
 | --- | --- | --- |
-| A1 | ☐ HeyHubs browser harness, mirroring Peerly's `test:e2e:do` | HeyHubs' DO path has never run in a browser at all, and it is the app that actually *uses* matchmaking, the room directory and the interest queue — Peerly deploys most of that inert. Larger exposure, zero coverage. Assert HeyHubs' loops: two users match on a shared interest, a blocklist prevents a match, a room reaches the other's directory. |
+| A1 | ✅ HeyHubs browser harness (`npm run test:integration:do`) | This app's half of the control plane — the interest queue, the room directory, presence stats — had never run in a browser, and Peerly deploys most of it inert. Standing it up found the provider id hardcoded to `'google'` in four more places, which is invisible while there is one provider and stops a matched pair connecting the moment there are two. |
 | A2 | ☐ TURN smoke test | `probeTurnCapability` with `iceTransportPolicy: 'relay'` against real coturn, on a schedule. The only check that catches the failure class that prompted this rewrite, and still absent. Two browsers on one host connect over host candidates and never touch TURN. Settle whether coturn is reachable at all while doing it. |
 | A3 | ☐ Pairing, sync and revocation in the harness | The riskiest changes of the de-duplication pass move account data between machines and are covered only by unit tests. Two contexts pairing, syncing, then revoking is what actually exercises them. |
 
