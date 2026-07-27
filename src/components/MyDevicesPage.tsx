@@ -118,15 +118,15 @@ export function MyDevicesPage({
                 </div>
               </div>
             )}
-            {secret && !pairing.remote && <p className="text-sm text-warning">{tr('Waiting for the other device…')}</p>}
-            {pairing.remote && !pairing.sent && (
+            {secret && !pairing.remoteFingerprint && <p className="text-sm text-warning">{tr('Waiting for the other device…')}</p>}
+            {pairing.remoteFingerprint && !pairing.approved && (
               <div className="rounded-box border border-warning/40 bg-warning/10 p-4">
-                <p className="text-sm">{tr('Confirm that this fingerprint matches the other device:')} <span className="font-mono font-semibold">{deviceFingerprint(pairing.remote.deviceKeyId)}</span></p>
+                <p className="text-sm">{tr('Confirm that this fingerprint matches the other device:')} <span className="font-mono font-semibold">{pairing.remoteFingerprint}</span></p>
                 <button className="btn btn-primary btn-sm mt-3" type="button" onClick={() => void pairing.approve()}>{tr('Approve device')}</button>
               </div>
             )}
-            {pairing.sent && !pairing.linked && <p className="text-sm text-warning">{tr('Approved here. Confirm on the other device too.')}</p>}
-            {pairing.linked && <div className="alert alert-success text-sm">{role === 'target' && pairing.synced === null ? tr('Approved. Syncing data…') : tr('Device approved and sync enabled.')}</div>}
+            {pairing.approved && !pairing.linked && <p className="text-sm text-warning">{tr('Approved here. Confirm on the other device too.')}</p>}
+            {pairing.linked && <div className="alert alert-success text-sm">{role === 'target' && pairing.syncedKeys === null ? tr('Approved. Syncing data…') : tr('Device approved and sync enabled.')}</div>}
             <p className="text-xs text-base-content/50">{tr('Pair only devices you control. Approval is mutual and the pairing link is a one-time secret.')}</p>
           </div>
         </section>

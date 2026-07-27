@@ -712,3 +712,11 @@ export {
   type ApprovedDeviceSyncConfig,
   type SyncHello,
 } from './reactDeviceSync.js'
+
+export {
+  useDevicePairing,
+  type DevicePairing,
+  type DevicePairingConfig,
+  type PairHello,
+  type PairRole,
+} from './reactDevicePairing.js'
