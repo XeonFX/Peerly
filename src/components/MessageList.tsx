@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { formatMessageTimestamp, groupConsecutiveMessages } from '@peerly/core'
+import { useClockFormat } from '@peerly/core/react'
 import type { FileTransfer, Message, Peer, SharedFile, UserProfile } from '../types'
-import { formatBytes, formatTime } from '../utils/format'
+import { formatBytes } from '../utils/format'
 import { isInlineImageType, isInlineVideoType } from '../utils/fileType'
 import { isProbablyNsfwUrlCached } from '../collab/nsfwGate'
 import { buildSenderDirectory, resolveSenderInfo } from '../utils/senderDirectory'
@@ -164,7 +166,8 @@ export function MessageList({
   onDeleteMessage,
   onToggleReaction,
 }: Props) {
-  const { tr } = useI18n()
+  const { locale, tr } = useI18n()
+  const { clockFormat } = useClockFormat()
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
@@ -175,6 +178,14 @@ export function MessageList({
   const senderDirectory = useMemo(
     () => buildSenderDirectory(selfId, selfProfile, peers, messages, pastSelfIds, selfUserId),
     [selfId, selfProfile, peers, messages, pastSelfIds, selfUserId]
+  )
+  const messageGroups = useMemo(
+    () =>
+      groupConsecutiveMessages(messages, {
+        authorId: message => message.senderUserId ?? message.senderId,
+        timestamp: message => message.timestamp,
+      }),
+    [messages]
   )
 
   const handleScroll = () => {
@@ -258,118 +269,144 @@ export function MessageList({
         onScroll={handleScroll}
         className="message-list flex-1 overflow-y-auto px-3 py-4 sm:px-5"
       >
-        {messages.map(msg => {
-          const sender = resolveSenderInfo(msg, senderDirectory, peers)
-          const ownMessage = selfUserId
-            ? msg.senderUserId === selfUserId
-            : msg.senderId === selfId || pastSelfIds.includes(msg.senderId)
-          const activeReactions = (msg.reactions ?? []).filter(reaction => reaction.active)
-          const reactionCounts = activeReactions.reduce<Record<string, number>>((counts, reaction) => {
-            counts[reaction.emoji] = (counts[reaction.emoji] ?? 0) + 1
-            return counts
-          }, {})
+        {messageGroups.flatMap(group => {
+          const firstMessage = group.messages[0]
+          if (!firstMessage) return []
+          const sender = resolveSenderInfo(firstMessage, senderDirectory, peers)
 
-          return (
-            <div
-              key={msg.id}
-              className="chat-message-row group flex gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-base-200/40"
-              data-testid="chat-message"
-            >
-              {/* size="md" is deliberate: message avatars were previously sized up
-                from `sm` by a CSS override, so plain `sm` would shrink them. */}
-              <Avatar name={sender.name} color={sender.color} avatar={sender.avatar} size="md" />
+          return group.messages.map((msg, index) => {
+            const startsGroup = index === 0
+            const ownMessage = selfUserId
+              ? msg.senderUserId === selfUserId
+              : msg.senderId === selfId || pastSelfIds.includes(msg.senderId)
+            const activeReactions = (msg.reactions ?? []).filter(reaction => reaction.active)
+            const reactionCounts = activeReactions.reduce<Record<string, number>>((counts, reaction) => {
+              counts[reaction.emoji] = (counts[reaction.emoji] ?? 0) + 1
+              return counts
+            }, {})
 
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="truncate text-sm font-semibold text-base-content">
-                    {sender.name}
-                  </span>
-                  <span className="shrink-0 text-[0.7rem] text-base-content/60">
-                    {formatTime(msg.timestamp)}
-                  </span>
-                  {msg.editedAt && !msg.deletedAt && (
-                    <span className="text-[0.65rem] text-base-content/65">{tr('edited')}</span>
-                  )}
-                  {ownMessage && msg.type === 'text' && !msg.deletedAt && (
-                    <span className="ml-auto flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs btn-square"
-                        aria-label={tr('Edit message')}
-                        title={tr('Edit message')}
-                        onClick={() => {
-                          const text = window.prompt(tr('Edit message'), msg.text)?.trim()
-                          if (text && text !== msg.text) onEditMessage(msg.id, text)
-                        }}
+            return (
+              <div
+                key={msg.id}
+                className={`chat-message-row group flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/40 ${
+                  startsGroup ? 'mt-2 py-1.5 first:mt-0' : 'py-0.5'
+                }`}
+                data-testid="chat-message"
+                data-message-group-start={startsGroup ? 'true' : 'false'}
+              >
+                {startsGroup ? (
+                  /* One avatar/name header represents the consecutive block. */
+                  <Avatar name={sender.name} color={sender.color} avatar={sender.avatar} size="md" />
+                ) : (
+                  <span className="w-10 shrink-0" aria-hidden="true" />
+                )}
+
+                <div className="min-w-0 flex-1">
+                  {startsGroup && (
+                    <div className="flex items-baseline gap-2">
+                      <span className="truncate text-sm font-semibold text-base-content">
+                        {sender.name}
+                      </span>
+                      <time
+                        className="shrink-0 text-[0.7rem] text-base-content/60"
+                        dateTime={new Date(msg.timestamp).toISOString()}
+                        data-testid="message-time"
                       >
-                        <Icon name="pencil" size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs btn-square text-error"
-                        aria-label={tr('Delete message')}
-                        title={tr('Delete message')}
-                        onClick={() => {
-                          if (window.confirm(tr('Delete this message for everyone online?'))) {
-                            onDeleteMessage(msg.id)
-                          }
-                        }}
-                      >
-                        <Icon name="trash" size={13} />
-                      </button>
-                    </span>
-                  )}
-                </div>
-
-                <div className="text-sm leading-relaxed text-base-content/90">
-                  {msg.deletedAt ? (
-                    <p className="italic text-base-content/65">{tr('Message deleted')}</p>
-                  ) : msg.type === 'text' ? (
-                    <SafeMessageText text={msg.text} />
-                  ) : msg.file ? (
-                    <div className="mt-1">
-                      <FileAttachment
-                        file={msg.file}
-                        transfer={transfers.find(
-                          t => t.id === msg.file?.id && t.direction === 'receive'
-                        )}
-                        onRequest={file => onRequestFile(file, msg.channelId)}
-                        onNsfwVerdict={onNsfwVerdict}
-                      />
+                        {formatMessageTimestamp(msg.timestamp, {
+                          clockFormat,
+                          includeDate: group.startsDay,
+                          locale,
+                        })}
+                      </time>
                     </div>
-                  ) : null}
-                </div>
-                {!msg.deletedAt && (
-                  <div className="mt-1 flex flex-wrap items-center gap-1">
-                    {Object.entries(reactionCounts).map(([emoji, count]) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        className="badge badge-outline h-6 gap-1 border-base-300 bg-base-100 hover:border-primary/50"
-                        onClick={() => onToggleReaction(msg.id, emoji)}
-                        aria-label={tr('{emoji} reaction, {count}', { emoji, count })}
-                      >
-                        <span>{emoji}</span><span>{count}</span>
-                      </button>
-                    ))}
-                    <span className="flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                      {['👍', '❤️', '😂', '🎉'].map(emoji => (
+                  )}
+
+                  <div className="flex items-start gap-1">
+                    <div className="min-w-0 flex-1 text-sm leading-relaxed text-base-content/90">
+                      {msg.deletedAt ? (
+                        <p className="italic text-base-content/65">{tr('Message deleted')}</p>
+                      ) : msg.type === 'text' ? (
+                        <SafeMessageText text={msg.text} />
+                      ) : msg.file ? (
+                        <div className="mt-1">
+                          <FileAttachment
+                            file={msg.file}
+                            transfer={transfers.find(
+                              t => t.id === msg.file?.id && t.direction === 'receive'
+                            )}
+                            onRequest={file => onRequestFile(file, msg.channelId)}
+                            onNsfwVerdict={onNsfwVerdict}
+                          />
+                        </div>
+                      ) : null}
+                      {msg.editedAt && !msg.deletedAt && (
+                        <span className="ml-1 text-[0.65rem] text-base-content/65">
+                          {tr('edited')}
+                        </span>
+                      )}
+                    </div>
+                    {ownMessage && msg.type === 'text' && !msg.deletedAt && (
+                      <span className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs btn-square"
+                          aria-label={tr('Edit message')}
+                          title={tr('Edit message')}
+                          onClick={() => {
+                            const text = window.prompt(tr('Edit message'), msg.text)?.trim()
+                            if (text && text !== msg.text) onEditMessage(msg.id, text)
+                          }}
+                        >
+                          <Icon name="pencil" size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs btn-square text-error"
+                          aria-label={tr('Delete message')}
+                          title={tr('Delete message')}
+                          onClick={() => {
+                            if (window.confirm(tr('Delete this message for everyone online?'))) {
+                              onDeleteMessage(msg.id)
+                            }
+                          }}
+                        >
+                          <Icon name="trash" size={13} />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                  {!msg.deletedAt && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      {Object.entries(reactionCounts).map(([emoji, count]) => (
                         <button
                           key={emoji}
                           type="button"
-                          className="btn btn-ghost btn-xs btn-square"
+                          className="badge badge-outline h-6 gap-1 border-base-300 bg-base-100 hover:border-primary/50"
                           onClick={() => onToggleReaction(msg.id, emoji)}
-                          aria-label={tr('React {emoji}', { emoji })}
+                          aria-label={tr('{emoji} reaction, {count}', { emoji, count })}
                         >
-                          {emoji}
+                          <span>{emoji}</span><span>{count}</span>
                         </button>
                       ))}
-                    </span>
-                  </div>
-                )}
+                      <span className="flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        {['👍', '❤️', '😂', '🎉'].map(emoji => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            className="btn btn-ghost btn-xs btn-square"
+                            onClick={() => onToggleReaction(msg.id, emoji)}
+                            aria-label={tr('React {emoji}', { emoji })}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )
+            )
+          })
         })}
         <div ref={bottomRef} />
       </div>

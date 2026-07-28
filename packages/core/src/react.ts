@@ -1,5 +1,15 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import {
   credentialNeedsRenewal,
   credentialRenewalDelay,
@@ -7,6 +17,55 @@ import {
   DEFAULT_CREDENTIAL_RENEW_BEFORE_MS,
   DEFAULT_CREDENTIAL_RETRY_MS,
 } from './credentialRenewal.js'
+import {
+  loadClockFormat,
+  saveClockFormat,
+  type ClockFormat,
+} from './format.js'
+
+type ClockFormatContextValue = {
+  clockFormat: ClockFormat
+  setClockFormat: (clockFormat: ClockFormat) => void
+}
+
+const ClockFormatContext = createContext<ClockFormatContextValue | null>(null)
+
+export type ClockFormatProviderProps = {
+  appId: string
+  children: ReactNode
+  storage?: Storage
+}
+
+/** App-scoped, device-local clock preference shared by all chat surfaces. */
+export function ClockFormatProvider({
+  appId,
+  children,
+  storage,
+}: ClockFormatProviderProps) {
+  const [clockFormat, setClockFormatState] = useState<ClockFormat>(() =>
+    loadClockFormat(appId, storage)
+  )
+  const value = useMemo<ClockFormatContextValue>(
+    () => ({
+      clockFormat,
+      setClockFormat: next => {
+        saveClockFormat(appId, next, storage)
+        setClockFormatState(next)
+      },
+    }),
+    [appId, clockFormat, storage]
+  )
+
+  return createElement(ClockFormatContext.Provider, { value }, children)
+}
+
+export function useClockFormat(): ClockFormatContextValue {
+  const value = useContext(ClockFormatContext)
+  if (!value) {
+    throw new Error('useClockFormat must be used inside <ClockFormatProvider>')
+  }
+  return value
+}
 
 /** Keeps a ref synced with the latest value — avoids stale closures in long-lived subscriptions. */
 export function useLatest<T>(value: T) {

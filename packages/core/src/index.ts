@@ -152,7 +152,22 @@ export {
   type VerifyGoogleIdTokenOptions,
 } from './googleIdToken.js'
 export { avatarInitial, getPeerColor, PEER_COLORS } from './identicon.js'
-export { formatClockTime } from './format.js'
+export {
+  clockFormatPreferenceKey,
+  DEFAULT_CLOCK_FORMAT,
+  formatClockTime,
+  formatMessageTimestamp,
+  loadClockFormat,
+  saveClockFormat,
+  type ClockFormat,
+  type TimestampFormatOptions,
+} from './format.js'
+export {
+  DEFAULT_MESSAGE_GROUP_WINDOW_MS,
+  groupConsecutiveMessages,
+  type ConsecutiveMessageGroup,
+  type GroupConsecutiveMessagesOptions,
+} from './messagePresentation.js'
 export {
   applyDocumentLocaleMetadata,
   type DocumentLocaleMetadata,

@@ -1066,7 +1066,7 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(page.locator('.message-list .avatar-img')).toBeVisible()
   })
 
-  test('avatar image appears on every chat message after upload', async ({ page }) => {
+  test('avatar image appears once for grouped consecutive messages after upload', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await openProfile(page)
 
@@ -1082,7 +1082,8 @@ test.describe('Peerly P2P collaboration', () => {
     await page.getByTestId('profile-back').click()
     await sendMessage(page, 'First message')
     await sendMessage(page, 'Second message')
-    await expect(page.locator('[data-testid="chat-message"] .avatar-img')).toHaveCount(2)
+    await expect(page.locator('[data-testid="chat-message"] .avatar-img')).toHaveCount(1)
+    await expect(page.locator('[data-testid="chat-message"][data-message-group-start="false"]')).toHaveCount(1)
   })
 
   test('peer avatar updates on existing messages after upload', async ({ browser }) => {

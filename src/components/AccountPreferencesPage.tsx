@@ -10,6 +10,7 @@ import {
   uploadAvatar,
 } from '../collab/avatarService'
 import { Avatar } from './Avatar'
+import { useClockFormat } from '@peerly/core/react'
 
 type Props = {
   email: string
@@ -29,6 +30,7 @@ export function AccountPreferencesPage({
   onSignOut,
 }: Props) {
   const { locale, setLocale, t, tr } = useI18n()
+  const { clockFormat, setClockFormat } = useClockFormat()
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [avatarPreview, setAvatarPreview] = useState(profile.avatar)
   const [uploading, setUploading] = useState(false)
@@ -236,6 +238,20 @@ export function AccountPreferencesPage({
                 >
                   <option value="en">English</option>
                   <option value="pl">Polski</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <span>{tr('Time format')}</span>
+                <select
+                  id="clock-format"
+                  name="clockFormat"
+                  className="select select-bordered select-sm"
+                  value={clockFormat}
+                  onChange={event => setClockFormat(event.target.value as '24-hour' | '12-hour')}
+                  data-testid="clock-format-select"
+                >
+                  <option value="24-hour">{tr('24-hour')}</option>
+                  <option value="12-hour">{tr('12-hour')}</option>
                 </select>
               </label>
             </div>

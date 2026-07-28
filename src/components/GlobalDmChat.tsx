@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { formatMessageTimestamp, groupConsecutiveMessages } from '@peerly/core'
+import { useClockFormat } from '@peerly/core/react'
 import type { GlobalDmMessage } from '../collab/globalDmHistory'
 import type { GlobalDmReaction } from '../collab/globalDmHistory'
 import type { GlobalDmTransfer } from '../hooks/useGlobalDmChat'
@@ -8,7 +10,7 @@ import { safeThumbnailUrl } from '../utils/avatarUrl'
 import { Icon } from './Icon'
 import { Avatar } from './Avatar'
 import { SafeMessageText } from './SafeMessageText'
-import { formatBytes, formatTime } from '../utils/format'
+import { formatBytes } from '../utils/format'
 import type { UserProfile } from '../types'
 
 type Props = {
@@ -59,7 +61,8 @@ export function GlobalDmChat({
   onPendingMessageConsumed,
   onClose,
 }: Props) {
-  const { tr } = useI18n()
+  const { locale, tr } = useI18n()
+  const { clockFormat } = useClockFormat()
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -72,6 +75,20 @@ export function GlobalDmChat({
       `${message.text} ${message.attachment?.name ?? ''} ${message.name}`.toLocaleLowerCase().includes(needle)
     )
   }, [messages, searchQuery])
+  const presentedMessages = useMemo(
+    () =>
+      groupConsecutiveMessages(visibleMessages, {
+        authorId: message => message.authorUserId ?? message.deviceKeyId,
+        timestamp: message => message.ts,
+      }).flatMap(group =>
+        group.messages.map((message, index) => ({
+          message,
+          startsDay: group.startsDay,
+          startsGroup: index === 0,
+        }))
+      ),
+    [visibleMessages]
+  )
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -169,7 +186,7 @@ export function GlobalDmChat({
             </div>
           </div>
         ) : (
-          visibleMessages.map(msg => {
+          presentedMessages.map(({ message: msg, startsDay, startsGroup }) => {
             const mine = msg.authorUserId === selfUserId
             const body = msg.deletedAt ? tr('Message deleted') : msg.text
             const activeReactions = reactions.filter(reaction => reaction.messageId === msg.id && reaction.active)
@@ -184,67 +201,80 @@ export function GlobalDmChat({
             return (
               <div
                 key={msg.id}
-                className="chat-message-row group flex gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-base-200/40"
+                className={`chat-message-row group flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/40 ${
+                  startsGroup ? 'mt-2 py-1.5 first:mt-0' : 'py-0.5'
+                }`}
                 data-testid={mine ? 'global-dm-mine' : 'global-dm-theirs'}
+                data-message-group-start={startsGroup ? 'true' : 'false'}
               >
-                <span data-testid="global-dm-avatar">
-                  <Avatar
-                    name={senderName}
-                    color={mine ? selfProfile.color : '#5865f2'}
-                    avatar={mine ? selfProfile.avatar : undefined}
-                    size="md"
-                  />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="truncate text-sm font-semibold text-base-content">{senderName}</span>
-                    <time
-                      className="shrink-0 text-[0.7rem] text-base-content/60"
-                      dateTime={new Date(msg.ts).toISOString()}
-                      data-testid="global-dm-time"
-                    >
-                      {formatTime(msg.ts)}
-                    </time>
-                    {msg.editedAt && !msg.deletedAt && (
-                      <span className="text-[0.65rem] text-base-content/65">{tr('edited')}</span>
-                    )}
-                    {mine && !msg.deletedAt && (
-                      <span className="ml-auto flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                        {!attachment && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs btn-square"
-                            aria-label={tr('Edit message')}
-                            title={tr('Edit message')}
-                            onClick={() => {
-                              const next = window.prompt(tr('Edit message'), msg.text)?.trim()
-                              if (next && next !== msg.text) onEdit(msg.id, next)
-                            }}
-                          >
-                            <Icon name="pencil" size={13} />
-                          </button>
-                        )}
+                {startsGroup ? (
+                  <span data-testid="global-dm-avatar">
+                    <Avatar
+                      name={senderName}
+                      color={mine ? selfProfile.color : '#5865f2'}
+                      avatar={mine ? selfProfile.avatar : undefined}
+                      size="md"
+                    />
+                  </span>
+                ) : (
+                  <span className="w-10 shrink-0" aria-hidden="true" />
+                )}
+                <div className="relative min-w-0 flex-1">
+                  {startsGroup && (
+                    <div className="flex items-baseline gap-2">
+                      <span className="truncate text-sm font-semibold text-base-content">{senderName}</span>
+                      <time
+                        className="shrink-0 text-[0.7rem] text-base-content/60"
+                        dateTime={new Date(msg.ts).toISOString()}
+                        data-testid="global-dm-time"
+                      >
+                        {formatMessageTimestamp(msg.ts, {
+                          clockFormat,
+                          includeDate: startsDay,
+                          locale,
+                        })}
+                      </time>
+                    </div>
+                  )}
+                  {mine && !msg.deletedAt && (
+                    <span className="absolute right-0 top-0 flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      {!attachment && (
                         <button
                           type="button"
-                          className="btn btn-ghost btn-xs btn-square text-error"
-                          aria-label={tr('Delete message')}
-                          title={tr('Delete message')}
+                          className="btn btn-ghost btn-xs btn-square"
+                          aria-label={tr('Edit message')}
+                          title={tr('Edit message')}
                           onClick={() => {
-                            if (window.confirm(tr('Delete this message for everyone online?'))) {
-                              onDelete(msg.id)
-                            }
+                            const next = window.prompt(tr('Edit message'), msg.text)?.trim()
+                            if (next && next !== msg.text) onEdit(msg.id, next)
                           }}
                         >
-                          <Icon name="trash" size={13} />
+                          <Icon name="pencil" size={13} />
                         </button>
-                      </span>
-                    )}
-                  </div>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs btn-square text-error"
+                        aria-label={tr('Delete message')}
+                        title={tr('Delete message')}
+                        onClick={() => {
+                          if (window.confirm(tr('Delete this message for everyone online?'))) {
+                            onDelete(msg.id)
+                          }
+                        }}
+                      >
+                        <Icon name="trash" size={13} />
+                      </button>
+                    </span>
+                  )}
                   {(msg.deletedAt || body) && (
                     <div className="text-sm leading-relaxed text-base-content/90">
                       {msg.deletedAt
                         ? <p className="italic text-base-content/65">{body}</p>
                         : <SafeMessageText text={body} />}
+                      {msg.editedAt && !msg.deletedAt && (
+                        <span className="ml-1 text-[0.65rem] text-base-content/65">{tr('edited')}</span>
+                      )}
                     </div>
                   )}
                   {!msg.deletedAt && attachment && (
