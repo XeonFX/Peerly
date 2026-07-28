@@ -55,7 +55,8 @@
     "test:bump": "node --test scripts/bump-version.test.mjs",
     "test:e2e:do": "VITE_APP_ID=peerly playwright test -c playwright.do.config.ts",
     "turn:smoke": "node packages/core/scripts/turn-smoke.mjs",
-    "typecheck": "VITE_APP_ID=peerly tsc -b"
+    "typecheck": "VITE_APP_ID=peerly tsc -b",
+    "build:e2e": "VITE_APP_ID=peerly tsc -b && VITE_APP_ID=peerly vite build && node scripts/check-e2e-fixtures.mjs"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

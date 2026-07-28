@@ -31,7 +31,11 @@ function runToCompletion(command, args, env) {
   }
 }
 
-runToCompletion('npm', ['run', 'build'], {
+// `build:e2e`, not `build`: the shared build runs `guard:bundle`, which must
+// stay an unconditional "this artefact may not ship" check rather than one an
+// environment variable can talk out of. The E2E path asserts the opposite —
+// that the fixtures *are* present — in check-e2e-fixtures.mjs.
+runToCompletion('npm', ['run', 'build:e2e'], {
   VITE_APP_ID: 'peerly',
   VITE_SIGNALING: 'durable-objects',
   VITE_E2E_AUTH_BYPASS: 'true',

@@ -49,29 +49,6 @@ for (const file of files) {
   }
 }
 
-/**
- * A build that asked for the bypass is *expected* to carry the fixtures — that
- * is what the bypass is. Inverting the check there keeps this honest in both
- * directions: a deployable build must not contain them, and an E2E build must,
- * because a silently key-less one would fail later as a signature error with
- * nothing pointing at the cause.
- */
-if (process.env.VITE_E2E_AUTH_BYPASS === 'true') {
-  if (violations.length === 0) {
-    console.error(
-      'guard:bundle FAILED — VITE_E2E_AUTH_BYPASS=true but the E2E fixtures were\n' +
-        'dropped from the bundle. Sign-in would fail with an unexplained bad\n' +
-        'signature. This build is for testing and must not be deployed.'
-    )
-    process.exit(1)
-  }
-  console.log(
-    `guard:bundle — E2E build: fixtures present in ${files.length} bundled files, as intended.\n` +
-      'DO NOT DEPLOY this output.'
-  )
-  process.exit(0)
-}
-
 if (violations.length > 0) {
   console.error('guard:bundle FAILED — forbidden credential material is in the production bundle:\n')
   for (const violation of violations) console.error(`  - ${violation}`)
