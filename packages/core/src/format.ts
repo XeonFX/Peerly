@@ -1,15 +1,19 @@
 export type ClockFormat = '24-hour' | '12-hour'
+export type DateFormat = 'day-first' | 'month-first' | 'iso'
 
 export const DEFAULT_CLOCK_FORMAT: ClockFormat = '24-hour'
+export const DEFAULT_DATE_FORMAT: DateFormat = 'day-first'
 
 export type TimestampFormatOptions = {
   clockFormat?: ClockFormat
+  dateFormat?: DateFormat
   includeDate?: boolean
   locale?: Intl.LocalesArgument
   timeZone?: string
 }
 
 const CLOCK_FORMAT_STORAGE_SUFFIX = 'clock-format'
+const DATE_FORMAT_STORAGE_SUFFIX = 'date-format'
 
 function dateTimeOptions(
   clockFormat: ClockFormat,
@@ -45,17 +49,30 @@ export function formatMessageTimestamp(
 ): string {
   const {
     clockFormat = DEFAULT_CLOCK_FORMAT,
+    dateFormat = DEFAULT_DATE_FORMAT,
     includeDate = false,
     locale,
     timeZone,
   } = options
-  const formatterOptions: Intl.DateTimeFormatOptions = {
-    ...dateTimeOptions(clockFormat, timeZone),
-    ...(includeDate
-      ? { year: 'numeric', month: 'short', day: 'numeric' }
-      : {}),
-  }
-  return new Intl.DateTimeFormat(locale, formatterOptions).format(timestamp)
+  const time = formatClockTime(timestamp, { clockFormat, locale, timeZone })
+  if (!includeDate) return time
+
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone,
+    })
+      .formatToParts(timestamp)
+      .map(part => [part.type, part.value])
+  )
+  const date = dateFormat === 'iso'
+    ? `${parts.year}-${parts.month}-${parts.day}`
+    : dateFormat === 'month-first'
+      ? `${parts.month}/${parts.day}/${parts.year}`
+      : `${parts.day}/${parts.month}/${parts.year}`
+  return `${date}, ${time}`
 }
 
 export function clockFormatPreferenceKey(appId: string): string {
@@ -78,4 +95,26 @@ export function saveClockFormat(
   storage: Storage = localStorage
 ): void {
   storage.setItem(clockFormatPreferenceKey(appId), clockFormat)
+}
+
+export function dateFormatPreferenceKey(appId: string): string {
+  return `${appId}-${DATE_FORMAT_STORAGE_SUFFIX}`
+}
+
+export function loadDateFormat(
+  appId: string,
+  storage: Storage = localStorage
+): DateFormat {
+  const stored = storage.getItem(dateFormatPreferenceKey(appId))
+  return stored === 'day-first' || stored === 'month-first' || stored === 'iso'
+    ? stored
+    : DEFAULT_DATE_FORMAT
+}
+
+export function saveDateFormat(
+  appId: string,
+  dateFormat: DateFormat,
+  storage: Storage = localStorage
+): void {
+  storage.setItem(dateFormatPreferenceKey(appId), dateFormat)
 }

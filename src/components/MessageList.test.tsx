@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { ClockFormatProvider } from '@peerly/core/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n'
@@ -33,6 +33,7 @@ describe('MessageList presentation', () => {
 
   it('renders consecutive messages as lines under one dated sender header', () => {
     const firstTimestamp = new Date(2026, 6, 28, 14, 5).getTime()
+    const onOpenAuthor = vi.fn()
     render(
       <ClockFormatProvider appId="peerly-test">
         <I18nProvider>
@@ -53,6 +54,7 @@ describe('MessageList presentation', () => {
             onDeleteMessage={vi.fn()}
             onToggleReaction={vi.fn()}
             onReplyMessage={vi.fn()}
+            onOpenAuthor={onOpenAuthor}
           />
         </I18nProvider>
       </ClockFormatProvider>
@@ -78,5 +80,12 @@ describe('MessageList presentation', () => {
     expect(timestamps[0]?.textContent).toContain('2026')
     expect(timestamps[0]?.textContent).toContain('14:05')
     expect(timestamps[1]?.textContent).not.toContain('2026')
+
+    fireEvent.click(screen.getByLabelText('Open Alice profile'))
+    expect(onOpenAuthor).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'one' }),
+      expect.objectContaining({ name: 'Alice' }),
+      false
+    )
   })
 })

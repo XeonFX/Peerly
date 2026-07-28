@@ -418,9 +418,11 @@ test.describe('Peerly P2P collaboration', () => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await page.getByTestId('workspace-settings-open').click()
     await expect(page.getByTestId('workspace-settings-page')).toBeVisible()
-    await page.getByTestId('workspace-name').fill('Renamed team')
+    await page.getByTestId('workspace-name').fill('Dream Team')
+    await expect(page).toHaveURL(/\/workspace\/Dream-Team\/settings$/)
     await page.getByTestId('workspace-settings-back').click()
-    await expect(page.locator('.workspace-name')).toContainText('Renamed team')
+    await expect(page.locator('.workspace-name')).toContainText('Dream Team')
+    await expect(page).toHaveURL(/\/workspace\/Dream-Team\/channel\/general$/)
   })
 
   test('the workspace secret is never displayed in the UI', async ({ page }) => {
@@ -581,6 +583,17 @@ test.describe('Peerly P2P collaboration', () => {
       await bob.getByTestId('chat-message').last().hover()
       await bob.getByLabel('React 👍').last().click()
       await expect(alice.getByLabel('👍 reaction, 1')).toBeVisible({ timeout: 15_000 })
+
+      await bob.getByTestId('chat-message').last().hover()
+      await bob.getByLabel('Add reaction').last().click()
+      const picker = bob.getByTestId('message-reaction-picker')
+      await expect(picker).toBeVisible()
+      const pickerBox = await picker.boundingBox()
+      expect(pickerBox?.y).toBeGreaterThanOrEqual(0)
+      expect((pickerBox?.y ?? 0) + (pickerBox?.height ?? 0)).toBeLessThanOrEqual(
+        await bob.evaluate(() => window.innerHeight)
+      )
+      await bob.keyboard.press('Escape')
 
       alice.once('dialog', dialog => void dialog.accept())
       await alice.getByTestId('chat-message').last().hover()
@@ -1141,6 +1154,12 @@ test.describe('Peerly P2P collaboration', () => {
 
   test('workspace members open profile cards without workspace-local DMs', async ({ browser }) => {
     await withTwoUsers(browser, async (alice, bob) => {
+      await sendMessage(bob, 'Open me from chat')
+      await expectMessage(alice, 'Open me from chat')
+      await alice.getByLabel('Open Bob profile').last().click()
+      await expect(alice.getByTestId('workspace-member-popover')).toContainText('Bob')
+      await alice.getByTestId('workspace-member-popover').getByLabel('Close').click()
+
       await alice.getByTestId('member-Bob').click()
       const card = alice.getByTestId('workspace-member-popover')
       await expect(card).toContainText('Bob')
@@ -1214,6 +1233,9 @@ test.describe('Peerly P2P collaboration', () => {
         'datetime',
         /\d{4}-\d{2}-\d{2}T/
       )
+      await bob.getByTestId('global-dm-theirs').getByTestId('global-dm-avatar').click()
+      await expect(bob.getByTestId('workspace-member-popover')).toContainText(accounts.aliceEmail)
+      await bob.getByTestId('workspace-member-popover').getByLabel('Close').click()
       await bob.getByTestId('global-dm-theirs').hover()
       await bob.getByLabel('React 👍').click()
       await expect(alice.getByTestId('global-dm-messages')).toContainText('👍 1', { timeout: 15_000 })

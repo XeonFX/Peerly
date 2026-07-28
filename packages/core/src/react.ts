@@ -19,13 +19,18 @@ import {
 } from './credentialRenewal.js'
 import {
   loadClockFormat,
+  loadDateFormat,
   saveClockFormat,
+  saveDateFormat,
   type ClockFormat,
+  type DateFormat,
 } from './format.js'
 
 type ClockFormatContextValue = {
   clockFormat: ClockFormat
+  dateFormat: DateFormat
   setClockFormat: (clockFormat: ClockFormat) => void
+  setDateFormat: (dateFormat: DateFormat) => void
 }
 
 const ClockFormatContext = createContext<ClockFormatContextValue | null>(null)
@@ -45,15 +50,23 @@ export function ClockFormatProvider({
   const [clockFormat, setClockFormatState] = useState<ClockFormat>(() =>
     loadClockFormat(appId, storage)
   )
+  const [dateFormat, setDateFormatState] = useState<DateFormat>(() =>
+    loadDateFormat(appId, storage)
+  )
   const value = useMemo<ClockFormatContextValue>(
     () => ({
       clockFormat,
+      dateFormat,
       setClockFormat: next => {
         saveClockFormat(appId, next, storage)
         setClockFormatState(next)
       },
+      setDateFormat: next => {
+        saveDateFormat(appId, next, storage)
+        setDateFormatState(next)
+      },
     }),
-    [appId, clockFormat, storage]
+    [appId, clockFormat, dateFormat, storage]
   )
 
   return createElement(ClockFormatContext.Provider, { value }, children)

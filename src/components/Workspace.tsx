@@ -37,6 +37,10 @@ import { MessageSearch } from './MessageSearch'
 import { WorkspaceSettingsPanel } from './workspace/WorkspaceSettingsPanel'
 import { useI18n } from '../i18n'
 import type { WorkspaceRoute } from '../routing'
+import {
+  WorkspaceMemberPopover,
+  type WorkspaceMemberSelection,
+} from './WorkspaceMemberPopover'
 
 type FriendRow = {
   subjectUserId: string
@@ -168,6 +172,7 @@ function WorkspaceShell({
   const { selfId, selfUserId, pastSelfIds, profile, peers } = useProfileSlice()
   const channel = getChannelById(channels, activeChannel)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [selectedMember, setSelectedMember] = useState<WorkspaceMemberSelection | null>(null)
 
   // Cmd/Ctrl+K opens workspace-wide message search from anywhere.
   useEffect(() => {
@@ -270,12 +275,7 @@ function WorkspaceShell({
         onDeleteChannel={handleDeleteChannel}
         onMoveChannel={handleMoveChannel}
         canMessageUser={canMessageUser}
-        onRequestFriend={onRequestFriend}
-        onSendDirectMessage={onSendDirectMessage}
-        onEditProfile={() => {
-          onEditProfile()
-          onSidebarOpenChange(false)
-        }}
+        onOpenMember={setSelectedMember}
         onWorkspaceSettings={() => {
           onWorkspaceSettings()
           onSidebarOpenChange(false)
@@ -333,6 +333,10 @@ function WorkspaceShell({
             showFiles={showFiles}
             onOpenSidebar={() => onSidebarOpenChange(true)}
             onOpenSearch={() => setSearchOpen(true)}
+            resolvePeerContact={resolvePeerContact}
+            isFriend={isFriend}
+            canMessageUser={canMessageUser}
+            onOpenMember={setSelectedMember}
           />
         )}
       </main>
@@ -360,6 +364,16 @@ function WorkspaceShell({
           onRequestFile={file => requestFile(file, activeChannel)}
         />
       )}
+      <WorkspaceMemberPopover
+        member={selectedMember}
+        onClose={() => setSelectedMember(null)}
+        onEditProfile={() => {
+          setSelectedMember(null)
+          onEditProfile()
+        }}
+        onRequestFriend={onRequestFriend}
+        onSendMessage={onSendDirectMessage}
+      />
     </div>
   )
 }
@@ -476,7 +490,6 @@ export function Workspace({
   const openChannel = (id: string) => {
     onWorkspaceRouteChange({
       screen: 'workspace',
-      workspaceName: session.workspaceName,
       view: 'channel',
       channelId: id,
       showFiles: workspaceRoute.view === 'channel' ? workspaceRoute.showFiles : false,
@@ -529,11 +542,10 @@ export function Workspace({
         onChannelSelect={openChannel}
         onChannelsUpdated={refreshChannels}
         onEditProfile={onOpenProfile}
-        onWorkspaceSettings={() => onWorkspaceRouteChange({ screen: 'workspace', workspaceName: session.workspaceName, view: 'settings' })}
+        onWorkspaceSettings={() => onWorkspaceRouteChange({ screen: 'workspace', view: 'settings' })}
         onToggleFiles={() =>
           onWorkspaceRouteChange({
             screen: 'workspace',
-            workspaceName: session.workspaceName,
             view: 'channel',
             channelId: activeChannel,
             showFiles: !showFiles,

@@ -28,5 +28,8 @@ describe('AccountPreferencesPage', () => {
     fireEvent.change(screen.getByTestId('clock-format-select'), { target: { value: '12-hour' } })
     expect((screen.getByTestId('clock-format-select') as HTMLSelectElement).value).toBe('12-hour')
     expect(localStorage.getItem('peerly-test-clock-format')).toBe('12-hour')
+    expect((screen.getByTestId('date-format-select') as HTMLSelectElement).value).toBe('day-first')
+    fireEvent.change(screen.getByTestId('date-format-select'), { target: { value: 'iso' } })
+    expect(localStorage.getItem('peerly-test-date-format')).toBe('iso')
   })
 })

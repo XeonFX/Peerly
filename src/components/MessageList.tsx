@@ -5,7 +5,7 @@ import type { FileTransfer, Message, Peer, SharedFile, UserProfile } from '../ty
 import { formatBytes } from '../utils/format'
 import { isInlineImageType, isInlineVideoType } from '../utils/fileType'
 import { isProbablyNsfwUrlCached } from '../collab/nsfwGate'
-import { buildSenderDirectory, resolveSenderInfo } from '../utils/senderDirectory'
+import { buildSenderDirectory, resolveSenderInfo, type SenderInfo } from '../utils/senderDirectory'
 import { Avatar } from './Avatar'
 import { Icon } from './Icon'
 import { SafeMessageText } from './SafeMessageText'
@@ -31,6 +31,7 @@ type Props = {
   onDeleteMessage: (messageId: string) => void
   onToggleReaction: (messageId: string, emoji: string) => void
   onReplyMessage: (message: { id: string; author: string; text: string }) => void
+  onOpenAuthor: (message: Message, sender: SenderInfo, ownMessage: boolean) => void
 }
 
 function FileAttachment({
@@ -169,9 +170,10 @@ export function MessageList({
   onDeleteMessage,
   onToggleReaction,
   onReplyMessage,
+  onOpenAuthor,
 }: Props) {
   const { locale, tr } = useI18n()
-  const { clockFormat } = useClockFormat()
+  const { clockFormat, dateFormat } = useClockFormat()
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
@@ -298,8 +300,8 @@ export function MessageList({
               <div
                 key={msg.id}
                 id={`message-${msg.id}`}
-                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/55 focus-within:bg-base-200/55 ${
-                  openActionsId === msg.id ? 'bg-base-200/55' : ''
+                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-300/80 focus-within:bg-base-300/80 ${
+                  openActionsId === msg.id ? 'bg-base-300/80 ring-1 ring-inset ring-base-content/10' : ''
                 } ${
                   startsGroup ? 'mt-1 py-1 first:mt-0' : 'py-0'
                 }`}
@@ -309,7 +311,14 @@ export function MessageList({
               >
                 {startsGroup ? (
                   /* One avatar/name header represents the consecutive block. */
-                  <Avatar name={sender.name} color={sender.color} avatar={sender.avatar} size="md" />
+                  <button
+                    type="button"
+                    className="h-10 w-10 shrink-0 rounded-lg outline-none ring-primary/45 focus-visible:ring-2"
+                    onClick={() => onOpenAuthor(msg, sender, ownMessage)}
+                    aria-label={tr('Open {name} profile', { name: sender.name })}
+                  >
+                    <Avatar name={sender.name} color={sender.color} avatar={sender.avatar} size="md" />
+                  </button>
                 ) : (
                   <span className="w-10 shrink-0" aria-hidden="true" />
                 )}
@@ -327,6 +336,7 @@ export function MessageList({
                       >
                         {formatMessageTimestamp(msg.timestamp, {
                           clockFormat,
+                          dateFormat,
                           includeDate: group.startsDay,
                           locale,
                         })}

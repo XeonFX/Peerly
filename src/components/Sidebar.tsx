@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { WORKSPACE_COLOR } from '../config'
 import type { Channel, ConnectionStatus, P2pCapability, Peer, UserProfile } from '../types'
 import { Avatar } from './Avatar'
@@ -10,10 +10,7 @@ import { Icon } from './Icon'
 import { LegalLinks } from './LegalLinks'
 import { useI18n } from '../i18n'
 import { useRelayDiagnostics } from '../hooks/useRelayDiagnostics'
-import {
-  WorkspaceMemberPopover,
-  type WorkspaceMemberSelection,
-} from './WorkspaceMemberPopover'
+import type { WorkspaceMemberSelection } from './WorkspaceMemberPopover'
 
 type Props = {
   workspace: string
@@ -52,11 +49,7 @@ type Props = {
   onDeleteChannel: (channelId: string) => void
   onMoveChannel: (channelId: string, direction: -1 | 1) => void
   canMessageUser: (userId: string | undefined) => boolean
-  onRequestFriend: (
-    contact: { userId: string; email: string; name: string }
-  ) => Promise<{ ok: true } | { ok: false; error: string }>
-  onSendDirectMessage: (userId: string, text: string) => void
-  onEditProfile: () => void
+  onOpenMember: (member: WorkspaceMemberSelection) => void
   onWorkspaceSettings: () => void
   unreadByChannel: Record<string, number>
 }
@@ -136,9 +129,7 @@ export function Sidebar({
   onDeleteChannel,
   onMoveChannel,
   canMessageUser,
-  onRequestFriend,
-  onSendDirectMessage,
-  onEditProfile,
+  onOpenMember,
   onWorkspaceSettings,
   unreadByChannel,
   resolvePeerContact,
@@ -149,8 +140,6 @@ export function Sidebar({
   const relayDiagnostics = useRelayDiagnostics()
   const [showAddChannel, setShowAddChannel] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
-  const [selectedMember, setSelectedMember] = useState<WorkspaceMemberSelection | null>(null)
-  const closeMember = useCallback(() => setSelectedMember(null), [])
 
   const publicChannels = channels.filter(channel => channel.kind !== 'dm')
   const totalUnread = Object.values(unreadByChannel).reduce((sum, count) => sum + count, 0)
@@ -165,7 +154,6 @@ export function Sidebar({
   }
 
   return (
-    <>
     <aside
       className={`sidebar flex w-65 min-w-65 flex-col border-r border-base-300/70 bg-base-200/75 backdrop-blur-xl max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:w-68 max-lg:min-w-68 max-lg:transition-transform max-lg:duration-200 max-sm:bottom-16 motion-reduce:max-lg:transition-none ${
         open ? 'max-lg:translate-x-0 max-lg:shadow-2xl' : 'max-lg:-translate-x-full'
@@ -304,7 +292,7 @@ export function Sidebar({
             <button
               type="button"
               className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-sm transition-colors hover:bg-base-content/5"
-              onClick={() => setSelectedMember({ kind: 'self', profile: selfProfile })}
+              onClick={() => onOpenMember({ kind: 'self', profile: selfProfile })}
               aria-label={tr('Open your profile')}
               data-testid="member-self"
             >
@@ -326,7 +314,7 @@ export function Sidebar({
                   className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-sm transition-colors hover:bg-base-content/5"
                   data-testid={`member-${peer.name}`}
                   data-peer-color={peer.color}
-                  onClick={() => setSelectedMember({
+                  onClick={() => onOpenMember({
                     kind: 'peer',
                     peer,
                     contact,
@@ -399,13 +387,5 @@ export function Sidebar({
         </div>
       </div>
     </aside>
-    <WorkspaceMemberPopover
-      member={selectedMember}
-      onClose={closeMember}
-      onEditProfile={onEditProfile}
-      onRequestFriend={onRequestFriend}
-      onSendMessage={onSendDirectMessage}
-    />
-    </>
   )
 }

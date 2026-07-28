@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   clockFormatPreferenceKey,
+  dateFormatPreferenceKey,
   DEFAULT_CLOCK_FORMAT,
+  DEFAULT_DATE_FORMAT,
   formatClockTime,
   formatMessageTimestamp,
   loadClockFormat,
+  loadDateFormat,
   saveClockFormat,
+  saveDateFormat,
 } from './format'
 
 function memoryStorage(): Storage {
@@ -50,13 +54,39 @@ describe('message timestamp formatting', () => {
         locale: 'en-GB',
         timeZone: 'UTC',
       })
-    ).toBe('28 Jul 2026, 14:05')
+    ).toBe('28/07/2026, 14:05')
     expect(
       formatMessageTimestamp(timestamp, {
         locale: 'en-GB',
         timeZone: 'UTC',
       })
     ).toBe('14:05')
+  })
+
+  it('supports month-first and ISO date preferences', () => {
+    expect(formatMessageTimestamp(timestamp, {
+      includeDate: true,
+      dateFormat: 'month-first',
+      locale: 'en-US',
+      timeZone: 'UTC',
+    })).toBe('07/28/2026, 14:05')
+    expect(formatMessageTimestamp(timestamp, {
+      includeDate: true,
+      dateFormat: 'iso',
+      locale: 'en-GB',
+      timeZone: 'UTC',
+    })).toBe('2026-07-28, 14:05')
+  })
+})
+
+describe('date format preference', () => {
+  it('defaults to day-first and persists a valid selection per app', () => {
+    const storage = memoryStorage()
+    expect(loadDateFormat('peerly', storage)).toBe(DEFAULT_DATE_FORMAT)
+    saveDateFormat('peerly', 'iso', storage)
+    expect(storage.getItem(dateFormatPreferenceKey('peerly'))).toBe('iso')
+    expect(loadDateFormat('peerly', storage)).toBe('iso')
+    expect(loadDateFormat('heyhubs', storage)).toBe(DEFAULT_DATE_FORMAT)
   })
 })
 

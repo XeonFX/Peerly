@@ -7,6 +7,7 @@ import {
   pathWithHash,
   resolveInitialRoute,
   routeFromLocation,
+  workspaceSlug,
   type AppRoute,
   type PickerRoute,
   type WorkspaceRoute,
@@ -20,6 +21,7 @@ function urlForRoute(route: AppRoute, preserveHash = false): string {
 
 export function useAppRouting(workspaceName: string | undefined, signedIn: boolean, ready: boolean) {
   const inWorkspace = Boolean(workspaceName)
+  const activeWorkspaceSlug = workspaceName ? workspaceSlug(workspaceName) : undefined
   const [route, setRoute] = useState<AppRoute>(() => resolveInitialRoute(inWorkspace, signedIn))
 
   const addressBar = useBrowserHistory({
@@ -63,8 +65,8 @@ export function useAppRouting(workspaceName: string | undefined, signedIn: boole
     // Old bookmarks intentionally remain valid, but once the active workspace
     // is known, upgrade them to the descriptive (non-secret) workspace URL.
     // This also keeps the address bar accurate after a workspace rename.
-    if (inWorkspace && route.screen === 'workspace' && route.workspaceName !== workspaceName) {
-      navigate({ ...route, workspaceName }, { replace: true })
+    if (inWorkspace && route.screen === 'workspace' && route.workspaceSlug !== activeWorkspaceSlug) {
+      navigate({ ...route, workspaceSlug: activeWorkspaceSlug }, { replace: true })
       return
     }
     if (inWorkspace && route.screen === 'picker') {
@@ -86,7 +88,7 @@ export function useAppRouting(workspaceName: string | undefined, signedIn: boole
     if (!signedIn && route.screen === 'picker' && route.tab === 'create') {
       navigate({ screen: 'login' }, { replace: true })
     }
-  }, [ready, inWorkspace, workspaceName, signedIn, route, navigate])
+  }, [ready, inWorkspace, workspaceName, activeWorkspaceSlug, signedIn, route, navigate])
 
   const enterWorkspace = useCallback((nextWorkspaceName = workspaceName) => {
     navigate(defaultWorkspaceRoute(nextWorkspaceName), { replace: true })
@@ -105,9 +107,9 @@ export function useAppRouting(workspaceName: string | undefined, signedIn: boole
 
   const setWorkspaceRoute = useCallback(
     (next: WorkspaceRoute) => {
-      navigate({ ...next, workspaceName: next.workspaceName ?? workspaceName })
+      navigate({ ...next, workspaceSlug: next.workspaceSlug ?? activeWorkspaceSlug })
     },
-    [navigate, workspaceName]
+    [navigate, activeWorkspaceSlug]
   )
 
   const pickerTab = route.screen === 'picker' ? route.tab : 'create'

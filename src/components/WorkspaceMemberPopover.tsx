@@ -12,6 +12,7 @@ export type WorkspaceMemberSelection =
       contact?: { userId: string; email: string; name: string }
       friend: boolean
       canMessage: boolean
+      subtitle?: string
     }
 
 type Props = {
@@ -113,7 +114,11 @@ export function WorkspaceMemberPopover({
                   <p className="truncate text-xs text-base-content/60" title={contact.email}>{contact.email}</p>
                 )}
                 <p className="mt-0.5 text-xs text-base-content/55">
-                  {member.peer.presenceOnly ? tr('Connecting secure identity…') : tr('Workspace member')}
+                  {member.subtitle
+                    ? tr(member.subtitle)
+                    : member.peer.presenceOnly
+                      ? tr('Connecting secure identity…')
+                      : tr('Workspace member')}
                 </p>
               </>
             )}

@@ -43,7 +43,10 @@ describe('MessageActions', () => {
     const props = renderActions()
     fireEvent.click(screen.getByLabelText('Add reaction'))
 
-    expect(screen.getByTestId('message-reaction-picker')).toBeTruthy()
+    const picker = screen.getByTestId('message-reaction-picker')
+    expect(picker.parentElement).toBe(document.body)
+    expect(picker.classList.contains('fixed')).toBe(true)
+    expect(picker.classList.contains('z-100')).toBe(true)
     expect(screen.getByText('Smileys & people')).toBeTruthy()
     expect(screen.getByText('Gestures')).toBeTruthy()
 

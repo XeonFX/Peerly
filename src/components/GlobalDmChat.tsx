@@ -14,9 +14,14 @@ import { formatBytes } from '../utils/format'
 import type { UserProfile } from '../types'
 import { MessageActions } from './MessageActions'
 import { scrollToLinkedMessage } from '../utils/messageLink'
+import {
+  WorkspaceMemberPopover,
+  type WorkspaceMemberSelection,
+} from './WorkspaceMemberPopover'
 
 type Props = {
   friendName: string
+  friendUserId: string
   friendEmail?: string
   friendOnline: boolean
   partnerInRoom: boolean
@@ -36,6 +41,7 @@ type Props = {
   pendingMessage?: string
   onPendingMessageConsumed: () => void
   onClose: () => void
+  onEditProfile: () => void
 }
 
 /**
@@ -43,6 +49,7 @@ type Props = {
  */
 export function GlobalDmChat({
   friendName,
+  friendUserId,
   friendEmail,
   friendOnline,
   partnerInRoom,
@@ -62,13 +69,15 @@ export function GlobalDmChat({
   pendingMessage,
   onPendingMessageConsumed,
   onClose,
+  onEditProfile,
 }: Props) {
   const { locale, tr } = useI18n()
-  const { clockFormat } = useClockFormat()
+  const { clockFormat, dateFormat } = useClockFormat()
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [replyTarget, setReplyTarget] = useState<{ id: string; author: string; text: string } | null>(null)
   const [openActionsId, setOpenActionsId] = useState<string | null>(null)
+  const [selectedMember, setSelectedMember] = useState<WorkspaceMemberSelection | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -117,6 +126,22 @@ export function GlobalDmChat({
       ? tr('Online on Peerly')
       : tr('Offline')
 
+  const friendMember: WorkspaceMemberSelection = {
+    kind: 'peer',
+    peer: {
+      id: friendUserId,
+      userId: friendUserId,
+      name: friendName,
+      color: '#5865f2',
+    },
+    contact: friendEmail
+      ? { userId: friendUserId, email: friendEmail, name: friendName }
+      : undefined,
+    friend: true,
+    canMessage: true,
+    subtitle: 'Friend',
+  }
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!draft.trim() || busy) return
@@ -145,9 +170,15 @@ export function GlobalDmChat({
         >
           <Icon name="x" size={16} />
         </button>
-        <span data-testid="global-dm-header-avatar">
+        <button
+          type="button"
+          className="rounded-md outline-none ring-primary/45 focus-visible:ring-2"
+          onClick={() => setSelectedMember(friendMember)}
+          aria-label={tr('Open {name} profile', { name: friendName })}
+          data-testid="global-dm-header-avatar"
+        >
           <Avatar name={friendName} color="#5865f2" size="sm" />
-        </span>
+        </button>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold" data-testid="global-dm-partner">
             {friendName}
@@ -211,8 +242,8 @@ export function GlobalDmChat({
               <div
                 key={msg.id}
                 id={`message-${msg.id}`}
-                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/55 focus-within:bg-base-200/55 ${
-                  openActionsId === msg.id ? 'bg-base-200/55' : ''
+                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-300/80 focus-within:bg-base-300/80 ${
+                  openActionsId === msg.id ? 'bg-base-300/80 ring-1 ring-inset ring-base-content/10' : ''
                 } ${
                   startsGroup ? 'mt-1 py-1 first:mt-0' : 'py-0'
                 }`}
@@ -221,14 +252,24 @@ export function GlobalDmChat({
                 tabIndex={0}
               >
                 {startsGroup ? (
-                  <span data-testid="global-dm-avatar">
+                  <button
+                    type="button"
+                    className="h-10 w-10 shrink-0 rounded-lg outline-none ring-primary/45 focus-visible:ring-2"
+                    onClick={() => setSelectedMember(
+                      mine
+                        ? { kind: 'self', profile: selfProfile }
+                        : friendMember
+                    )}
+                    aria-label={tr('Open {name} profile', { name: senderName })}
+                    data-testid="global-dm-avatar"
+                  >
                     <Avatar
                       name={senderName}
                       color={mine ? selfProfile.color : '#5865f2'}
                       avatar={mine ? selfProfile.avatar : undefined}
                       size="md"
                     />
-                  </span>
+                  </button>
                 ) : (
                   <span className="w-10 shrink-0" aria-hidden="true" />
                 )}
@@ -243,6 +284,7 @@ export function GlobalDmChat({
                       >
                         {formatMessageTimestamp(msg.ts, {
                           clockFormat,
+                          dateFormat,
                           includeDate: startsDay,
                           locale,
                         })}
@@ -381,6 +423,16 @@ export function GlobalDmChat({
           </button>
         </div>
       </form>
+      <WorkspaceMemberPopover
+        member={selectedMember}
+        onClose={() => setSelectedMember(null)}
+        onEditProfile={() => {
+          setSelectedMember(null)
+          onEditProfile()
+        }}
+        onRequestFriend={async () => ({ ok: true })}
+        onSendMessage={(_, text) => void onSend(text)}
+      />
     </section>
   )
 }

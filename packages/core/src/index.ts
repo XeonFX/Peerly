@@ -163,12 +163,17 @@ export {
 } from './reactions.js'
 export {
   clockFormatPreferenceKey,
+  dateFormatPreferenceKey,
   DEFAULT_CLOCK_FORMAT,
+  DEFAULT_DATE_FORMAT,
   formatClockTime,
   formatMessageTimestamp,
   loadClockFormat,
+  loadDateFormat,
   saveClockFormat,
+  saveDateFormat,
   type ClockFormat,
+  type DateFormat,
   type TimestampFormatOptions,
 } from './format.js'
 export {

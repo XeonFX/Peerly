@@ -30,7 +30,7 @@ export function AccountPreferencesPage({
   onSignOut,
 }: Props) {
   const { locale, setLocale, t, tr } = useI18n()
-  const { clockFormat, setClockFormat } = useClockFormat()
+  const { clockFormat, dateFormat, setClockFormat, setDateFormat } = useClockFormat()
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [avatarPreview, setAvatarPreview] = useState(profile.avatar)
   const [uploading, setUploading] = useState(false)
@@ -238,6 +238,21 @@ export function AccountPreferencesPage({
                 >
                   <option value="en">English</option>
                   <option value="pl">Polski</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <span>{tr('Date format')}</span>
+                <select
+                  id="date-format"
+                  name="dateFormat"
+                  className="select select-bordered select-sm"
+                  value={dateFormat}
+                  onChange={event => setDateFormat(event.target.value as 'day-first' | 'month-first' | 'iso')}
+                  data-testid="date-format-select"
+                >
+                  <option value="day-first">DD/MM/YYYY</option>
+                  <option value="month-first">MM/DD/YYYY</option>
+                  <option value="iso">YYYY-MM-DD</option>
                 </select>
               </label>
               <label className="flex items-center gap-2 text-sm">

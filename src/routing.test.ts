@@ -17,7 +17,7 @@ describe('routing', () => {
   it('round-trips workspace routes', () => {
     const channel = {
       screen: 'workspace' as const,
-      workspaceName: 'Engineering Team',
+      workspaceSlug: 'Engineering-Team',
       view: 'channel' as const,
       channelId: 'general',
       showFiles: true,
@@ -27,11 +27,11 @@ describe('routing', () => {
   })
 
   it('keeps legacy workspace URLs while adding the public workspace name to new URLs', () => {
-    expect(pathForRoute(defaultWorkspaceRoute('My Workspace'))).toBe('/workspace/My%20Workspace/channel/general')
+    expect(pathForRoute(defaultWorkspaceRoute('My Workspace'))).toBe('/workspace/My-Workspace/channel/general')
     expect(routeFromPath('/workspace/channel/general')).toEqual(defaultWorkspaceRoute())
     expect(routeFromPath('/workspace/My%20Workspace/settings')).toEqual({
       screen: 'workspace',
-      workspaceName: 'My Workspace',
+      workspaceSlug: 'My-Workspace',
       view: 'settings',
     })
   })

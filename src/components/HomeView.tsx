@@ -393,6 +393,7 @@ export function HomeView({
           {section === 'friends' && activeFriend && roomCode ? (
             <GlobalDmChat
               friendName={activeFriend.subjectName}
+              friendUserId={activeFriend.subjectUserId}
               friendEmail={activeFriend.subjectEmail}
               friendOnline={friendOnline}
               partnerInRoom={chat.partnerInRoom}
@@ -420,6 +421,7 @@ export function HomeView({
                 setRoomCode(null)
                 setMobileFriendsOpen(false)
               }}
+              onEditProfile={() => onSectionChange('account')}
             />
           ) : section === 'friends' ? (
             <main className="h-full overflow-y-auto bg-base-100">

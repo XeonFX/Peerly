@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   QUICK_REACTIONS,
   searchReactionCategories,
@@ -27,6 +28,11 @@ type MenuAction = {
   run: () => void
 }
 
+type PanelPosition = { left: number; top: number; visible: boolean }
+
+const PANEL_GAP = 6
+const VIEWPORT_MARGIN = 8
+
 async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value)
 }
@@ -45,7 +51,9 @@ export function MessageActions({
 }: Props) {
   const { tr } = useI18n()
   const rootRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [panel, setPanel] = useState<'reactions' | 'more' | null>(null)
+  const [position, setPosition] = useState<PanelPosition>({ left: 0, top: 0, visible: false })
   const [search, setSearch] = useState('')
   const categories = useMemo(() => searchReactionCategories(search), [search])
 
@@ -56,7 +64,8 @@ export function MessageActions({
   useEffect(() => {
     if (!panel) return
     const close = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setPanel(null)
+      const target = event.target as Node
+      if (!rootRef.current?.contains(target) && !panelRef.current?.contains(target)) setPanel(null)
     }
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setPanel(null)
@@ -66,6 +75,33 @@ export function MessageActions({
     return () => {
       document.removeEventListener('pointerdown', close)
       document.removeEventListener('keydown', escape)
+    }
+  }, [panel])
+
+  useLayoutEffect(() => {
+    if (!panel) return
+    const place = () => {
+      const anchor = rootRef.current?.getBoundingClientRect()
+      const floating = panelRef.current
+      if (!anchor || !floating) return
+      const width = floating.offsetWidth
+      const height = floating.offsetHeight
+      const left = Math.min(
+        window.innerWidth - width - VIEWPORT_MARGIN,
+        Math.max(VIEWPORT_MARGIN, anchor.right - width)
+      )
+      const roomBelow = window.innerHeight - anchor.bottom - VIEWPORT_MARGIN
+      const top = roomBelow >= height + PANEL_GAP
+        ? anchor.bottom + PANEL_GAP
+        : Math.max(VIEWPORT_MARGIN, anchor.top - height - PANEL_GAP)
+      setPosition({ left, top, visible: true })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
     }
   }, [panel])
 
@@ -128,6 +164,71 @@ export function MessageActions({
     },
   ]
 
+  const floatingPanel = panel === 'reactions' ? (
+    <div
+      ref={panelRef}
+      className="fixed z-100 w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-base-300 bg-base-100 p-2 shadow-2xl"
+      style={{ left: position.left, top: position.top, visibility: position.visible ? 'visible' : 'hidden' }}
+      data-testid={`${testIdPrefix}-reaction-picker`}
+    >
+      <label className="input input-bordered input-sm flex items-center gap-2">
+        <Icon name="search" size={14} />
+        <input
+          type="search"
+          className="min-w-0 grow"
+          value={search}
+          onChange={event => setSearch(event.target.value)}
+          placeholder={tr('Search reactions')}
+          autoFocus
+        />
+      </label>
+      <div className="mt-2 max-h-72 overflow-y-auto">
+        {categories.map(category => (
+          <div key={category.id} className="mb-2 last:mb-0">
+            <h3 className="px-1 pb-1 text-[0.65rem] font-semibold uppercase tracking-wide text-base-content/55">
+              {tr(category.label)}
+            </h3>
+            <div className="grid grid-cols-7 gap-0.5">
+              {category.reactions.map(reaction => (
+                <button
+                  key={reaction.emoji}
+                  type="button"
+                  className="btn btn-ghost btn-sm btn-square text-lg"
+                  onClick={() => chooseReaction(reaction.emoji)}
+                  aria-label={tr('React {emoji}', { emoji: reaction.emoji })}
+                >
+                  {reaction.emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {categories.length === 0 && (
+          <p className="px-2 py-6 text-center text-sm text-base-content/55">{tr('No reactions found.')}</p>
+        )}
+      </div>
+    </div>
+  ) : panel === 'more' ? (
+    <div
+      ref={panelRef}
+      className="menu fixed z-100 w-52 rounded-xl border border-base-300 bg-base-100 p-1.5 shadow-2xl"
+      style={{ left: position.left, top: position.top, visibility: position.visible ? 'visible' : 'hidden' }}
+      data-testid={`${testIdPrefix}-more-menu`}
+    >
+      {menuActions.map(action => (
+        <button
+          key={action.label}
+          type="button"
+          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-base-200 ${action.danger ? 'text-error' : ''}`}
+          onClick={action.run}
+        >
+          <Icon name={action.icon} size={15} />
+          <span>{action.label}</span>
+        </button>
+      ))}
+    </div>
+  ) : null
+
   return (
     <div
       ref={rootRef}
@@ -182,69 +283,7 @@ export function MessageActions({
           <Icon name="more-horizontal" size={15} />
         </button>
       </div>
-
-      {panel === 'reactions' && (
-        <section
-          className="absolute right-0 top-9 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl"
-          data-testid={`${testIdPrefix}-reaction-picker`}
-        >
-          <label className="input input-bordered input-sm flex items-center gap-2">
-            <Icon name="search" size={14} />
-            <input
-              type="search"
-              className="min-w-0 grow"
-              value={search}
-              onChange={event => setSearch(event.target.value)}
-              placeholder={tr('Search reactions')}
-              autoFocus
-            />
-          </label>
-          <div className="mt-2 max-h-72 overflow-y-auto">
-            {categories.map(category => (
-              <div key={category.id} className="mb-2 last:mb-0">
-                <h3 className="px-1 pb-1 text-[0.65rem] font-semibold uppercase tracking-wide text-base-content/55">
-                  {tr(category.label)}
-                </h3>
-                <div className="grid grid-cols-7 gap-0.5">
-                  {category.reactions.map(reaction => (
-                    <button
-                      key={reaction.emoji}
-                      type="button"
-                      className="btn btn-ghost btn-sm btn-square text-lg"
-                      onClick={() => chooseReaction(reaction.emoji)}
-                      aria-label={tr('React {emoji}', { emoji: reaction.emoji })}
-                    >
-                      {reaction.emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {categories.length === 0 && (
-              <p className="px-2 py-6 text-center text-sm text-base-content/55">{tr('No reactions found.')}</p>
-            )}
-          </div>
-        </section>
-      )}
-
-      {panel === 'more' && (
-        <div
-          className="menu absolute right-0 top-9 w-52 rounded-xl border border-base-300 bg-base-100 p-1.5 shadow-xl"
-          data-testid={`${testIdPrefix}-more-menu`}
-        >
-          {menuActions.map(action => (
-            <button
-              key={action.label}
-              type="button"
-              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-base-200 ${action.danger ? 'text-error' : ''}`}
-              onClick={action.run}
-            >
-              <Icon name={action.icon} size={15} />
-              <span>{action.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {floatingPanel && createPortal(floatingPanel, document.body)}
     </div>
   )
 }
