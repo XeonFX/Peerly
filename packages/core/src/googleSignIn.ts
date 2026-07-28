@@ -117,3 +117,75 @@ export async function renderGoogleSignInButton(
     }
   })
 }
+
+/**
+ * Ask Google for a fresh ID token without showing anything.
+ *
+ * This is what makes "sign in once" true rather than "sign in once per hour":
+ * ID tokens last about an hour, so a stored token alone only moves the
+ * interruption from restart to expiry. One Tap with `auto_select` re-issues
+ * silently when the browser still has exactly one signed-in Google account
+ * that has already consented — which is the ordinary case for someone using
+ * the app — and declines otherwise.
+ *
+ * Resolves `null` rather than throwing when Google will not do it silently:
+ * no session, several accounts, consent withdrawn, or FedCM/third-party
+ * cookies blocked. That is a normal answer, not a fault, and the caller falls
+ * back to a visible button.
+ *
+ * The nonce must be the same device key id the visible flow uses, or the
+ * token comes back bound to nothing this device can prove.
+ */
+export async function requestGoogleCredentialSilently(
+  clientId: string,
+  nonce: string,
+  timeoutMs = 8_000
+): Promise<string | null> {
+  await loadGisScript()
+  const accounts = window.google?.accounts.id
+  if (!accounts) return null
+
+  // GIS `initialize` is one-shot per page and captures the nonce. A page that
+  // already initialised for a different key cannot be re-pointed, so rather
+  // than corrupt the visible button's configuration, decline.
+  if (initializedConfig && (initializedConfig.clientId !== clientId || initializedConfig.nonce !== nonce)) {
+    return null
+  }
+
+  return new Promise<string | null>(resolve => {
+    let settled = false
+    const finish = (value: string | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    // Google may simply never call back — a blocked iframe reports nothing.
+    const timer = setTimeout(() => finish(null), timeoutMs)
+
+    try {
+      activeCredentialHandler = response => finish(response.credential)
+      if (!initializedConfig) {
+        accounts.initialize({
+          client_id: clientId,
+          nonce,
+          auto_select: true,
+          itp_support: true,
+          callback: response => activeCredentialHandler?.(response),
+        })
+        initializedConfig = { clientId, nonce }
+      }
+      accounts.prompt(notification => {
+        if (
+          notification.isNotDisplayed() ||
+          notification.isSkippedMoment() ||
+          notification.isDismissedMoment()
+        ) {
+          finish(null)
+        }
+      })
+    } catch {
+      finish(null)
+    }
+  })
+}

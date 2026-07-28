@@ -256,7 +256,7 @@ test.describe('Peerly P2P collaboration', () => {
     // The signature becomes invalid, which is fine: banner display reads only
     // exp; the fresh token minted by re-auth is what handshakes would use.
     await page.evaluate(() => {
-      const token = sessionStorage.getItem('peerly-id-token')
+      const token = localStorage.getItem('peerly-id-token')
       if (!token) throw new Error('no stored token')
       const [header, payload, sig] = token.split('.')
       const decode = (part: string) =>
@@ -265,7 +265,7 @@ test.describe('Peerly P2P collaboration', () => {
         btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
       const claims = decode(payload)
       claims.exp = Math.floor(Date.now() / 1000) + 60
-      sessionStorage.setItem('peerly-id-token', `${header}.${encode(claims)}.${sig}`)
+      localStorage.setItem('peerly-id-token', `${header}.${encode(claims)}.${sig}`)
     })
     await page.reload()
     await waitForWorkspace(page)
@@ -289,7 +289,7 @@ test.describe('Peerly P2P collaboration', () => {
     await waitForRelay(page)
 
     await page.evaluate(() => {
-      const token = sessionStorage.getItem('peerly-id-token')
+      const token = localStorage.getItem('peerly-id-token')
       if (!token) throw new Error('no stored token')
       const [header, payload, sig] = token.split('.')
       const decode = (part: string) =>
@@ -298,7 +298,7 @@ test.describe('Peerly P2P collaboration', () => {
         btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
       const claims = decode(payload)
       claims.exp = Math.floor(Date.now() / 1000) + 15
-      sessionStorage.setItem('peerly-id-token', `${header}.${encode(claims)}.${sig}`)
+      localStorage.setItem('peerly-id-token', `${header}.${encode(claims)}.${sig}`)
     })
     await page.reload()
     await waitForWorkspace(page)
@@ -942,14 +942,30 @@ test.describe('Peerly P2P collaboration', () => {
     await bobCtx.close()
   })
 
-  test('id token is not stored in localStorage', async ({ page }) => {
+  // The token used to be session-scoped, and this test asserted that. It is
+  // durable now, deliberately, so people are not asked to sign in on every
+  // restart — the token expires hourly and every peer re-verifies it, so where
+  // the string sits was never what bounded the exposure.
+  //
+  // Two things still have to hold, and they are what this checks now: the
+  // token is not smeared into the persisted session record, and it never
+  // travels to another device.
+  test('the id token stays out of the session record and out of device sync', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+
     const stored = await page.evaluate(() => localStorage.getItem('peerly-session'))
     expect(stored).toBeTruthy()
     expect(stored).toContain('workspaceId')
-    const token = await page.evaluate(() => sessionStorage.getItem('peerly-id-token'))
+
+    const token = await page.evaluate(() => localStorage.getItem('peerly-id-token'))
     expect(token).toBeTruthy()
     expect(stored).not.toContain(token ?? '')
+
+    // That it is not swept into device sync is pinned where the allow-list
+    // lives — see src/collab/deviceSync.test.ts, which seeds this exact key
+    // and asserts the snapshot excludes it. Worth naming here because the
+    // closed allow-list is the only reason moving the token to durable storage
+    // did not also start copying it to every paired device.
   })
 
   // selfId is random per page load. Before the self-id registry, a message sent

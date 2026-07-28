@@ -100,7 +100,7 @@ export {
   type OidcIdTokenClaims,
   type VerifyOidcIdTokenOptions,
 } from './oidcIdToken.js'
-export { renderGoogleSignInButton } from './googleSignIn.js'
+export { renderGoogleSignInButton, requestGoogleCredentialSilently } from './googleSignIn.js'
 export {
   normalizeGoogleAuthBridgeOrigin,
   renderGoogleSignInBridgeButton,

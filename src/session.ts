@@ -38,14 +38,23 @@ const PERSIST_KEY = 'peerly-session'
  * leaving a workspace does not sign the user out — they land on the picker and
  * open another one.
  *
- * Split storage, deliberately:
- * - The raw ID TOKEN stays session-scoped (sessionStorage): it is a bearer
- *   credential, and a new tab / restart should not resurrect it.
+ * Storage:
+ * - The ID TOKEN lives in localStorage, so a restart or a new tab does not
+ *   force a fresh sign-in. It was session-scoped on the reasoning that a
+ *   bearer credential should not survive a restart; that traded a real,
+ *   constant cost — signing in again every single time — against a narrow
+ *   benefit, because the token is short-lived anyway (~1h) and every peer
+ *   re-verifies it rather than trusting our copy. What actually bounds the
+ *   exposure is that expiry, not where the string sat. Changed deliberately,
+ *   2026-07-28.
  * - The identity METADATA (email, provider, durable userId) is not a
  *   credential — it only drives what the UI offers (your workspaces, whose
- *   name, which provider to re-auth with). It lives in localStorage so a
- *   restart still knows who you are; peers never trust it (they verify the
- *   token itself in the handshake).
+ *   name, which provider to re-auth with). Peers never trust it; they verify
+ *   the token itself in the handshake.
+ *
+ * A stored token is only half of "sign in once": tokens expire hourly, so
+ * useIdentityRenewal keeps a live one without asking. Without that, this
+ * storage change only moves the interruption from restart to the next hour.
  */
 const ID_TOKEN_KEY = 'peerly-id-token'
 const ID_USER_ID_KEY = 'peerly-id-user-id'
@@ -123,7 +132,14 @@ export const idTokenExpiryMs = oidcTokenExpiryMs
  * with the same account, instead of dumping the user back to the join screen.
  */
 export function loadIdToken(): string | null {
-  const token = sessionStorage.getItem(ID_TOKEN_KEY)
+  // Sessions written before the token moved storage are picked up once, so an
+  // open tab is not signed out by the upgrade itself.
+  const legacy = sessionStorage.getItem(ID_TOKEN_KEY)
+  if (legacy) {
+    localStorage.setItem(ID_TOKEN_KEY, legacy)
+    sessionStorage.removeItem(ID_TOKEN_KEY)
+  }
+  const token = localStorage.getItem(ID_TOKEN_KEY)
   if (!token) return null
 
   const expiresAt = idTokenExpiryMs(token)
@@ -136,6 +152,7 @@ export function loadIdToken(): string | null {
 
 /** Drop only the bearer token; identity metadata (email/provider/id) stays. */
 export function clearIdToken(): void {
+  localStorage.removeItem(ID_TOKEN_KEY)
   sessionStorage.removeItem(ID_TOKEN_KEY)
 }
 
@@ -170,7 +187,7 @@ export function saveIdCredentials(
   email: string,
   userId?: string
 ): void {
-  sessionStorage.setItem(ID_TOKEN_KEY, token)
+  localStorage.setItem(ID_TOKEN_KEY, token)
   localStorage.setItem(ID_PROVIDER_KEY, providerId)
   localStorage.setItem(ID_EMAIL_KEY, email)
   if (userId) {
@@ -186,7 +203,7 @@ export function loadIdentityUserId(): string | null {
 
 /** Full sign-out: token AND identity metadata, from both storages. */
 export function clearIdCredentials(): void {
-  sessionStorage.removeItem(ID_TOKEN_KEY)
+  clearIdToken()
   for (const key of [ID_USER_ID_KEY, ID_PROVIDER_KEY, ID_EMAIL_KEY]) {
     sessionStorage.removeItem(key)
     localStorage.removeItem(key)
