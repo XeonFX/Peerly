@@ -288,8 +288,8 @@ export function MessageList({
             return (
               <div
                 key={msg.id}
-                className={`chat-message-row group flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/40 ${
-                  startsGroup ? 'mt-2 py-1.5 first:mt-0' : 'py-0.5'
+                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/40 ${
+                  startsGroup ? 'mt-1 py-1 first:mt-0' : 'py-0'
                 }`}
                 data-testid="chat-message"
                 data-message-group-start={startsGroup ? 'true' : 'false'}
@@ -375,8 +375,11 @@ export function MessageList({
                       </span>
                     )}
                   </div>
-                  {!msg.deletedAt && (
-                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {!msg.deletedAt && Object.keys(reactionCounts).length > 0 && (
+                    <div
+                      className="mt-0.5 flex flex-wrap items-center gap-1"
+                      data-testid="message-reactions"
+                    >
                       {Object.entries(reactionCounts).map(([emoji, count]) => (
                         <button
                           key={emoji}
@@ -388,22 +391,27 @@ export function MessageList({
                           <span>{emoji}</span><span>{count}</span>
                         </button>
                       ))}
-                      <span className="flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                        {['👍', '❤️', '😂', '🎉'].map(emoji => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            className="btn btn-ghost btn-xs btn-square"
-                            onClick={() => onToggleReaction(msg.id, emoji)}
-                            aria-label={tr('React {emoji}', { emoji })}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </span>
                     </div>
                   )}
                 </div>
+                {!msg.deletedAt && (
+                  <span
+                    className="pointer-events-none absolute right-2 top-0 z-10 flex rounded-lg border border-base-300 bg-base-100 p-0.5 opacity-0 shadow-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
+                    data-testid="message-quick-reactions"
+                  >
+                    {['👍', '❤️', '😂', '🎉'].map(emoji => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        className="btn btn-ghost btn-xs btn-square"
+                        onClick={() => onToggleReaction(msg.id, emoji)}
+                        aria-label={tr('React {emoji}', { emoji })}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </span>
+                )}
               </div>
             )
           })

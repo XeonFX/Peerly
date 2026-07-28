@@ -133,9 +133,13 @@ test.describe('Peerly P2P collaboration', () => {
   test('reading history is not hijacked by new messages; the pill catches up', async ({ browser }) => {
     await withTwoUsers(browser, async (alice, bob) => {
       // Enough messages that bob's list actually scrolls — the anchoring logic
-      // is meaningless (and untestable) unless the content overflows.
+      // is meaningless (and untestable) unless the content overflows. Use long
+      // messages so the assertion remains valid with compact grouping.
       for (let i = 1; i <= 25; i++) {
-        await sendMessage(alice, `backlog message ${i}`)
+        await sendMessage(
+          alice,
+          `backlog message ${i} ${`continued context ${i} `.repeat(16)}`
+        )
       }
       await expectMessage(bob, 'backlog message 25')
       // The last message arriving does not mean all arrived — deliveries can
@@ -569,6 +573,7 @@ test.describe('Peerly P2P collaboration', () => {
       await expectMessage(bob, 'Read the updated note')
       await expect(bob.locator('.message-list')).not.toContainText('Read https://example.com/docs.')
 
+      await bob.getByTestId('chat-message').last().hover()
       await bob.getByLabel('React 👍').last().click()
       await expect(alice.getByLabel('👍 reaction, 1')).toBeVisible({ timeout: 15_000 })
 
@@ -1203,6 +1208,7 @@ test.describe('Peerly P2P collaboration', () => {
         'datetime',
         /\d{4}-\d{2}-\d{2}T/
       )
+      await bob.getByTestId('global-dm-theirs').hover()
       await bob.getByLabel('React 👍').click()
       await expect(alice.getByTestId('global-dm-messages')).toContainText('👍 1', { timeout: 15_000 })
 

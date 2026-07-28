@@ -201,8 +201,8 @@ export function GlobalDmChat({
             return (
               <div
                 key={msg.id}
-                className={`chat-message-row group flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/40 ${
-                  startsGroup ? 'mt-2 py-1.5 first:mt-0' : 'py-0.5'
+                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/40 ${
+                  startsGroup ? 'mt-1 py-1 first:mt-0' : 'py-0'
                 }`}
                 data-testid={mine ? 'global-dm-mine' : 'global-dm-theirs'}
                 data-message-group-start={startsGroup ? 'true' : 'false'}
@@ -302,21 +302,29 @@ export function GlobalDmChat({
                       {transfer && <progress className="progress progress-primary mt-2 w-full" value={transfer.percent} max="1" />}
                     </div>
                   )}
-                  {!msg.deletedAt && (
-                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {!msg.deletedAt && Object.keys(reactionCounts).length > 0 && (
+                    <div
+                      className="mt-0.5 flex flex-wrap items-center gap-1"
+                      data-testid="global-dm-reactions"
+                    >
                       {Object.entries(reactionCounts).map(([emoji, count]) => (
                         <button key={emoji} type="button" className={`badge h-6 cursor-pointer gap-1 ${activeReactions.some(reaction => reaction.emoji === emoji && reaction.authorUserId === selfUserId) ? 'badge-primary' : 'badge-outline border-base-300 bg-base-100'}`} onClick={() => void onToggleReaction(msg.id, emoji)}>
                           {emoji} {count}
                         </button>
                       ))}
-                      <span className="flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                        {['👍', '❤️', '😂', '🎉'].map(emoji => (
-                          <button key={emoji} type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => void onToggleReaction(msg.id, emoji)} aria-label={tr('React {emoji}', { emoji })}>{emoji}</button>
-                        ))}
-                      </span>
                     </div>
                   )}
                 </div>
+                {!msg.deletedAt && (
+                  <span
+                    className="pointer-events-none absolute right-2 top-0 z-10 flex rounded-lg border border-base-300 bg-base-100 p-0.5 opacity-0 shadow-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
+                    data-testid="global-dm-quick-reactions"
+                  >
+                    {['👍', '❤️', '😂', '🎉'].map(emoji => (
+                      <button key={emoji} type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => void onToggleReaction(msg.id, emoji)} aria-label={tr('React {emoji}', { emoji })}>{emoji}</button>
+                    ))}
+                  </span>
+                )}
               </div>
             )
           })

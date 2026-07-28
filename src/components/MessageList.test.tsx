@@ -60,6 +60,14 @@ describe('MessageList presentation', () => {
     const rows = screen.getAllByTestId('chat-message')
     expect(rows).toHaveLength(3)
     expect(rows.map(row => row.dataset.messageGroupStart)).toEqual(['true', 'false', 'true'])
+    expect(rows[0]?.classList.contains('mt-1')).toBe(true)
+    expect(rows[0]?.classList.contains('py-1')).toBe(true)
+    expect(rows[1]?.classList.contains('py-0')).toBe(true)
+
+    expect(screen.queryByTestId('message-reactions')).toBeNull()
+    const quickReactions = screen.getAllByTestId('message-quick-reactions')
+    expect(quickReactions).toHaveLength(3)
+    expect(quickReactions.every(toolbar => toolbar.classList.contains('absolute'))).toBe(true)
 
     const timestamps = screen.getAllByTestId('message-time')
     expect(timestamps).toHaveLength(2)
