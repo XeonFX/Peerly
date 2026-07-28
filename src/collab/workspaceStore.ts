@@ -65,12 +65,19 @@ export function loadWorkspaces(): StoredWorkspace[] {
   }
 }
 
+/** Announced after any change, so screens showing this list can re-read it. */
+export const WORKSPACES_CHANGED_EVENT = 'peerly-workspaces-changed'
+
 function save(workspaces: StoredWorkspace[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaces))
   } catch {
     // Quota exceeded — the active session still works, only the picker suffers.
   }
+  // The rail reads this list during render and nothing re-renders on a
+  // localStorage write, so forgetting a workspace left it on screen until
+  // some unrelated state change happened to repaint.
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(WORKSPACES_CHANGED_EVENT))
 }
 
 /**

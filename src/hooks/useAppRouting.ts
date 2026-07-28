@@ -23,7 +23,13 @@ export function useAppRouting(inWorkspace: boolean, signedIn: boolean, ready: bo
 
   const addressBar = useBrowserHistory({
     seedPath: () => urlForRoute(route, hasInviteHash()),
-    onPopState: () => {
+    onLocationChange: () => {
+      // A pasted invite link changes only the fragment, so the document never
+      // reloads and the route below would not otherwise notice it.
+      if (hasInviteHash()) {
+        setRoute({ screen: 'picker', tab: 'join' })
+        return
+      }
       const parsed = routeFromLocation(window.location)
       const signedInHome: AppRoute = signedIn ? { screen: 'home' } : { screen: 'login' }
       if (!parsed) {

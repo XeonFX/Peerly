@@ -21,6 +21,8 @@ import {
   rememberWorkspace,
   snapshotWorkspace,
   workspacesForEmail,
+  WORKSPACES_CHANGED_EVENT,
+  type StoredWorkspace,
 } from './collab/workspaceStore'
 import {
   hydrateSessionAvatar,
@@ -149,9 +151,17 @@ function App() {
   // rail stays populated on the home view too. loadIdentityEmail() reads even
   // when the token has expired — listing is a UX filter, not authorization.
   const identityEmail = session?.identityEmail ?? loadIdentityEmail() ?? undefined
-  // Reads localStorage each render (cheap: a small JSON parse + filter), so it
-  // reflects joins/switches immediately without a reactive store.
-  const railWorkspaces = identityEmail ? workspacesForEmail(identityEmail) : []
+  // Held in state and refreshed on the store's own event. It used to be read
+  // during render, and a localStorage write tells React nothing — so a
+  // forgotten workspace stayed in the rail until something unrelated
+  // repainted, which looked like the deletion had failed.
+  const [railWorkspaces, setRailWorkspaces] = useState<StoredWorkspace[]>([])
+  useEffect(() => {
+    const refresh = () => setRailWorkspaces(identityEmail ? workspacesForEmail(identityEmail) : [])
+    refresh()
+    window.addEventListener(WORKSPACES_CHANGED_EVENT, refresh)
+    return () => window.removeEventListener(WORKSPACES_CHANGED_EVENT, refresh)
+  }, [identityEmail])
 
   // Public legal pages render regardless of session/hydration state.
   if (route.screen === 'legal') {
@@ -233,6 +243,10 @@ function App() {
       onRemoveFriend={friendsApi.remove}
       pendingRing={pendingDmRing}
       onConsumeRing={() => setPendingDmRing(null)}
+      dmUserId={route.screen === 'home' ? route.dmUserId : undefined}
+      onOpenDm={userId =>
+        navigate(userId ? { screen: 'home', dmUserId: userId } : { screen: 'home' })
+      }
     />
   ) : (
     <JoinScreen

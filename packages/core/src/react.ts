@@ -11,8 +11,13 @@ export function useLatest<T>(value: T) {
 export type BrowserHistoryOptions = {
   /** Path for whatever is on screen right now, written once on first paint. */
   seedPath(): string
-  /** Back/forward pressed. The app decides what the new location means. */
-  onPopState(): void
+  /**
+   * The address bar changed without the app asking. Back/forward, or a
+   * fragment-only navigation — pasting a link that differs from the current
+   * one only after the `#` does not reload the document and never fires
+   * `popstate`, so a listener on that alone silently ignores it.
+   */
+  onLocationChange(): void
 }
 
 export type BrowserHistory = {
@@ -33,7 +38,7 @@ export type BrowserHistory = {
  */
 export function useBrowserHistory(options: BrowserHistoryOptions): BrowserHistory {
   const seedPathRef = useLatest(options.seedPath)
-  const onPopStateRef = useLatest(options.onPopState)
+  const onChangeRef = useLatest(options.onLocationChange)
   const seededRef = useRef(false)
 
   useEffect(() => {
@@ -45,10 +50,14 @@ export function useBrowserHistory(options: BrowserHistoryOptions): BrowserHistor
   }, [seedPathRef])
 
   useEffect(() => {
-    const handler = () => onPopStateRef.current()
+    const handler = () => onChangeRef.current()
     window.addEventListener('popstate', handler)
-    return () => window.removeEventListener('popstate', handler)
-  }, [onPopStateRef])
+    window.addEventListener('hashchange', handler)
+    return () => {
+      window.removeEventListener('popstate', handler)
+      window.removeEventListener('hashchange', handler)
+    }
+  }, [onChangeRef])
 
   return useMemo(
     () => ({

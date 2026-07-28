@@ -42,6 +42,12 @@ type Props = {
   /** Incoming lobby ring from App (open that DM). */
   pendingRing: DmRingPayload | null
   onConsumeRing: () => void
+  /**
+   * Whose conversation is open, from the route. Held there rather than here so
+   * a refresh returns to the conversation instead of the list.
+   */
+  dmUserId?: string | undefined
+  onOpenDm: (userId: string | null) => void
 }
 
 const HOME_SIDEBAR_KEY = 'peerly-home-sidebar-width-v1'
@@ -80,11 +86,20 @@ export function HomeView({
   onRemoveFriend,
   pendingRing,
   onConsumeRing,
+  dmUserId,
+  onOpenDm,
 }: Props) {
   const { tr } = useI18n()
   const browserStorage = useBrowserStorage()
   const { capability: p2pCapability } = useP2pCapability()
-  const [activeFriend, setActiveFriend] = useState<Friend | null>(null)
+  const activeFriend = useMemo(
+    () => friends.find(friend => friend.subjectUserId === dmUserId) ?? null,
+    [friends, dmUserId]
+  )
+  const setActiveFriend = useCallback(
+    (friend: Friend | null) => onOpenDm(friend?.subjectUserId ?? null),
+    [onOpenDm]
+  )
   const [roomCode, setRoomCode] = useState<string | null>(null)
   const [ringBanner, setRingBanner] = useState<DmRingPayload | null>(null)
   const [query, setQuery] = useState('')
@@ -134,7 +149,7 @@ export function HomeView({
       const code = await dmRoomCode(profile.userId, friend.subjectUserId, secret)
       setRoomCode(code)
     },
-    [profile.userId, onSectionChange]
+    [profile.userId, onSectionChange, setActiveFriend]
   )
 
   // Handle lobby ring: open or banner.
