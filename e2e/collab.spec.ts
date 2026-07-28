@@ -184,7 +184,7 @@ test.describe('Peerly P2P collaboration', () => {
 
     await openProfile(page)
     await page.getByTestId('profile-name').fill('Krystian')
-    await page.getByTestId('color-preset-#e01e5a').click()
+    await page.getByTestId('profile-color').fill('#e01e5a')
     await page.getByTestId('profile-back').click()
 
     await leaveToPicker(page)
@@ -1365,7 +1365,7 @@ test.describe('Peerly P2P collaboration', () => {
       buffer: png,
     })
 
-    await expect(page.getByTestId('profile-page').locator('.avatar-lg')).toHaveAttribute(
+    await expect(page.getByTestId('account-preferences-page').locator('.avatar-lg')).toHaveAttribute(
       'src',
       /^data:image\/webp/,
       { timeout: 10_000 }
