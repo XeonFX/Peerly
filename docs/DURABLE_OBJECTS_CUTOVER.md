@@ -50,6 +50,32 @@ promptly. It is not staged in advance.
       and the same two in HeyHubs. This happened on 2026-07-28; the smoke test
       found it in a second, which is the argument for running it on a schedule
       rather than before cutovers only.
+
+### Changing a production secret while a branch is open
+
+`wrangler secret put` on a production Worker fails with *"the latest version of
+your Worker isn't currently deployed"* for as long as an unmerged branch
+exists. Workers Builds uploads every non-production branch with `versions
+upload`, so the newest version is branch code while the deployed one is from
+`main`.
+
+**Do not reach for `wrangler versions secret put` here.** It creates a new
+version inheriting from that branch upload. It does not fix production — the
+version is not deployed — and it leaves a version that ships the whole branch
+the moment anyone runs `versions deploy`.
+
+Two safe routes:
+
+- **The dashboard** — Workers & Pages → the Worker → Settings → Variables and
+  Secrets → edit. Applies against the deployed version, no ambiguity.
+- **Deploy `main` first**, then `wrangler secret put` behaves normally.
+
+Preview Workers are deployed by hand rather than by Workers Builds, so their
+latest *is* their deployed version and `secret put -c wrangler.preview.jsonc`
+works throughout.
+
+The ambiguity disappears once the branch merges, which is another reason B1
+wants merging promptly rather than sitting open.
 - [ ] Production secrets exist on both workers: `TURN_AUTH_SECRET`,
       `RENDEZVOUS_SECRET`, `NETWORK_SESSION_SECRET`, `OPAQUE_USER_ID_SECRET`.
       `wrangler secret list` per app. A missing `NETWORK_SESSION_SECRET` or
