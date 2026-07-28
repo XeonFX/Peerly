@@ -180,7 +180,13 @@ A fourth signaling mode moves *coordination* — device enrollment, session cook
 
 `VITE_SIGNALING=durable-objects` only works against a Worker that was itself deployed with `COORDINATION_BACKEND=durable-objects`, the Durable Object bindings/migrations, and its own secrets (`NETWORK_SESSION_SECRET`, `OPAQUE_USER_ID_SECRET`, `TURN_AUTH_SECRET`, …). A client pointed at an unconfigured Worker fails closed with `503`, and a stale/invalid capability fails with `400`/`401` rather than degrading silently. Production (`peerly.cc`) still runs `COORDINATION_BACKEND=legacy-relay`; only the stable preview deployment (`preview.peerly.cc`, via [`wrangler.preview.jsonc`](wrangler.preview.jsonc)) runs the Durable Objects path today, ahead of a full production cutover.
 
-This control plane is shared code in [`packages/core/worker/realtime`](packages/core/worker/realtime) and [`packages/core/src/realtime`](packages/core/src/realtime): Peerly and HeyHubs each deploy their own Worker and Durable Object namespaces from it, with independent secrets and data. See [docs/DURABLE_OBJECTS_ARCHITECTURE.md](docs/DURABLE_OBJECTS_ARCHITECTURE.md) for the full design, rollout phases, and current status, or [docs/RELAY_VS_DURABLE_OBJECTS.md](docs/RELAY_VS_DURABLE_OBJECTS.md) for a detailed comparison against the relay stack production still runs.
+This control plane is shared code in [`packages/core/worker/realtime`](packages/core/worker/realtime) and [`packages/core/src/realtime`](packages/core/src/realtime): Peerly and HeyHubs each deploy their own Worker and Durable Object namespaces from it, with independent secrets and data. See [docs/DURABLE_OBJECTS_ARCHITECTURE.md](docs/DURABLE_OBJECTS_ARCHITECTURE.md) for the full design, or [docs/RELAY_VS_DURABLE_OBJECTS.md](docs/RELAY_VS_DURABLE_OBJECTS.md) for a comparison against the relay stack production still runs.
+
+`npm run test:e2e:do` drives it the way a user would: it builds the app with the DO backend, serves that build from the real Worker on localhost with real Durable Objects, and runs two browser contexts against it. Test-only sign-in there is *configuration* — a generic `oidc` provider whose JWKS is served from the build, set only in [`wrangler.e2e.jsonc`](wrangler.e2e.jsonc). A deployment that sets none of those variables resolves the provider to `null` and the route 503s, so it cannot be switched on by accident.
+
+What that suite cannot prove is TURN: two browser contexts on one host connect over host candidates and never reach a relay. `npm run turn:smoke` covers that separately by asking coturn for a real allocation, with no browser involved.
+
+[docs/REWRITE_ARCHITECTURE.md](docs/REWRITE_ARCHITECTURE.md) records how this was built and what remains; [docs/DURABLE_OBJECTS_CUTOVER.md](docs/DURABLE_OBJECTS_CUTOVER.md) is the step-by-step for putting it in front of users.
 
 ### TURN (optional)
 
@@ -299,13 +305,15 @@ npm Trusted Publishing with provenance, automatic version bump via release PR.
 ├── public/                 Static assets (favicon, etc.)
 ├── scripts/
 │   ├── guard-bundle.mjs    Fail build if E2E keys reached dist/
+│   ├── emit-e2e-jwks.mjs   Publish the E2E issuer's JWKS into dist/ (E2E only)
 │   ├── check-csp.mjs       Serve dist with CSP, test a negative control + offline shell
 │   └── check-relays.mjs    Nostr relay health diagnostic
-├── server/                 Dev relay, test server, process helpers
+├── server/                 Dev relay, test servers, process helpers
 │   ├── dev.mjs             npm run dev (Nostr signaling)
 │   ├── dev-relay.mjs       npm run dev:relay
 │   ├── relay.mjs           WebSocket signaling relay
-│   └── test-server.mjs     E2E: relay + Vite with auth bypass
+│   ├── test-server.mjs     E2E: relay + Vite with auth bypass
+│   └── test-server-do.mjs  E2E: built app behind the real Worker + Durable Objects
 ├── src/
 │   ├── collab/             P2P protocol, crypto, identity, stores
 │   ├── components/         React UI (join, settings, storage, chat, files, video)
@@ -320,8 +328,11 @@ npm Trusted Publishing with provenance, automatic version bump via release PR.
 ├── .env.example            Environment template (copy to .env)
 ├── .nvmrc                  Node 24.18.0 (npm 11.16.0 / CI alignment)
 ├── playwright.config.ts
+├── playwright.do.config.ts Durable Objects browser suite (own target, serial)
 ├── vite.config.ts
-├── wrangler.jsonc          Cloudflare SPA assets and API routing
+├── wrangler.jsonc          Production: SPA assets and API routing
+├── wrangler.preview.jsonc  Staging with Durable Objects (preview.peerly.cc)
+├── wrangler.e2e.jsonc      Local-only DO target for the browser suite
 └── vitest.config.ts
 ```
 
@@ -336,9 +347,13 @@ npm Trusted Publishing with provenance, automatic version bump via release PR.
 | `npm run build` | Typecheck + production build + bundle guard |
 | `npm test` | Vitest unit/component tests (counts change with the suite — run `npm test` for the current total) |
 | `npm run test:watch` | Vitest in watch mode |
+| `npm run typecheck` | `tsc -b` across every project (the root config is solution-style, so `tsc -p` alone checks nothing) |
+| `npm run test:workers` | Durable Object behaviour against real workerd |
 | `npm run test:e2e` | Playwright E2E (local relay; parallel workers per Playwright config) |
+| `npm run test:e2e:do` | Two browsers against the real Worker and real Durable Objects |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
 | `npm run test:e2e:ui` | Playwright interactive UI |
+| `npm run turn:smoke -- <urls>` | Ask coturn for a real TURN allocation per transport. Needs `TURN_AUTH_SECRET` |
 | `npm run preview` | Preview the production build locally |
 | `npm run check:relays` | Health-check the default Nostr relays |
 | `npm run check:csp` | Verify production CSP, its inline-script negative control, and the offline shell |
