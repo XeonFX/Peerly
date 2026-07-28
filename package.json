@@ -35,7 +35,7 @@
     "postbuild": "node scripts/configure-auth-bridge.mjs",
     "test": "VITE_APP_ID=peerly vitest run --maxWorkers=4",
     "test:watch": "VITE_APP_ID=peerly vitest",
-    "test:workers": "vitest run -c vitest.workers.config.ts",
+    "test:workers": "mkdir -p dist && vitest run -c vitest.workers.config.ts",
     "test:e2e": "VITE_APP_ID=peerly playwright test",
     "test:a11y": "VITE_APP_ID=peerly playwright test e2e/accessibility.spec.ts",
     "test:coverage": "VITE_APP_ID=peerly vitest run --coverage --maxWorkers=4",

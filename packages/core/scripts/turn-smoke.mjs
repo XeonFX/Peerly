@@ -53,14 +53,10 @@ const CREDENTIAL_TTL_MS = 5 * 60_000
  * `HMAC-SHA1(shared secret, username)` — the strength lives in the shared
  * secret, not in these digests.
  */
-// codeql[js/weak-cryptographic-algorithm]
 const hmacSha1Text = (key, message) =>
   new Uint8Array(createHmac('sha1', key).update(message).digest())
-// codeql[js/weak-cryptographic-algorithm]
 const hmacSha1Key = (key, message) =>
   new Uint8Array(createHmac('sha1', key).update(message).digest())
-// codeql[js/weak-cryptographic-algorithm]
-// codeql[js/insufficient-password-hash]
 const longTermKey = (username, realm, password) =>
   new Uint8Array(createHash('md5').update(`${username}:${realm}:${password}`).digest())
 
