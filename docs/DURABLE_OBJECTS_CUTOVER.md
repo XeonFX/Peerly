@@ -29,10 +29,27 @@ promptly. It is not staged in advance.
       green (HeyHubs). These are the only tests that exercise a browser
       against a real gateway.
 - [ ] `npm run turn:smoke -- turn:turn.peerly.cc:3478 turns:turn.peerly.cc:5349`
-      green **with the real `TURN_AUTH_SECRET`**. A dummy secret proves
-      everything up to the credential comparison and stops there — and a wrong
-      secret and a wrong signature both return 401, so this run is the only
-      thing that distinguishes them.
+      green **with the real `TURN_AUTH_SECRET`** (and the same for
+      `turn.heyhubs.app`). A dummy secret proves everything up to the
+      credential comparison and stops there — a wrong secret and a wrong
+      signature both return 401, so only this run distinguishes them.
+- [ ] `TURN_AUTH_SECRET` on all four workers matches coturn's
+      `static-auth-secret`. **Rotating it on the VPS breaks TURN in both apps
+      with no visible error** — users behind a strict NAT simply fail to
+      connect — and it signs on both the legacy relay path
+      (`/api/network/credentials`) and the Durable Objects one
+      (`/api/network/session`), so a stale secret is not a cutover-only
+      problem. Worker secrets cannot be read back, so re-set all four rather
+      than trying to diff them:
+
+      ```
+      npx wrangler secret put TURN_AUTH_SECRET                            # peerly
+      npx wrangler secret put TURN_AUTH_SECRET -c wrangler.preview.jsonc  # peerly-preview
+      ```
+
+      and the same two in HeyHubs. This happened on 2026-07-28; the smoke test
+      found it in a second, which is the argument for running it on a schedule
+      rather than before cutovers only.
 - [ ] Production secrets exist on both workers: `TURN_AUTH_SECRET`,
       `RENDEZVOUS_SECRET`, `NETWORK_SESSION_SECRET`, `OPAQUE_USER_ID_SECRET`.
       `wrangler secret list` per app. A missing `NETWORK_SESSION_SECRET` or
