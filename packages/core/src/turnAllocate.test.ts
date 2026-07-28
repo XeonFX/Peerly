@@ -23,9 +23,17 @@ import {
  * against values taken from the RFCs rather than from this implementation.
  */
 
+/**
+ * SHA-1 and MD5 are what RFC 5389 §15.4 specifies for MESSAGE-INTEGRITY and
+ * the long-term credential key. These stand in for what a TURN *server* does,
+ * so they have to be exactly those algorithms or the test proves nothing.
+ */
+// codeql[js/weak-cryptographic-algorithm]
 const hmacSha1 = (key: Uint8Array, message: Uint8Array) =>
   new Uint8Array(createHmac('sha1', key).update(message).digest())
 
+// codeql[js/weak-cryptographic-algorithm]
+// codeql[js/insufficient-password-hash]
 const longTermKey = (username: string, realm: string, password: string) =>
   new Uint8Array(createHash('md5').update(`${username}:${realm}:${password}`).digest())
 
@@ -160,9 +168,11 @@ describe('the REST credential', () => {
       secret,
       'probe',
       1_700_000_000_000,
+      // codeql[js/weak-cryptographic-algorithm]
       (key, message) => new Uint8Array(createHmac('sha1', key).update(message).digest())
     )
     expect(username).toBe('1700000000:probe')
+    // codeql[js/weak-cryptographic-algorithm]
     expect(password).toBe(createHmac('sha1', secret).update(username).digest('base64'))
   })
 })

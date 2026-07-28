@@ -40,10 +40,27 @@ import {
 const TIMEOUT_MS = Number(process.env.TURN_PROBE_TIMEOUT_MS) || 8_000
 const CREDENTIAL_TTL_MS = 5 * 60_000
 
+/**
+ * SHA-1 and MD5 here are the protocol, not a choice.
+ *
+ * RFC 5389 §15.4 defines MESSAGE-INTEGRITY as HMAC-SHA1, and the long-term
+ * credential key as `MD5(username:realm:password)`. coturn implements exactly
+ * that and rejects anything else, so "use SHA-256" is not available: it would
+ * turn every allocation into a 401 and make this check useless.
+ *
+ * Neither is protecting a stored password. The MD5 input is a REST credential
+ * this script derives seconds earlier and discards, whose plaintext is already
+ * `HMAC-SHA1(shared secret, username)` — the strength lives in the shared
+ * secret, not in these digests.
+ */
+// codeql[js/weak-cryptographic-algorithm]
 const hmacSha1Text = (key, message) =>
   new Uint8Array(createHmac('sha1', key).update(message).digest())
+// codeql[js/weak-cryptographic-algorithm]
 const hmacSha1Key = (key, message) =>
   new Uint8Array(createHmac('sha1', key).update(message).digest())
+// codeql[js/weak-cryptographic-algorithm]
+// codeql[js/insufficient-password-hash]
 const longTermKey = (username, realm, password) =>
   new Uint8Array(createHash('md5').update(`${username}:${realm}:${password}`).digest())
 

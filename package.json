@@ -35,7 +35,7 @@
     "postbuild": "node scripts/configure-auth-bridge.mjs",
     "test": "VITE_APP_ID=peerly vitest run --maxWorkers=4",
     "test:watch": "VITE_APP_ID=peerly vitest",
-    "test:workers": "mkdir -p dist && vitest run -c vitest.workers.config.ts",
+    "test:workers": "vitest run -c vitest.workers.config.ts",
     "test:e2e": "VITE_APP_ID=peerly playwright test",
     "test:a11y": "VITE_APP_ID=peerly playwright test e2e/accessibility.spec.ts",
     "test:coverage": "VITE_APP_ID=peerly vitest run --coverage --maxWorkers=4",
@@ -56,7 +56,11 @@
     "test:e2e:do": "VITE_APP_ID=peerly playwright test -c playwright.do.config.ts",
     "turn:smoke": "node packages/core/scripts/turn-smoke.mjs",
     "typecheck": "VITE_APP_ID=peerly tsc -b",
-    "build:e2e": "VITE_APP_ID=peerly tsc -b && VITE_APP_ID=peerly vite build --outDir dist-e2e && node scripts/check-e2e-fixtures.mjs dist-e2e"
+    "build:e2e": "VITE_APP_ID=peerly tsc -b && VITE_APP_ID=peerly vite build --outDir dist-e2e && node scripts/check-e2e-fixtures.mjs dist-e2e",
+    "build:core": "npm --prefix packages/core run build",
+    "pretest": "npm run build:core",
+    "pretest:workers": "npm run build:core",
+    "pretest:coverage": "npm run build:core"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
