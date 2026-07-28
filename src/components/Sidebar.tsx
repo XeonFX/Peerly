@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { appBuildLabel, WORKSPACE_COLOR } from '../config'
+import { WORKSPACE_COLOR } from '../config'
 import type { Channel, ConnectionStatus, P2pCapability, Peer, UserProfile } from '../types'
 import { Avatar } from './Avatar'
 import { ConnectionStatus as ConnectionStatusLabel } from './ConnectionStatus'
@@ -394,12 +394,6 @@ export function Sidebar({
                     { count: relayUrls.length }
                   )
                 : `${tr('Connecting to signaling')}…`}
-          </span>
-          <span
-            className="font-mono text-[0.65rem] text-base-content/50"
-            data-testid="app-version"
-          >
-            {appBuildLabel()}
           </span>
           <LegalLinks />
         </div>

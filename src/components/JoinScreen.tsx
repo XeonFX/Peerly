@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { isEmailAllowed } from '../collab/allowList'
-import { APP_NAME, appBuildLabel } from '../config'
+import { APP_NAME } from '../config'
 import {
   decodeInviteFromHash,
   encodeInviteLink,
@@ -366,12 +366,6 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
             {tr("Only invited accounts can connect. Peers verify each other's identity before any data flows. Sign in with the account you were invited with — a different provider or email counts as a different person.")}
           </p>
           <P2pCapabilityIndicator capability={p2pCapability} rtcPeerCount={0} compact />
-          <p
-            className="text-center font-mono text-[0.7rem] text-base-content/35"
-            data-testid="app-version"
-          >
-            {appBuildLabel()}
-          </p>
           <LegalLinks />
           </div>
         </div>
@@ -621,12 +615,6 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
           </div>
         </div>
 
-        <p
-          className="text-center font-mono text-[0.7rem] text-base-content/35"
-          data-testid="app-version"
-        >
-          {appBuildLabel()}
-        </p>
         <LegalLinks />
       </div>
     </main>

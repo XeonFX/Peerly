@@ -18,7 +18,8 @@ function urlForRoute(route: AppRoute, preserveHash = false): string {
   return preserveHash ? pathWithHash(pathForRoute(route)) : pathForRoute(route)
 }
 
-export function useAppRouting(inWorkspace: boolean, signedIn: boolean, ready: boolean) {
+export function useAppRouting(workspaceName: string | undefined, signedIn: boolean, ready: boolean) {
+  const inWorkspace = Boolean(workspaceName)
   const [route, setRoute] = useState<AppRoute>(() => resolveInitialRoute(inWorkspace, signedIn))
 
   const addressBar = useBrowserHistory({
@@ -33,7 +34,7 @@ export function useAppRouting(inWorkspace: boolean, signedIn: boolean, ready: bo
       const parsed = routeFromLocation(window.location)
       const signedInHome: AppRoute = signedIn ? { screen: 'home' } : { screen: 'login' }
       if (!parsed) {
-        setRoute(inWorkspace ? defaultWorkspaceRoute() : signedInHome)
+        setRoute(inWorkspace ? defaultWorkspaceRoute(workspaceName) : signedInHome)
         return
       }
       // A workspace URL is only reachable once one is actually open; going
@@ -59,8 +60,15 @@ export function useAppRouting(inWorkspace: boolean, signedIn: boolean, ready: bo
 
   useEffect(() => {
     if (!ready) return
+    // Old bookmarks intentionally remain valid, but once the active workspace
+    // is known, upgrade them to the descriptive (non-secret) workspace URL.
+    // This also keeps the address bar accurate after a workspace rename.
+    if (inWorkspace && route.screen === 'workspace' && route.workspaceName !== workspaceName) {
+      navigate({ ...route, workspaceName }, { replace: true })
+      return
+    }
     if (inWorkspace && route.screen === 'picker') {
-      navigate(defaultWorkspaceRoute(), { replace: true })
+      navigate(defaultWorkspaceRoute(workspaceName), { replace: true })
       return
     }
     if (!inWorkspace && route.screen === 'workspace') {
@@ -78,11 +86,11 @@ export function useAppRouting(inWorkspace: boolean, signedIn: boolean, ready: bo
     if (!signedIn && route.screen === 'picker' && route.tab === 'create') {
       navigate({ screen: 'login' }, { replace: true })
     }
-  }, [ready, inWorkspace, signedIn, route, navigate])
+  }, [ready, inWorkspace, workspaceName, signedIn, route, navigate])
 
-  const enterWorkspace = useCallback(() => {
-    navigate(defaultWorkspaceRoute(), { replace: true })
-  }, [navigate])
+  const enterWorkspace = useCallback((nextWorkspaceName = workspaceName) => {
+    navigate(defaultWorkspaceRoute(nextWorkspaceName), { replace: true })
+  }, [navigate, workspaceName])
 
   const leaveToPicker = useCallback(() => {
     navigate({ screen: 'home' }, { replace: true })
@@ -97,13 +105,13 @@ export function useAppRouting(inWorkspace: boolean, signedIn: boolean, ready: bo
 
   const setWorkspaceRoute = useCallback(
     (next: WorkspaceRoute) => {
-      navigate(next)
+      navigate({ ...next, workspaceName: next.workspaceName ?? workspaceName })
     },
-    [navigate]
+    [navigate, workspaceName]
   )
 
   const pickerTab = route.screen === 'picker' ? route.tab : 'create'
-  const workspaceRoute = route.screen === 'workspace' ? route : defaultWorkspaceRoute()
+  const workspaceRoute = route.screen === 'workspace' ? route : defaultWorkspaceRoute(workspaceName)
 
   return {
     route,

@@ -93,15 +93,19 @@ test.describe('Peerly P2P collaboration', () => {
   test('remembered workspaces let you switch without the invite link', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await expect(page.locator('.workspace-name')).toContainText('test-ws')
+    await expect(page).toHaveURL(/\/workspace\/test-ws\/channel\/general$/)
+    await expect(page.getByTestId('app-version')).toBeVisible()
 
     // Leaving must NOT sign you out — you land on the picker still signed in.
     await leaveToPicker(page)
     await expect(page.getByTestId('home-view')).toBeVisible()
+    await expect(page.getByTestId('app-version')).toBeVisible()
 
     // The workspace we just joined is offered without pasting the link again.
     await page.getByRole('button', { name: 'test-ws', exact: true }).click()
     await waitForWorkspace(page)
     await expect(page.locator('.workspace-name')).toContainText('test-ws')
+    await expect(page).toHaveURL(/\/workspace\/test-ws\/channel\/general$/)
   })
 
   test('a remembered workspace survives a reload and can be reopened', async ({ page }) => {
@@ -569,6 +573,7 @@ test.describe('Peerly P2P collaboration', () => {
       await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
 
       alice.once('dialog', dialog => void dialog.accept('Read the updated note'))
+      await alice.getByTestId('chat-message').last().hover()
       await alice.getByLabel('Edit message').last().click()
       await expectMessage(bob, 'Read the updated note')
       await expect(bob.locator('.message-list')).not.toContainText('Read https://example.com/docs.')
@@ -578,6 +583,7 @@ test.describe('Peerly P2P collaboration', () => {
       await expect(alice.getByLabel('👍 reaction, 1')).toBeVisible({ timeout: 15_000 })
 
       alice.once('dialog', dialog => void dialog.accept())
+      await alice.getByTestId('chat-message').last().hover()
       await alice.getByLabel('Delete message').last().click()
       await expect(bob.locator('.message-list')).toContainText('Message deleted', {
         timeout: 15_000,

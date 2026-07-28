@@ -52,6 +52,7 @@ describe('MessageList presentation', () => {
             onEditMessage={vi.fn()}
             onDeleteMessage={vi.fn()}
             onToggleReaction={vi.fn()}
+            onReplyMessage={vi.fn()}
           />
         </I18nProvider>
       </ClockFormatProvider>
@@ -65,9 +66,12 @@ describe('MessageList presentation', () => {
     expect(rows[1]?.classList.contains('py-0')).toBe(true)
 
     expect(screen.queryByTestId('message-reactions')).toBeNull()
-    const quickReactions = screen.getAllByTestId('message-quick-reactions')
-    expect(quickReactions).toHaveLength(3)
-    expect(quickReactions.every(toolbar => toolbar.classList.contains('absolute'))).toBe(true)
+    const actions = screen.getAllByTestId('message-actions')
+    expect(actions).toHaveLength(3)
+    expect(actions.every(toolbar => toolbar.classList.contains('absolute'))).toBe(true)
+    expect(screen.getAllByLabelText('React ❤️')).toHaveLength(3)
+    expect(screen.getAllByLabelText('React 👍')).toHaveLength(3)
+    expect(screen.getAllByLabelText('React 😂')).toHaveLength(3)
 
     const timestamps = screen.getAllByTestId('message-time')
     expect(timestamps).toHaveLength(2)

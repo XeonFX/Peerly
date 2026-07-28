@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { formatMessageTimestamp, groupConsecutiveMessages } from '@peerly/core'
+import { buildReplyMessage, formatMessageTimestamp, groupConsecutiveMessages } from '@peerly/core'
 import { useClockFormat } from '@peerly/core/react'
 import type { GlobalDmMessage } from '../collab/globalDmHistory'
 import type { GlobalDmReaction } from '../collab/globalDmHistory'
@@ -12,6 +12,8 @@ import { Avatar } from './Avatar'
 import { SafeMessageText } from './SafeMessageText'
 import { formatBytes } from '../utils/format'
 import type { UserProfile } from '../types'
+import { MessageActions } from './MessageActions'
+import { scrollToLinkedMessage } from '../utils/messageLink'
 
 type Props = {
   friendName: string
@@ -65,6 +67,8 @@ export function GlobalDmChat({
   const { clockFormat } = useClockFormat()
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [replyTarget, setReplyTarget] = useState<{ id: string; author: string; text: string } | null>(null)
+  const [openActionsId, setOpenActionsId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -94,6 +98,10 @@ export function GlobalDmChat({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length])
 
+  useEffect(() => {
+    scrollToLinkedMessage()
+  }, [messages.length])
+
   const consumedMessageRef = useRef<string | null>(null)
   useEffect(() => {
     const message = pendingMessage?.trim()
@@ -114,8 +122,9 @@ export function GlobalDmChat({
     if (!draft.trim() || busy) return
     setBusy(true)
     try {
-      await onSend(draft)
+      await onSend(replyTarget ? buildReplyMessage(replyTarget.author, replyTarget.text, draft) : draft)
       setDraft('')
+      setReplyTarget(null)
     } finally {
       setBusy(false)
     }
@@ -201,11 +210,15 @@ export function GlobalDmChat({
             return (
               <div
                 key={msg.id}
-                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/40 ${
+                id={`message-${msg.id}`}
+                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/55 focus-within:bg-base-200/55 ${
+                  openActionsId === msg.id ? 'bg-base-200/55' : ''
+                } ${
                   startsGroup ? 'mt-1 py-1 first:mt-0' : 'py-0'
                 }`}
                 data-testid={mine ? 'global-dm-mine' : 'global-dm-theirs'}
                 data-message-group-start={startsGroup ? 'true' : 'false'}
+                tabIndex={0}
               >
                 {startsGroup ? (
                   <span data-testid="global-dm-avatar">
@@ -235,37 +248,6 @@ export function GlobalDmChat({
                         })}
                       </time>
                     </div>
-                  )}
-                  {mine && !msg.deletedAt && (
-                    <span className="absolute right-0 top-0 flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                      {!attachment && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs btn-square"
-                          aria-label={tr('Edit message')}
-                          title={tr('Edit message')}
-                          onClick={() => {
-                            const next = window.prompt(tr('Edit message'), msg.text)?.trim()
-                            if (next && next !== msg.text) onEdit(msg.id, next)
-                          }}
-                        >
-                          <Icon name="pencil" size={13} />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs btn-square text-error"
-                        aria-label={tr('Delete message')}
-                        title={tr('Delete message')}
-                        onClick={() => {
-                          if (window.confirm(tr('Delete this message for everyone online?'))) {
-                            onDelete(msg.id)
-                          }
-                        }}
-                      >
-                        <Icon name="trash" size={13} />
-                      </button>
-                    </span>
                   )}
                   {(msg.deletedAt || body) && (
                     <div className="text-sm leading-relaxed text-base-content/90">
@@ -316,14 +298,27 @@ export function GlobalDmChat({
                   )}
                 </div>
                 {!msg.deletedAt && (
-                  <span
-                    className="pointer-events-none absolute right-2 top-0 z-10 flex rounded-lg border border-base-300 bg-base-100 p-0.5 opacity-0 shadow-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
-                    data-testid="global-dm-quick-reactions"
-                  >
-                    {['👍', '❤️', '😂', '🎉'].map(emoji => (
-                      <button key={emoji} type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => void onToggleReaction(msg.id, emoji)} aria-label={tr('React {emoji}', { emoji })}>{emoji}</button>
-                    ))}
-                  </span>
+                  <MessageActions
+                    messageId={msg.id}
+                    text={msg.text}
+                    canEdit={mine && !attachment}
+                    canDelete={mine}
+                    onReact={emoji => void onToggleReaction(msg.id, emoji)}
+                    onReply={() => setReplyTarget({ id: msg.id, author: senderName, text: msg.text })}
+                    onEdit={() => {
+                      const next = window.prompt(tr('Edit message'), msg.text)?.trim()
+                      if (next && next !== msg.text) onEdit(msg.id, next)
+                    }}
+                    onDelete={() => {
+                      if (window.confirm(tr('Delete this message for everyone online?'))) {
+                        onDelete(msg.id)
+                      }
+                    }}
+                    onOpenChange={open =>
+                      setOpenActionsId(current => open ? msg.id : current === msg.id ? null : current)
+                    }
+                    testIdPrefix="global-dm-message"
+                  />
                 )}
               </div>
             )
@@ -333,43 +328,58 @@ export function GlobalDmChat({
       </div>
 
       <form
-        className="flex shrink-0 gap-2 border-t border-base-300/70 p-3"
+        className="shrink-0 border-t border-base-300/70 p-3"
         onSubmit={e => void submit(e)}
         data-testid="global-dm-compose"
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          hidden
-          data-testid="global-dm-file-input"
-          onChange={event => {
-            const files = Array.from(event.target.files ?? [])
-            if (files.length) void onFiles(files)
-            event.target.value = ''
-          }}
-        />
-        <button type="button" className="btn btn-ghost btn-sm btn-square" onClick={() => fileInputRef.current?.click()} aria-label={tr('Attach files')} data-testid="global-dm-attach">
-          <Icon name="paperclip" size={17} />
-        </button>
-        <input
-          type="text"
-          className="input input-bordered input-sm min-w-0 flex-1"
-          placeholder={tr('Message…')}
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          maxLength={4000}
-          data-testid="global-dm-input"
-          disabled={busy}
-        />
-        <button
-          type="submit"
-          className="btn btn-primary btn-sm"
-          disabled={busy || !draft.trim()}
-          data-testid="global-dm-send"
-        >
-          {tr('Send')}
-        </button>
+        {replyTarget && (
+          <div className="mb-1.5 flex items-center gap-2 rounded-xl bg-base-200 px-3 py-1.5 text-xs">
+            <Icon name="reply" size={14} className="text-primary" />
+            <span className="min-w-0 flex-1 truncate">
+              <strong>{tr('Replying to {name}', { name: replyTarget.author })}</strong>
+              {' · '}
+              <span className="text-base-content/60">{replyTarget.text}</span>
+            </span>
+            <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => setReplyTarget(null)} aria-label={tr('Cancel reply')}>
+              <Icon name="x" size={13} />
+            </button>
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            data-testid="global-dm-file-input"
+            onChange={event => {
+              const files = Array.from(event.target.files ?? [])
+              if (files.length) void onFiles(files)
+              event.target.value = ''
+            }}
+          />
+          <button type="button" className="btn btn-ghost btn-sm btn-square" onClick={() => fileInputRef.current?.click()} aria-label={tr('Attach files')} data-testid="global-dm-attach">
+            <Icon name="paperclip" size={17} />
+          </button>
+          <input
+            type="text"
+            className="input input-bordered input-sm min-w-0 flex-1"
+            placeholder={tr('Message…')}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            maxLength={4000}
+            data-testid="global-dm-input"
+            disabled={busy}
+          />
+          <button
+            type="submit"
+            className="btn btn-primary btn-sm"
+            disabled={busy || !draft.trim()}
+            data-testid="global-dm-send"
+          >
+            {tr('Send')}
+          </button>
+        </div>
       </form>
     </section>
   )

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  ALLOWED_REACTIONS,
   DEFAULT_HISTORY_CAP,
   PRESENCE_INTERVAL_MS,
   recordSyncActivity,
@@ -34,7 +35,6 @@ import { safeThumbnailUrl } from '../utils/avatarUrl'
 
 const CHAT_SCHEME = 'peerly-gdm-v2'
 const MAX_TEXT = 4000
-const REACTION_EMOJIS = new Set(['👍', '❤️', '😂', '🎉'])
 
 export type GlobalDmTransfer = {
   id: string
@@ -140,7 +140,7 @@ export function useGlobalDmChat({
   }, [profileRef, friendUserIdRef, friendDeviceKeyIdRef, identityRef])
 
   const verifyReaction = useCallback(async (wire: GlobalDmReaction) => {
-    if (!REACTION_EMOJIS.has(wire.emoji) || !(await verifyTextReaction(CHAT_SCHEME, wire))) return false
+    if (!ALLOWED_REACTIONS.has(wire.emoji) || !(await verifyTextReaction(CHAT_SCHEME, wire))) return false
     const me = profileRef.current?.userId
     const friend = friendUserIdRef.current
     if (wire.authorUserId !== me && wire.authorUserId !== friend) return false
@@ -503,7 +503,7 @@ export function useGlobalDmChat({
   }, [profileRef, identityRef, roomCode, friendUserIdRef, friendNameRef, ringFriendRef])
 
   const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
-    if (!REACTION_EMOJIS.has(emoji)) return
+    if (!ALLOWED_REACTIONS.has(emoji)) return
     const me = profileRef.current
     const id = identityRef.current
     const message = messagesRef.current.find(item => item.id === messageId)

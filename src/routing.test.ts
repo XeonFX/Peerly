@@ -17,12 +17,23 @@ describe('routing', () => {
   it('round-trips workspace routes', () => {
     const channel = {
       screen: 'workspace' as const,
+      workspaceName: 'Engineering Team',
       view: 'channel' as const,
       channelId: 'general',
       showFiles: true,
     }
     expect(routeFromPath(pathForRoute(channel))).toEqual(channel)
     expect(routeFromPath(pathForRoute(defaultWorkspaceRoute()))?.screen).toBe('workspace')
+  })
+
+  it('keeps legacy workspace URLs while adding the public workspace name to new URLs', () => {
+    expect(pathForRoute(defaultWorkspaceRoute('My Workspace'))).toBe('/workspace/My%20Workspace/channel/general')
+    expect(routeFromPath('/workspace/channel/general')).toEqual(defaultWorkspaceRoute())
+    expect(routeFromPath('/workspace/My%20Workspace/settings')).toEqual({
+      screen: 'workspace',
+      workspaceName: 'My Workspace',
+      view: 'settings',
+    })
   })
 
   it('redirects the legacy workspace profile route to the global profile', () => {

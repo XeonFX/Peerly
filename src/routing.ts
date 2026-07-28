@@ -17,8 +17,8 @@ export type AccountRoute = { screen: 'account' }
 export type StorageRoute = { screen: 'storage' }
 
 export type WorkspaceRoute =
-  | { screen: 'workspace'; view: 'channel'; channelId: string; showFiles: boolean }
-  | { screen: 'workspace'; view: 'settings' }
+  | { screen: 'workspace'; workspaceName?: string; view: 'channel'; channelId: string; showFiles: boolean }
+  | { screen: 'workspace'; workspaceName?: string; view: 'settings' }
 
 /** Public legal pages, reachable regardless of session/workspace state. */
 export type LegalRoute = { screen: 'legal'; doc: 'privacy' | 'terms' }
@@ -38,9 +38,10 @@ export type AppRoute =
 
 const PARSE_BASE = 'http://peerly.local'
 
-export function defaultWorkspaceRoute(): WorkspaceRoute {
+export function defaultWorkspaceRoute(workspaceName?: string): WorkspaceRoute {
   return {
     screen: 'workspace',
+    workspaceName,
     view: 'channel',
     channelId: GENERAL_CHANNEL.id,
     showFiles: false,
@@ -65,11 +66,14 @@ export function pathForRoute(route: AppRoute): string {
 
   switch (route.view) {
     case 'channel': {
-      const base = `/workspace/channel/${encodeURIComponent(route.channelId)}`
+      const workspace = route.workspaceName ? `/${encodeURIComponent(route.workspaceName)}` : ''
+      const base = `/workspace${workspace}/channel/${encodeURIComponent(route.channelId)}`
       return route.showFiles ? `${base}?files=1` : base
     }
     case 'settings':
-      return '/workspace/settings'
+      return route.workspaceName
+        ? `/workspace/${encodeURIComponent(route.workspaceName)}/settings`
+        : '/workspace/settings'
   }
 }
 
@@ -117,12 +121,32 @@ function parsePathRoute(pathname: string, search: string, hash = ''): AppRoute |
     }
   }
 
+  const namedChannelMatch = /^\/workspace\/([^/]+)\/channel\/([^/]+)$/.exec(path)
+  if (namedChannelMatch) {
+    const params = new URLSearchParams(search)
+    return {
+      screen: 'workspace',
+      workspaceName: decodeURIComponent(namedChannelMatch[1]),
+      view: 'channel',
+      channelId: decodeURIComponent(namedChannelMatch[2]),
+      showFiles: params.get('files') === '1',
+    }
+  }
+
   if (path === '/workspace/profile') {
     // Legacy route: identity profile is global, never workspace-scoped.
     return { screen: 'account' }
   }
   if (path === '/workspace/settings') {
     return { screen: 'workspace', view: 'settings' }
+  }
+  const namedSettingsMatch = /^\/workspace\/([^/]+)\/settings$/.exec(path)
+  if (namedSettingsMatch) {
+    return {
+      screen: 'workspace',
+      workspaceName: decodeURIComponent(namedSettingsMatch[1]),
+      view: 'settings',
+    }
   }
 
   return null

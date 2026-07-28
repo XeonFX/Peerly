@@ -40,6 +40,7 @@ import { DEFAULT_USER_COLOR } from './config'
 import type { UserProfile } from './types'
 import type { IncomingWorkspaceInvite } from './collab/workspaceInviteStore'
 import { resolveAvatarPreview } from './collab/avatarService'
+import { AppVersionBadge } from './components/AppVersionBadge'
 
 const MyDevicesPage = lazy(() => import('./components/MyDevicesPage').then(module => ({ default: module.MyDevicesPage })))
 const SyncActivityPage = lazy(() => import('./components/SyncActivityPage').then(module => ({ default: module.SyncActivityPage })))
@@ -55,13 +56,13 @@ configureRuntimeAuthCredentialProvider(() => {
   return token && providerId ? { token, providerId, signer: deviceIdentity } : null
 })
 
-function App() {
+function AppContent() {
   const { session, setSession, ready } = useSessionBootstrap()
   const [, setIdentityVersion] = useState(0)
   const hasRememberedIdentity = Boolean(loadIdentityEmail() && loadIdentityProvider())
   const signedIn = Boolean(loadSignedInIdentity()) || hasRememberedIdentity
   const { route, navigate, pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
-    useAppRouting(Boolean(session), signedIn, ready)
+    useAppRouting(session?.workspaceName, signedIn, ready)
   const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedCurrentLegal())
   const acceptLegal = () => {
     acceptCurrentLegal()
@@ -268,7 +269,7 @@ function App() {
     return (
       <LegalPage
         doc={route.doc}
-        onBack={() => navigate(session ? defaultWorkspaceRoute() : signedIn ? { screen: 'home' } : { screen: 'login' })}
+        onBack={() => navigate(session ? defaultWorkspaceRoute(session.workspaceName) : signedIn ? { screen: 'home' } : { screen: 'login' })}
       />
     )
   }
@@ -339,7 +340,7 @@ function App() {
           avatarId={session?.avatarId ?? storedProfile.avatarId}
           onProfileChange={updateGlobalProfile}
           onBack={() => {
-            if (session) enterWorkspace()
+            if (session) enterWorkspace(session.workspaceName)
             else navigate({ screen: 'home' })
           }}
           onSignOut={signOut}
@@ -384,7 +385,7 @@ function App() {
       onPickerTabChange={setPickerTab}
       onJoined={async next => {
         setSession(await hydrateSessionAvatar(next))
-        if (route.screen !== 'devices') enterWorkspace()
+        if (route.screen !== 'devices') enterWorkspace(next.workspaceName)
       }}
       onIdentityChange={nextSignedIn => {
         setIdentityVersion(version => version + 1)
@@ -463,6 +464,15 @@ function App() {
           </div>
         </div>
       )}
+    </>
+  )
+}
+
+function App() {
+  return (
+    <>
+      <AppContent />
+      <AppVersionBadge />
     </>
   )
 }

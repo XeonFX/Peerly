@@ -153,6 +153,15 @@ export {
 } from './googleIdToken.js'
 export { avatarInitial, getPeerColor, PEER_COLORS } from './identicon.js'
 export {
+  ALLOWED_REACTIONS,
+  buildReplyMessage,
+  QUICK_REACTIONS,
+  REACTION_CATEGORIES,
+  searchReactionCategories,
+  type ReactionCategory,
+  type ReactionEmoji,
+} from './reactions.js'
+export {
   clockFormatPreferenceKey,
   DEFAULT_CLOCK_FORMAT,
   formatClockTime,

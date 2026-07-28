@@ -13,7 +13,7 @@ import { SyncStatusBar } from '../SyncStatusBar'
 import { Icon } from '../Icon'
 import { RELAY_OFFLINE_ERROR } from '../../collab/constants'
 import { startIncomingCallRingtone } from '../../collab/attentionSound'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useI18n } from '../../i18n'
 
 type Props = {
@@ -34,6 +34,7 @@ export function ChannelPanel({
   onOpenSearch,
 }: Props) {
   const { tr } = useI18n()
+  const [replyTarget, setReplyTarget] = useState<{ id: string; author: string; text: string } | null>(null)
   const { connectionError, connectionNotice, isReady } = useConnectionSlice()
   const { messages, transfers, sendMessage, editMessage, deleteMessage, toggleReaction, sendFiles, requestFile, markFileNsfw, syncProgress, fileError, soundsEnabled } = useChatSlice()
   const {
@@ -293,6 +294,7 @@ export function ChannelPanel({
         onEditMessage={editMessage}
         onDeleteMessage={deleteMessage}
         onToggleReaction={toggleReaction}
+        onReplyMessage={setReplyTarget}
       />
       <MessageInput
         channelName={title}
@@ -300,6 +302,8 @@ export function ChannelPanel({
         onSend={sendMessage}
         onFiles={sendFiles}
         disabled={!isReady}
+        replyTarget={replyTarget}
+        onCancelReply={() => setReplyTarget(null)}
       />
     </>
   )

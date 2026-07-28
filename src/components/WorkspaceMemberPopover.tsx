@@ -90,32 +90,19 @@ export function WorkspaceMemberPopover({
         role="dialog"
         aria-modal="true"
         aria-labelledby="workspace-member-name"
-        className="w-full max-w-sm overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-2xl"
+        className="w-full max-w-sm rounded-2xl border border-base-300 bg-base-100 p-5 shadow-2xl"
         data-testid="workspace-member-popover"
       >
-        <div className="h-20 bg-linear-to-br from-primary/60 via-accent/45 to-secondary/45" />
-        <div className="relative px-5 pb-5">
-          <div className="-mt-9 flex items-end justify-between gap-3">
-            <span className="rounded-full border-4 border-base-100 bg-base-100">
-              <Avatar
-                name={profile.name}
-                color={profile.color}
-                avatar={profile.avatar}
-                size="lg"
-              />
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm btn-square mt-2"
-              onClick={onClose}
-              aria-label={tr('Close')}
-            >
-              <Icon name="x" size={17} />
-            </button>
-          </div>
-
-          <div className="mt-3">
-            <h2 id="workspace-member-name" className="text-lg font-bold">
+        <div className="flex items-start gap-4">
+          <Avatar
+            name={profile.name}
+            color={profile.color}
+            avatar={profile.avatar}
+            size="lg"
+            shape="circle"
+          />
+          <div className="min-w-0 flex-1 pt-1">
+            <h2 id="workspace-member-name" className="truncate text-lg font-bold">
               {profile.name}
             </h2>
             {self ? (
@@ -123,19 +110,28 @@ export function WorkspaceMemberPopover({
             ) : (
               <>
                 {contact?.email && (
-                  <p className="truncate text-xs text-base-content/60">{contact.email}</p>
+                  <p className="truncate text-xs text-base-content/60" title={contact.email}>{contact.email}</p>
                 )}
-                <p className="mt-1 text-xs text-base-content/55">
+                <p className="mt-0.5 text-xs text-base-content/55">
                   {member.peer.presenceOnly ? tr('Connecting secure identity…') : tr('Workspace member')}
                 </p>
               </>
             )}
           </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm btn-square -mr-2 -mt-2"
+            onClick={onClose}
+            aria-label={tr('Close')}
+          >
+            <Icon name="x" size={17} />
+          </button>
+        </div>
 
-          {self ? (
+        {self ? (
             <button
               type="button"
-              className="btn btn-primary btn-sm mt-5 w-full"
+              className="btn btn-primary btn-sm mt-6 w-full"
               onClick={() => {
                 onClose()
                 onEditProfile()
@@ -146,10 +142,10 @@ export function WorkspaceMemberPopover({
               {tr('Edit profile')}
             </button>
           ) : member.canMessage && contact ? (
-            <form className="mt-5 flex gap-2" onSubmit={submit}>
+            <form className="mt-6 flex items-center gap-2 rounded-xl border border-base-300 bg-base-200/60 p-1.5 focus-within:border-primary/60" onSubmit={submit}>
               <input
                 type="text"
-                className="input input-bordered input-sm min-w-0 flex-1"
+                className="min-w-0 flex-1 bg-transparent px-2 text-sm outline-none"
                 value={draft}
                 onChange={event => setDraft(event.target.value)}
                 placeholder={tr('Message {name}', { name: profile.name })}
@@ -159,7 +155,7 @@ export function WorkspaceMemberPopover({
               />
               <button
                 type="submit"
-                className="btn btn-primary btn-sm btn-square"
+                className="btn btn-primary btn-sm btn-circle"
                 disabled={!draft.trim()}
                 aria-label={tr('Send message')}
                 data-testid="workspace-member-message-send"
@@ -168,7 +164,7 @@ export function WorkspaceMemberPopover({
               </button>
             </form>
           ) : contact ? (
-            <div className="mt-5">
+            <div className="mt-6">
               <button
                 type="button"
                 className="btn btn-primary btn-sm w-full"
@@ -184,17 +180,16 @@ export function WorkspaceMemberPopover({
               </p>
             </div>
           ) : (
-            <p className="mt-5 rounded-lg bg-base-200 px-3 py-2 text-xs text-base-content/60">
+            <p className="mt-6 rounded-lg bg-base-200 px-3 py-2 text-xs text-base-content/60">
               {tr('Secure profile details are still connecting.')}
             </p>
           )}
 
-          {error && (
+        {error && (
             <p className="mt-3 text-xs text-base-content/65" role="status">
               {error}
             </p>
           )}
-        </div>
       </section>
     </div>
   )

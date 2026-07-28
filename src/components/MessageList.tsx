@@ -9,7 +9,9 @@ import { buildSenderDirectory, resolveSenderInfo } from '../utils/senderDirector
 import { Avatar } from './Avatar'
 import { Icon } from './Icon'
 import { SafeMessageText } from './SafeMessageText'
+import { MessageActions } from './MessageActions'
 import { useI18n } from '../i18n'
+import { scrollToLinkedMessage } from '../utils/messageLink'
 
 type Props = {
   messages: Message[]
@@ -28,6 +30,7 @@ type Props = {
   onEditMessage: (messageId: string, text: string) => void
   onDeleteMessage: (messageId: string) => void
   onToggleReaction: (messageId: string, emoji: string) => void
+  onReplyMessage: (message: { id: string; author: string; text: string }) => void
 }
 
 function FileAttachment({
@@ -165,6 +168,7 @@ export function MessageList({
   onEditMessage,
   onDeleteMessage,
   onToggleReaction,
+  onReplyMessage,
 }: Props) {
   const { locale, tr } = useI18n()
   const { clockFormat } = useClockFormat()
@@ -175,6 +179,7 @@ export function MessageList({
   const prevChannelRef = useRef(channelId)
   const [pendingBelow, setPendingBelow] = useState(0)
   const [announcement, setAnnouncement] = useState('')
+  const [openActionsId, setOpenActionsId] = useState<string | null>(null)
   const senderDirectory = useMemo(
     () => buildSenderDirectory(selfId, selfProfile, peers, messages, pastSelfIds, selfUserId),
     [selfId, selfProfile, peers, messages, pastSelfIds, selfUserId]
@@ -239,6 +244,10 @@ export function MessageList({
     }
   }, [messages, channelId, selfId, tr])
 
+  useEffect(() => {
+    scrollToLinkedMessage()
+  }, [channelId, messages.length])
+
   if (messages.length === 0) {
     return (
       <div className="message-list flex flex-1 items-center justify-center p-6">
@@ -288,11 +297,15 @@ export function MessageList({
             return (
               <div
                 key={msg.id}
-                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/40 ${
+                id={`message-${msg.id}`}
+                className={`chat-message-row group relative flex gap-3 rounded-lg px-2 transition-colors hover:bg-base-200/55 focus-within:bg-base-200/55 ${
+                  openActionsId === msg.id ? 'bg-base-200/55' : ''
+                } ${
                   startsGroup ? 'mt-1 py-1 first:mt-0' : 'py-0'
                 }`}
                 data-testid="chat-message"
                 data-message-group-start={startsGroup ? 'true' : 'false'}
+                tabIndex={0}
               >
                 {startsGroup ? (
                   /* One avatar/name header represents the consecutive block. */
@@ -345,35 +358,6 @@ export function MessageList({
                         </span>
                       )}
                     </div>
-                    {ownMessage && msg.type === 'text' && !msg.deletedAt && (
-                      <span className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs btn-square"
-                          aria-label={tr('Edit message')}
-                          title={tr('Edit message')}
-                          onClick={() => {
-                            const text = window.prompt(tr('Edit message'), msg.text)?.trim()
-                            if (text && text !== msg.text) onEditMessage(msg.id, text)
-                          }}
-                        >
-                          <Icon name="pencil" size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs btn-square text-error"
-                          aria-label={tr('Delete message')}
-                          title={tr('Delete message')}
-                          onClick={() => {
-                            if (window.confirm(tr('Delete this message for everyone online?'))) {
-                              onDeleteMessage(msg.id)
-                            }
-                          }}
-                        >
-                          <Icon name="trash" size={13} />
-                        </button>
-                      </span>
-                    )}
                   </div>
                   {!msg.deletedAt && Object.keys(reactionCounts).length > 0 && (
                     <div
@@ -395,22 +379,26 @@ export function MessageList({
                   )}
                 </div>
                 {!msg.deletedAt && (
-                  <span
-                    className="pointer-events-none absolute right-2 top-0 z-10 flex rounded-lg border border-base-300 bg-base-100 p-0.5 opacity-0 shadow-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
-                    data-testid="message-quick-reactions"
-                  >
-                    {['👍', '❤️', '😂', '🎉'].map(emoji => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        className="btn btn-ghost btn-xs btn-square"
-                        onClick={() => onToggleReaction(msg.id, emoji)}
-                        aria-label={tr('React {emoji}', { emoji })}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </span>
+                  <MessageActions
+                    messageId={msg.id}
+                    text={msg.text}
+                    canEdit={ownMessage && msg.type === 'text'}
+                    canDelete={ownMessage}
+                    onReact={emoji => onToggleReaction(msg.id, emoji)}
+                    onReply={() => onReplyMessage({ id: msg.id, author: sender.name, text: msg.text })}
+                    onEdit={() => {
+                      const text = window.prompt(tr('Edit message'), msg.text)?.trim()
+                      if (text && text !== msg.text) onEditMessage(msg.id, text)
+                    }}
+                    onDelete={() => {
+                      if (window.confirm(tr('Delete this message for everyone online?'))) {
+                        onDeleteMessage(msg.id)
+                      }
+                    }}
+                    onOpenChange={open =>
+                      setOpenActionsId(current => open ? msg.id : current === msg.id ? null : current)
+                    }
+                  />
                 )}
               </div>
             )

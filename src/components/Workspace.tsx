@@ -476,6 +476,7 @@ export function Workspace({
   const openChannel = (id: string) => {
     onWorkspaceRouteChange({
       screen: 'workspace',
+      workspaceName: session.workspaceName,
       view: 'channel',
       channelId: id,
       showFiles: workspaceRoute.view === 'channel' ? workspaceRoute.showFiles : false,
@@ -528,10 +529,11 @@ export function Workspace({
         onChannelSelect={openChannel}
         onChannelsUpdated={refreshChannels}
         onEditProfile={onOpenProfile}
-        onWorkspaceSettings={() => onWorkspaceRouteChange({ screen: 'workspace', view: 'settings' })}
+        onWorkspaceSettings={() => onWorkspaceRouteChange({ screen: 'workspace', workspaceName: session.workspaceName, view: 'settings' })}
         onToggleFiles={() =>
           onWorkspaceRouteChange({
             screen: 'workspace',
+            workspaceName: session.workspaceName,
             view: 'channel',
             channelId: activeChannel,
             showFiles: !showFiles,
