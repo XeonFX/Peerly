@@ -60,7 +60,9 @@
     "build:core": "npm --prefix packages/core run build",
     "pretest": "npm run build:core",
     "pretest:workers": "npm run build:core",
-    "pretest:coverage": "npm run build:core"
+    "pretest:coverage": "npm run build:core",
+    "prebuild": "npm run build:core",
+    "prebuild:e2e": "npm run build:core"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

@@ -3,6 +3,14 @@
   "name": "peerly",
   "main": "worker/index.mjs",
   "compatibility_date": "2026-07-22",
+  // The worker's own imports reach into `packages/core/dist` — the shared
+  // control plane is TypeScript compiled to JS, and `worker/realtime/*.mjs`
+  // loads it from there. Bundling without it fails at
+  // `packages/core/worker/realtime/index.mjs:19`, which is how a Workers Build
+  // fails on a clean checkout while every local build succeeds on a warm one.
+  // Declared here so any path that bundles this worker gets it, not only the
+  // ones that happen to run `npm run build` first.
+  "build": { "command": "npm run build:core" },
   "vars": {
     // The auth bridge executes in the Worker runtime, where Cloudflare's
     // build-time VITE_* variables are not available automatically.
