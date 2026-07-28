@@ -117,7 +117,6 @@ flowchart LR
     ROUTER["worker/index.mjs -> handleRealtimeRoute()"]
     UG["UserGatewayDO\none per opaque account"]
     SS["SignalScopeDO\none per active P2P scope"]
-    WS["WorkspaceDO\nPeerly workspace coordination"]
   end
   subgraph VPS["codefusion-vps"]
     TURN["coturn (unchanged)"]
@@ -127,7 +126,7 @@ flowchart LR
   UI -->|"2: POST /api/network/session\ncapability + device proof"| ROUTER
   ROUTER -->|"HttpOnly cookie + TURN REST creds"| UI
   UI -->|"3: WS /api/realtime/control\nauthenticated by cookie"| ROUTER --> UG
-  UG <-->|"typed RPC"| WS
+  UG -->|"authorize/release scope"| SS
   UI -->|"4: WS /api/realtime/signal/{routeId}\nopaque WebRTC signaling"| ROUTER --> SS
   UI -->|"TURN allocate"| TURN
 ```
@@ -139,31 +138,34 @@ flowchart LR
    session ID — never the raw email or provider subject), exchanged for a
    short-lived `Secure; HttpOnly; SameSite=Strict` cookie plus TURN REST
    credentials on every `/api/network/session` call.
-2. **`UserGatewayDO`** ([`packages/core/worker/realtime/userGateway.mjs`](../packages/core/worker/realtime/userGateway.mjs)):
+2. **`UserGatewayDO`** ([`packages/core/worker/realtime/gateway/userGateway.mjs`](../packages/core/worker/realtime/gateway/userGateway.mjs)):
    one Durable Object per opaque account, holding that account's control
-   WebSocket(s), device/session revocation epochs, matchmaking/reservation
-   state, and idempotency keys — in **SQLite**, not a process-local `Map`. It
-   uses `ctx.acceptWebSocket()`/hibernation: Cloudflare can put the object to
-   sleep between messages and it resumes from `ctx.getWebSockets()` plus
-   serialized attachments, rather than needing to stay resident (and billed)
-   the whole time.
-3. **`SignalScopeDO`** ([`signalScope.mjs`](../packages/core/worker/realtime/signalScope.mjs)):
+   WebSocket(s), opaque account id, device sessions and revocation epochs,
+   replay nonces, idempotency acknowledgements, a bounded control-event
+   stream, and offline invitation mailbox entries — in **SQLite**, not a
+   process-local `Map`. HeyHubs extends this same per-account database with
+   matchmaking reservation state; Peerly does not. It uses
+   `ctx.acceptWebSocket()`/hibernation: Cloudflare can put the object to sleep
+   between messages and it resumes from `ctx.getWebSockets()` plus serialized
+   attachments, rather than needing to stay resident (and billed) the whole
+   time.
+3. **`SignalScopeDO`** ([`packages/core/worker/realtime/gateway/signalScope.mjs`](../packages/core/worker/realtime/gateway/signalScope.mjs)):
    one object per active P2P scope (a workspace, a DM, a room), forwarding
    only opaque WebRTC offer/answer/ICE envelopes — it never sees chat, files,
    or media. This is what `VITE_SIGNALING=durable-objects` actually uses in
    place of Nostr/ws-relay/Supabase for the signaling handshake itself (see
    [`packages/core/src/realtime/signaling.ts`](../packages/core/src/realtime/signaling.ts)
    and [`joinRoom.ts`](../packages/core/src/joinRoom.ts)).
-4. **`WorkspaceDO`** ([`workspace.mjs`](../packages/core/worker/realtime/workspace.mjs)):
-   Peerly-only; carries workspace presence, signed member/device capability
-   versions, and friend-invite/device-sync notifications, delivered through
-   the requesting account's `UserGatewayDO`.
-5. **Client state machine** ([`packages/core/src/realtime/client.ts`](../packages/core/src/realtime/client.ts)):
+   Its SQLite database contains only short-lived participant authorizations;
+   live connection ids and topic subscriptions are WebSocket attachments.
+   `WorkspaceDO` was removed because it was unreachable duplication: Peerly
+   uses the shared gateway and signal-scope primitives directly.
+4. **Client state machine** ([`packages/core/src/realtime/client.ts`](../packages/core/src/realtime/client.ts)):
    an explicit `offline -> enrolling -> session -> connecting -> ready` cycle
    with exponential jittered backoff, a resumable server sequence number, and
    a bounded command queue — versus the relay's raw WebSocket pass-through
    with no resume semantics of its own.
-6. **Persistence and correctness rules** (see the architecture doc's
+5. **Persistence and correctness rules** (see the architecture doc's
    "Persistence and concurrency rules"): every table has bounded retention
    and an indexed expiry column, one alarm per object drives expiry, and
    correctness state is persisted before it is acknowledged. Matching across
@@ -172,7 +174,7 @@ flowchart LR
    committed match" a zero-tolerance, tested property — something the legacy
    coordinator's in-memory `pendingMatches` map does not formally guarantee
    under a race.
-7. **Deployment** ([`wrangler.preview.jsonc`](../wrangler.preview.jsonc)):
+6. **Deployment** ([`wrangler.preview.jsonc`](../wrangler.preview.jsonc)):
    Durable Object bindings + a `realtime-v1` SQLite migration, its own
    secrets (`NETWORK_SESSION_SECRET`, `OPAQUE_USER_ID_SECRET`,
    `TURN_AUTH_SECRET`, …), and `head_sampling_rate: 1` observability — kept in
