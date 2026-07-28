@@ -140,17 +140,37 @@ export function HomeView({
     async (friend: Friend) => {
       onSectionChange('friends')
       setMobileFriendsOpen(false)
+      // The effect above turns this into a room code, by the same path a
+      // refresh takes, so both routes into a conversation behave identically.
       setActiveFriend(friend)
-      const secret = friendDmSecret(friend)
-      if (!secret) {
-        setRoomCode(null)
-        return
-      }
-      const code = await dmRoomCode(profile.userId, friend.subjectUserId, secret)
-      setRoomCode(code)
     },
-    [profile.userId, onSectionChange, setActiveFriend]
+    [onSectionChange, setActiveFriend]
   )
+
+  /**
+   * Derive the room code for whichever conversation the route names.
+   *
+   * On a refresh straight into `/friends/<id>` nothing calls `openFriend`, so
+   * without this the code stayed null and the pane fell back to the list until
+   * some later render happened to open it — the conversation appearing
+   * "after a while" instead of immediately.
+   */
+  useEffect(() => {
+    if (!activeFriend) {
+      setRoomCode(null)
+      return
+    }
+    const secret = friendDmSecret(activeFriend)
+    if (!secret) {
+      setRoomCode(null)
+      return
+    }
+    let cancelled = false
+    void dmRoomCode(profile.userId, activeFriend.subjectUserId, secret).then(code => {
+      if (!cancelled) setRoomCode(code)
+    })
+    return () => { cancelled = true }
+  }, [activeFriend, profile.userId])
 
   // Handle lobby ring: open or banner.
   useEffect(() => {
