@@ -46,9 +46,11 @@ runToCompletion('npm', ['run', 'build:e2e'], {
   VITE_OIDC_LABEL: 'E2E',
 })
 
-// After the build, so it survives `dist/` being cleaned, and never as part of
-// `npm run build` — a deployment must not serve an issuer at its own origin.
-runToCompletion('node', ['scripts/emit-e2e-jwks.mjs'], {})
+// Into `dist-e2e/`, never `dist/`. Production `wrangler deploy` has no build
+// step, so it uploads whatever is already in `dist/` — and a deploy run just
+// after the E2E suite would otherwise ship a bundle carrying the test signing
+// key. Separate output directories make that impossible rather than unlikely.
+runToCompletion('node', ['scripts/emit-e2e-jwks.mjs', 'dist-e2e'], {})
 
 const { run } = createProcessRunner()
 run('wrangler', 'npx', [

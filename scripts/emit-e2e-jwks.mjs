@@ -18,7 +18,8 @@ import { fileURLToPath } from 'node:url'
  */
 const here = dirname(fileURLToPath(import.meta.url))
 const source = resolve(here, '../e2e/fixtures/oidcJwks.json')
-const target = resolve(here, '../dist/.well-known/jwks.json')
+const outDir = process.argv[2] ?? 'dist'
+const target = resolve(here, `../${outDir}/.well-known/jwks.json`)
 
 mkdirSync(dirname(target), { recursive: true })
 copyFileSync(source, target)

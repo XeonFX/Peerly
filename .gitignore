@@ -44,3 +44,4 @@ Thumbs.db
 .cursor
 # wrangler dev state and generated bundles
 .wrangler
+dist-e2e

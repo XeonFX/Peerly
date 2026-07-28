@@ -16,7 +16,7 @@ import { join } from 'path'
  * Whatever this passes is still not deployable. Its output carries a real RSA
  * private key that mints tokens the app trusts.
  */
-const DIST = 'dist'
+const DIST = process.argv[2] ?? 'dist'
 
 const REQUIRED = [
   { label: 'E2E RSA private exponent (d)', needle: 'NqIymRvy3qsy_VGDrWFbp70XvKmt6c4Mc9r8aT1BoNtor' },
