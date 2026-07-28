@@ -71,6 +71,26 @@ describe('Peerly auth bridge parent validation', () => {
     )
     expect(response.status).toBe(400)
   })
+
+  it('serves silent renewal mode only to an allowed parent', async () => {
+    const params = new URLSearchParams({
+      parent_origin: 'https://preview.peerly.cc',
+      client_id: 'client.apps.googleusercontent.com',
+      nonce: 'device-key',
+      state: 'request-state',
+      mode: 'silent',
+    })
+    const response = await worker.fetch(
+      new Request(`https://auth.example.test/api/auth/google/bridge?${params}`),
+      { VITE_GOOGLE_CLIENT_ID: 'client.apps.googleusercontent.com' },
+      {}
+    )
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain('"silent":true')
+    expect(html).toContain('google.accounts.id.prompt')
+    expect(html).not.toContain('auto_select:false')
+  })
 })
 
 describe('Peerly preview network configuration', () => {

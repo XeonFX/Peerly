@@ -1,5 +1,4 @@
 import { normalizeWorkspaceId } from '../config'
-import { loadWorkspaceDms } from './dmStore'
 import type { Channel } from '../types'
 
 export const GENERAL_CHANNEL: Channel = {
@@ -100,7 +99,10 @@ export function loadWorkspaceChannels(workspaceId: string): Channel[] {
 }
 
 export function loadAllWorkspaceChannels(workspaceId: string): Channel[] {
-  return [...loadWorkspaceChannels(workspaceId), ...loadWorkspaceDms(workspaceId)]
+  // Direct messages are global friend conversations. Legacy workspace-local
+  // DM records intentionally stay dormant instead of appearing as a second,
+  // incompatible DM system.
+  return loadWorkspaceChannels(workspaceId)
 }
 
 export function mergeWorkspaceChannel(workspaceId: string, channel: Channel): boolean {

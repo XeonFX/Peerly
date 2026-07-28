@@ -11,7 +11,6 @@ import {
   expectJoinRejected,
   createChannel,
   expectChannel,
-  startDirectMessage,
   sendMessage,
   expectMessage,
   expectSharedFilesUsable,
@@ -20,6 +19,7 @@ import {
   waitForRelay,
   openProfile,
   rejoinWorkspace,
+  withTwoGlobalUsers,
   withTwoUsers,
   e2eWorkspaceId,
 } from './helpers'
@@ -349,24 +349,45 @@ test.describe('Peerly P2P collaboration', () => {
     await expect(page.getByTestId('open-workspace-remove-test')).toContainText('1 member')
   })
 
-  test('the creator can invite someone to an existing workspace', async ({ page }) => {
-    await createWorkspace(page, {
-      email: 'alice@e2e.test',
-      workspaceName: 'invite-test',
-    })
+  test('the creator can deliver and join an existing workspace invitation', async ({ browser }) => {
+    const aliceContext = await browser.newContext()
+    const bobContext = await browser.newContext()
+    const alice = await aliceContext.newPage()
+    const bob = await bobContext.newPage()
+    const suffix = test.info().workerIndex
+    const aliceEmail = `workspace-owner-${suffix}@e2e.test`
+    const bobEmail = `workspace-invitee-${suffix}@e2e.test`
+    try {
+      await createWorkspace(alice, {
+        email: aliceEmail,
+        workspaceName: 'invite-test',
+      })
+      await installFreshSession(bob)
+      await bob.goto('/')
+      await e2eSignIn(bob, { name: 'Bob', email: bobEmail })
 
-    // This browser created the workspace, so it holds the signing key.
-    await expect(page.getByTestId('invite-panel-toggle')).toBeVisible({ timeout: 15_000 })
-    await page.getByTestId('invite-panel-toggle').click()
-    await page.getByTestId('invite-people-toggle').click()
-    await page.getByTestId('invite-emails').fill('bob@e2e.test')
-    await page.getByTestId('invite-submit').click()
+      // This browser created the workspace, so it holds the signing key.
+      await expect(alice.getByTestId('invite-panel-toggle')).toBeVisible({ timeout: 15_000 })
+      await alice.getByTestId('invite-panel-toggle').click()
+      await alice.getByTestId('invite-people-toggle').click()
+      await alice.getByTestId('invite-emails').fill(bobEmail)
+      await alice.getByTestId('invite-submit').click()
 
-    await expect(page.getByTestId('invited-bob@e2e.test')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('invited-members')).toContainText('bob@e2e.test')
-    await leaveToPicker(page)
-    await page.getByTestId('rail-create-workspace').click()
-    await expect(page.getByTestId('open-workspace-invite-test')).toContainText('2 members')
+      await expect(alice.getByTestId(`invited-${bobEmail}`)).toBeVisible({ timeout: 15_000 })
+      await expect(alice.getByTestId('invited-members')).toContainText(bobEmail)
+      const invitation = bob.getByTestId('workspace-invite-notification')
+      await expect(invitation).toContainText('invite-test', { timeout: 20_000 })
+      await invitation.getByRole('button', { name: 'Join', exact: true }).click()
+      await waitForWorkspace(bob)
+      await expect(bob.locator('.sidebar')).toContainText('invite-test')
+
+      await leaveToPicker(alice)
+      await alice.getByTestId('rail-create-workspace').click()
+      await expect(alice.getByTestId('open-workspace-invite-test')).toContainText('2 members')
+    } finally {
+      await aliceContext.close()
+      await bobContext.close()
+    }
   })
 
   test('a non-creator is told they cannot invite, instead of failing later', async ({ page }) => {
@@ -1106,51 +1127,65 @@ test.describe('Peerly P2P collaboration', () => {
     })
   })
 
-  test('peer avatar appears in direct messages', async ({ browser }) => {
+  test('workspace members open profile cards without workspace-local DMs', async ({ browser }) => {
     await withTwoUsers(browser, async (alice, bob) => {
-      await openProfile(alice)
-      const png = Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-        'base64'
-      )
-      await alice.getByTestId('avatar-input').setInputFiles({
-        name: 'avatar.png',
-        mimeType: 'image/png',
-        buffer: png,
-      })
-      await alice.getByTestId('profile-back').click()
-      await startDirectMessage(alice, 'Bob')
-      await sendMessage(alice, 'DM with avatar')
-      await expect(bob.locator('[data-testid^="dm-"]')).toBeVisible({ timeout: 15_000 })
-      await bob.locator('[data-testid^="dm-"]').click()
-      await expectMessage(bob, 'DM with avatar')
-      await expect(bob.locator('[data-testid="chat-message"] .avatar-img')).toBeVisible({
-        timeout: 15_000,
-      })
+      await alice.getByTestId('member-Bob').click()
+      const card = alice.getByTestId('workspace-member-popover')
+      await expect(card).toContainText('Bob')
+      await expect(card).toContainText('bob@e2e.test')
+      await expect(card.getByTestId('workspace-member-add-friend')).toBeVisible()
+      await expect(alice.locator('.sidebar')).not.toContainText('Direct messages')
+      await bob.getByTestId('member-self').click()
+      await expect(bob.getByTestId('workspace-member-edit-profile')).toBeVisible()
     })
   })
 
-  test('private messages only appear in direct message thread', async ({ browser }) => {
-    await withTwoUsers(browser, async (alice, bob) => {
-      await startDirectMessage(alice, 'Bob')
-      await sendMessage(alice, 'Secret DM ping')
-      await expect(bob.locator('[data-testid^="dm-"]')).toBeVisible({ timeout: 15_000 })
-      await bob.locator('[data-testid^="dm-"]').click()
-      await expectMessage(bob, 'Secret DM ping')
+  test('workspace member composer hands off to the global friend DM', async ({ browser }) => {
+    await withTwoGlobalUsers(browser, async (alice, bob, accounts) => {
+      const workspaceName = `member-dm-${test.info().workerIndex}`
+      await alice.getByTestId('rail-create-workspace').click()
+      await alice.getByTestId('workspace-name').fill(workspaceName)
+      await alice.getByTestId('join-submit').click()
+      await waitForWorkspace(alice)
+      await alice.getByTestId('invite-panel-toggle').click()
+      await alice.getByTestId('invite-people-toggle').click()
+      await alice.getByTestId('invite-emails').fill(accounts.bobEmail)
+      await alice.getByTestId('invite-submit').click()
+      const invitation = bob.getByTestId('workspace-invite-notification')
+      await expect(invitation).toContainText(workspaceName, { timeout: 20_000 })
+      await invitation.getByRole('button', { name: 'Join', exact: true }).click()
+      await waitForPeerConnection(alice)
+      await waitForPeerConnection(bob)
 
-      await alice.locator('.channel-item', { hasText: 'general' }).click()
-      await expect(alice.locator('.message-list')).not.toContainText('Secret DM ping')
-      await bob.locator('.channel-item', { hasText: 'general' }).click()
-      await expect(bob.locator('.message-list')).not.toContainText('Secret DM ping')
-    })
-  })
-
-  test('friend DMs sync reactions and attachments', async ({ browser }) => {
-    await withTwoUsers(browser, async (alice, bob) => {
       await alice.getByTestId('rail-home').click()
       await bob.getByTestId('rail-home').click()
+      await alice.getByTestId('friend-invite-email').fill(accounts.bobEmail)
+      await alice.getByTestId('friend-invite-submit').click()
+      await expect(bob.getByTestId('friend-incoming')).toBeVisible({ timeout: 15_000 })
+      await bob.locator('[data-testid^="friend-accept-"]').click()
+      await expect(alice.locator('[data-testid^="friend-message-"]')).toBeVisible({
+        timeout: 15_000,
+      })
 
-      await alice.getByTestId('friend-invite-email').fill('bob@e2e.test')
+      await alice.locator('[data-testid^="rail-workspace-"]').first().click()
+      await bob.locator('[data-testid^="rail-workspace-"]').first().click()
+      await waitForPeerConnection(alice)
+      await alice.getByTestId('member-Bob').click()
+      await alice.getByTestId('workspace-member-message-input').fill('Global DM from workspace')
+      await alice.getByTestId('workspace-member-message-send').click()
+
+      await expect(alice.getByTestId('global-dm-chat')).toBeVisible({ timeout: 15_000 })
+      await bob.getByTestId('rail-home').click()
+      await expect(bob.getByTestId('global-dm-messages')).toContainText(
+        'Global DM from workspace',
+        { timeout: 15_000 }
+      )
+    })
+  })
+
+  test('global friend DMs show workspace-style avatars and times, and sync reactions and attachments', async ({ browser }) => {
+    await withTwoGlobalUsers(browser, async (alice, bob, accounts) => {
+      await alice.getByTestId('friend-invite-email').fill(accounts.bobEmail)
       await alice.getByTestId('friend-invite-submit').click()
       await expect(bob.getByTestId('friend-incoming')).toBeVisible({ timeout: 15_000 })
       await bob.locator('[data-testid^="friend-accept-"]').click()
@@ -1162,6 +1197,11 @@ test.describe('Peerly P2P collaboration', () => {
       await alice.getByTestId('global-dm-input').fill('React to this DM')
       await alice.getByTestId('global-dm-send').click()
       await expect(bob.getByTestId('global-dm-messages')).toContainText('React to this DM', { timeout: 15_000 })
+      await expect(bob.getByTestId('global-dm-theirs').getByTestId('global-dm-avatar')).toBeVisible()
+      await expect(bob.getByTestId('global-dm-theirs').getByTestId('global-dm-time')).toHaveAttribute(
+        'datetime',
+        /\d{4}-\d{2}-\d{2}T/
+      )
       await bob.getByLabel('React 👍').click()
       await expect(alice.getByTestId('global-dm-messages')).toContainText('👍 1', { timeout: 15_000 })
 
@@ -1193,7 +1233,8 @@ test.describe('Peerly P2P collaboration', () => {
 
   test('unread activity updates the tab title and favicon outside the conversation', async ({ browser }) => {
     await withTwoUsers(browser, async (alice, bob) => {
-      await bob.getByTestId('member-self').click()
+      await bob.getByTestId('workspace-settings-open').click()
+      await expect(bob.getByTestId('workspace-settings-page')).toBeVisible()
       await sendMessage(alice, 'Background attention check')
       await expect(bob).toHaveTitle(/^\(1\) Peerly$/)
       await expect
@@ -1202,7 +1243,7 @@ test.describe('Peerly P2P collaboration', () => {
         )
         .toMatch(/^data:image\/png/)
 
-      await bob.getByTestId('profile-back').click()
+      await bob.getByTestId('workspace-settings-back').click()
       await expectMessage(bob, 'Background attention check')
       await expect(bob).toHaveTitle('Peerly')
     })
@@ -1215,7 +1256,7 @@ test.describe('Peerly P2P collaboration', () => {
     })
   })
 
-  test('channel rename and deletion sync; direct messages can be closed', async ({ browser }) => {
+  test('channel rename and deletion sync', async ({ browser }) => {
     await withTwoUsers(browser, async (alice, bob) => {
       await createChannel(alice, 'planning')
       await expectChannel(bob, 'planning')
@@ -1231,10 +1272,6 @@ test.describe('Peerly P2P collaboration', () => {
       await expect(bob.locator('.channel-item', { hasText: 'roadmap' })).toHaveCount(0, {
         timeout: 15_000,
       })
-
-      await startDirectMessage(alice, 'Bob')
-      await alice.getByLabel('Close direct message with Bob').click()
-      await expect(alice.getByTestId(/dm-/)).toHaveCount(0)
     })
   })
 
@@ -1257,7 +1294,9 @@ test.describe('Peerly P2P collaboration', () => {
       'Rozpocznij rozmowę wideo'
     )
     await page.getByTestId('member-self').click()
-    await expect(page.getByRole('heading', { name: 'Twój profil' })).toBeVisible()
+    await expect(page.getByTestId('workspace-member-popover')).toBeVisible()
+    await page.getByTestId('workspace-member-edit-profile').click()
+    await expect(page.getByRole('heading', { name: 'Profil i preferencje' })).toBeVisible()
     await page.getByTestId('profile-back').click()
     await page.getByTestId('rail-home').click()
     await page.getByTestId('home-account-tab').click()

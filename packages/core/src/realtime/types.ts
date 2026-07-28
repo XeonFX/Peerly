@@ -34,7 +34,7 @@ export type SeekOptions = {
    * This seeker's id in the app's own opaque id space — the same space
    * `exclusions` is written in. Everything the server does with either is an
    * equality comparison, so the app can use an id derivable from a user id it
-   * already knows (see HeyHubs' `coordinationScope`) and keep its blocklist
+   * already knows (see the consumer's opaque coordination scope) and keep its blocklist
    * client-side. Omit it and exclusions cannot match anything.
    */
   memberId?: string

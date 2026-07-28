@@ -7,11 +7,19 @@ export function googleAuthPreviewPage(url, expectedClientId, config) {
   const clientId = url.searchParams.get('client_id') ?? ''
   const nonce = url.searchParams.get('nonce') ?? ''
   const state = url.searchParams.get('state') ?? ''
+  const mode = url.searchParams.get('mode') ?? 'button'
   if (!config.allowedParent(parentOrigin) || !expectedClientId || clientId !== expectedClientId ||
-      !nonce || nonce.length > 512 || !state || state.length > 128) {
+      !nonce || nonce.length > 512 || !state || state.length > 128 ||
+      (mode !== 'button' && mode !== 'silent')) {
     return new Response('Invalid auth bridge request', { status: 400 })
   }
-  const pageConfig = JSON.stringify({ parentOrigin, clientId, nonce, state }).replaceAll('<', '\\u003c')
+  const pageConfig = JSON.stringify({
+    parentOrigin,
+    clientId,
+    nonce,
+    state,
+    silent: mode === 'silent',
+  }).replaceAll('<', '\\u003c')
   const cspNonce = crypto.randomUUID().replaceAll('-', '')
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -22,8 +30,14 @@ export function googleAuthPreviewPage(url, expectedClientId, config) {
 const config=${pageConfig};
 const send=value=>parent.postMessage({type:${JSON.stringify(config.messageType)},state:config.state,...value},config.parentOrigin);
 try {
-  google.accounts.id.initialize({client_id:config.clientId,nonce:config.nonce,auto_select:false,use_fedcm_for_button:false,allowed_parent_origin:config.parentOrigin,callback:r=>send({credential:r.credential})});
-  google.accounts.id.renderButton(document.getElementById('google-button'),{type:'standard',theme:'outline',size:'large',width:320});
+  google.accounts.id.initialize({client_id:config.clientId,nonce:config.nonce,auto_select:config.silent,itp_support:true,use_fedcm_for_button:false,allowed_parent_origin:config.parentOrigin,callback:r=>send({credential:r.credential})});
+  if(config.silent){
+    google.accounts.id.prompt(n=>{
+      if(n.isNotDisplayed()||n.isSkippedMoment()||n.isDismissedMoment())send({unavailable:true});
+    });
+  }else{
+    google.accounts.id.renderButton(document.getElementById('google-button'),{type:'standard',theme:'outline',size:'large',width:320});
+  }
 } catch (error) {
   const message=error instanceof Error?error.message:String(error);
   document.getElementById('error').textContent=message;

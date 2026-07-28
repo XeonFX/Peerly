@@ -9,7 +9,7 @@ import {
   removeWorkspaceChannel,
   renameWorkspaceChannel,
 } from '../collab/channelStore'
-import { ensureDmChannel, removeDmChannel } from '../collab/dmStore'
+import { friendDmSecret, type Friend } from '../collab/friendsStore'
 import { CollabProvider } from '../context/CollabContext'
 import {
   useChatSlice,
@@ -26,7 +26,7 @@ import type { WorkspaceAuthManager } from '../collab/workspaceAuth'
 import { rememberWorkspace, snapshotWorkspace } from '../collab/workspaceStore'
 import { saveStoredProfile } from '../collab/profileStore'
 import { sessionProfile, type Session } from '../session'
-import type { Channel, Peer, UserProfile } from '../types'
+import type { Channel, UserProfile } from '../types'
 import { useIdentityExpiry } from '../hooks/useIdentityExpiry'
 import { FilesPanel } from './FilesPanel'
 import { ReauthBanner } from './ReauthBanner'
@@ -34,7 +34,6 @@ import { StoragePressureBanner } from './BrowserStorageCard'
 import { Sidebar } from './Sidebar'
 import { ChannelPanel } from './workspace/ChannelPanel'
 import { MessageSearch } from './MessageSearch'
-import { ProfilePanel } from './workspace/ProfilePanel'
 import { WorkspaceSettingsPanel } from './workspace/WorkspaceSettingsPanel'
 import { useI18n } from '../i18n'
 import type { WorkspaceRoute } from '../routing'
@@ -61,10 +60,21 @@ type Props = {
   /** Needed to re-sign the allow-list when inviting; only the creator's device can. */
   authManager: WorkspaceAuthManager | null
   onSessionChange: (patch: Partial<Session>) => void
-  friends: FriendRow[]
+  friends: Friend[]
   isFriend: (userId: string | undefined) => boolean
-  onAddFriend: (subject: { userId: string; name: string; email: string }) => Promise<void>
-  onRemoveFriend: (userId: string) => void
+  onRequestFriend: (email: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  onSendGlobalDm: (userId: string, text: string) => void
+  onOpenProfile: () => void
+  onDeliverWorkspaceInvites: (
+    emails: string[],
+    invite: {
+      v: 1
+      workspaceId: string
+      workspaceName: string
+      creatorKeyId: string
+      allowList: Session['allowList']
+    }
+  ) => Promise<void>
   inviteableFriends: (alreadyInvited: readonly string[]) => FriendRow[]
 }
 
@@ -81,7 +91,7 @@ function WorkspaceShell({
   onSidebarOpenChange,
   onChannelSelect,
   onChannelsUpdated,
-  onProfileSelect,
+  onEditProfile,
   onWorkspaceSettings,
   onToggleFiles,
   banner,
@@ -90,13 +100,15 @@ function WorkspaceShell({
   onWorkspaceAvatarClear,
   resolvePeerContact,
   isFriend,
-  onAddFriend,
+  canMessageUser,
+  onRequestFriend,
+  onSendDirectMessage,
   inviteableFriends,
 }: {
   session: Session
   channels: Channel[]
   activeChannel: string
-  activeView: 'channel' | 'profile' | 'workspace'
+  activeView: 'channel' | 'workspace'
   showFiles: boolean
   canInvite: boolean
   onInvite: (emails: string[]) => Promise<void>
@@ -105,7 +117,7 @@ function WorkspaceShell({
   onSidebarOpenChange: (open: boolean) => void
   onChannelSelect: (id: string) => void
   onChannelsUpdated: () => void
-  onProfileSelect: () => void
+  onEditProfile: () => void
   onWorkspaceSettings: () => void
   onToggleFiles: () => void
   banner?: React.ReactNode
@@ -116,7 +128,11 @@ function WorkspaceShell({
     peerId: string
   ) => { userId: string; email: string; name: string } | undefined
   isFriend: (userId: string | undefined) => boolean
-  onAddFriend: (subject: { userId: string; name: string; email: string }) => Promise<void>
+  canMessageUser: (userId: string | undefined) => boolean
+  onRequestFriend: (
+    contact: { userId: string; email: string; name: string }
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  onSendDirectMessage: (userId: string, text: string) => void
   inviteableFriends: (alreadyInvited: readonly string[]) => FriendRow[]
 }) {
   const { tr } = useI18n()
@@ -180,13 +196,6 @@ function WorkspaceShell({
     onChannelSelect(created.id)
   }
 
-  const handleStartDirectMessage = async (peer: Peer) => {
-    const dm = ensureDmChannel(session.workspaceId, peer, selfId)
-    onChannelsUpdated()
-    await announceChannel(dm)
-    onChannelSelect(dm.id)
-  }
-
   const handleRenameChannel = async (channelId: string, name: string) => {
     const updated = renameWorkspaceChannel(session.workspaceId, channelId, name)
     if (!updated) return
@@ -206,12 +215,6 @@ function WorkspaceShell({
     const reordered = moveWorkspaceChannel(session.workspaceId, channelId, direction)
     onChannelsUpdated()
     for (const updated of reordered) await announceChannel(updated)
-  }
-
-  const handleCloseDm = (channelId: string) => {
-    if (!removeDmChannel(session.workspaceId, channelId)) return
-    onChannelsUpdated()
-    if (activeChannel === channelId) onChannelSelect(GENERAL_CHANNEL.id)
   }
 
   // Selecting anything on a phone should reveal what you selected.
@@ -249,7 +252,6 @@ function WorkspaceShell({
         selfEmail={session.identityEmail}
         resolvePeerContact={resolvePeerContact}
         isFriend={isFriend}
-        onAddFriend={onAddFriend}
         inviteableFriends={inviteableFriends}
         channels={channels}
         activeChannel={activeChannel}
@@ -267,10 +269,11 @@ function WorkspaceShell({
         onRenameChannel={handleRenameChannel}
         onDeleteChannel={handleDeleteChannel}
         onMoveChannel={handleMoveChannel}
-        onCloseDirectMessage={handleCloseDm}
-        onStartDirectMessage={handleStartDirectMessage}
-        onProfileSelect={() => {
-          onProfileSelect()
+        canMessageUser={canMessageUser}
+        onRequestFriend={onRequestFriend}
+        onSendDirectMessage={onSendDirectMessage}
+        onEditProfile={() => {
+          onEditProfile()
           onSidebarOpenChange(false)
         }}
         onWorkspaceSettings={() => {
@@ -287,19 +290,7 @@ function WorkspaceShell({
           availableBytes={browserStorage.estimate.availableBytes}
           onManage={onWorkspaceSettings}
         />
-        {activeView === 'profile' ? (
-          <ProfilePanel
-            workspace={session.workspaceName}
-            inviteLink={encodeInviteLink({
-              v: 1,
-              workspaceId: session.workspaceId,
-              workspaceName: session.workspaceName,
-              creatorKeyId: session.creatorKeyId,
-              allowList: session.allowList,
-            })}
-            onBack={() => onChannelSelect(activeChannel)}
-          />
-        ) : activeView === 'workspace' ? (
+        {activeView === 'workspace' ? (
           <WorkspaceSettingsPanel
             workspaceId={session.workspaceId}
             workspaceName={session.workspaceName}
@@ -323,6 +314,16 @@ function WorkspaceShell({
             onNameChange={onWorkspaceNameChange}
             onAvatarChange={onWorkspaceAvatarChange}
             onAvatarClear={onWorkspaceAvatarClear}
+            selfId={selfId}
+            inviteLink={encodeInviteLink({
+              v: 1,
+              workspaceId: session.workspaceId,
+              workspaceName: session.workspaceName,
+              creatorKeyId: session.creatorKeyId,
+              allowList: session.allowList,
+            })}
+            relayOnline={relayOnline}
+            connectionStatus={connectionStatus}
             onBack={() => onChannelSelect(activeChannel)}
           />
         ) : (
@@ -375,23 +376,18 @@ export function Workspace({
   getBoundUserId,
   authManager,
   onSessionChange,
-  friends: _friends,
+  friends,
   isFriend,
-  onAddFriend,
-  onRemoveFriend: _onRemoveFriend,
+  onRequestFriend,
+  onSendGlobalDm,
+  onOpenProfile,
+  onDeliverWorkspaceInvites,
   inviteableFriends,
 }: Props) {
-  void _friends
-  void _onRemoveFriend
   const [channels, setChannels] = useState(() => loadAllWorkspaceChannels(session.workspaceId))
   const lastChannelRef = useRef(GENERAL_CHANNEL.id)
 
-  const activeView =
-    workspaceRoute.view === 'profile'
-      ? 'profile'
-      : workspaceRoute.view === 'settings'
-        ? 'workspace'
-        : 'channel'
+  const activeView = workspaceRoute.view === 'settings' ? 'workspace' : 'channel'
   const activeChannel =
     workspaceRoute.view === 'channel' ? workspaceRoute.channelId : lastChannelRef.current
   const showFiles = workspaceRoute.view === 'channel' ? workspaceRoute.showFiles : false
@@ -432,8 +428,15 @@ export function Workspace({
       const next = { ...session, allowList }
       onSessionChange({ allowList })
       rememberWorkspace(snapshotWorkspace(next))
+      await onDeliverWorkspaceInvites(emails, {
+        v: 1,
+        workspaceId: session.workspaceId,
+        workspaceName: session.workspaceName,
+        creatorKeyId: session.creatorKeyId,
+        allowList,
+      })
     },
-    [authManager, onSessionChange, session]
+    [authManager, onSessionChange, onDeliverWorkspaceInvites, session]
   )
 
   const handleRemoveMember = useCallback(
@@ -524,7 +527,7 @@ export function Workspace({
         onSidebarOpenChange={setSidebarOpen}
         onChannelSelect={openChannel}
         onChannelsUpdated={refreshChannels}
-        onProfileSelect={() => onWorkspaceRouteChange({ screen: 'workspace', view: 'profile' })}
+        onEditProfile={onOpenProfile}
         onWorkspaceSettings={() => onWorkspaceRouteChange({ screen: 'workspace', view: 'settings' })}
         onToggleFiles={() =>
           onWorkspaceRouteChange({
@@ -543,7 +546,11 @@ export function Workspace({
         }
         resolvePeerContact={resolvePeerContact}
         isFriend={isFriend}
-        onAddFriend={onAddFriend}
+        canMessageUser={userId =>
+          Boolean(friendDmSecret(friends.find(friend => friend.subjectUserId === userId)))
+        }
+        onRequestFriend={contact => onRequestFriend(contact.email)}
+        onSendDirectMessage={onSendGlobalDm}
         inviteableFriends={inviteableFriends}
       />
     </CollabProvider>

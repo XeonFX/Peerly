@@ -22,11 +22,13 @@ describe('routing', () => {
       showFiles: true,
     }
     expect(routeFromPath(pathForRoute(channel))).toEqual(channel)
-    expect(routeFromPath(pathForRoute({ screen: 'workspace', view: 'profile' }))).toEqual({
-      screen: 'workspace',
-      view: 'profile',
-    })
     expect(routeFromPath(pathForRoute(defaultWorkspaceRoute()))?.screen).toBe('workspace')
+  })
+
+  it('redirects the legacy workspace profile route to the global profile', () => {
+    expect(routeFromPath('/workspace/profile')).toEqual({ screen: 'account' })
+    window.history.replaceState(null, '', '/profile')
+    expect(resolveInitialRoute(true, true)).toEqual({ screen: 'account' })
   })
 
   it('maps root and /login to the logged-out landing view', () => {

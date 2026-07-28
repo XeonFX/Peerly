@@ -6,6 +6,10 @@ import { useI18n } from '../i18n'
 import { isInlineImageType, isInlineVideoType } from '../utils/fileType'
 import { safeThumbnailUrl } from '../utils/avatarUrl'
 import { Icon } from './Icon'
+import { Avatar } from './Avatar'
+import { SafeMessageText } from './SafeMessageText'
+import { formatBytes, formatTime } from '../utils/format'
+import type { UserProfile } from '../types'
 
 type Props = {
   friendName: string
@@ -14,6 +18,7 @@ type Props = {
   partnerInRoom: boolean
   messages: GlobalDmMessage[]
   selfUserId: string
+  selfProfile: UserProfile
   error: string | null
   searchQuery: string
   reactions: GlobalDmReaction[]
@@ -24,6 +29,8 @@ type Props = {
   onToggleReaction: (messageId: string, emoji: string) => Promise<void>
   onEdit: (messageId: string, text: string) => void
   onDelete: (messageId: string) => void
+  pendingMessage?: string
+  onPendingMessageConsumed: () => void
   onClose: () => void
 }
 
@@ -37,6 +44,7 @@ export function GlobalDmChat({
   partnerInRoom,
   messages,
   selfUserId,
+  selfProfile,
   error,
   searchQuery,
   reactions,
@@ -47,6 +55,8 @@ export function GlobalDmChat({
   onToggleReaction,
   onEdit,
   onDelete,
+  pendingMessage,
+  onPendingMessageConsumed,
   onClose,
 }: Props) {
   const { tr } = useI18n()
@@ -66,6 +76,15 @@ export function GlobalDmChat({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length])
+
+  const consumedMessageRef = useRef<string | null>(null)
+  useEffect(() => {
+    const message = pendingMessage?.trim()
+    if (!message || consumedMessageRef.current === message) return
+    consumedMessageRef.current = message
+    onPendingMessageConsumed()
+    void onSend(message)
+  }, [pendingMessage, onPendingMessageConsumed, onSend])
 
   const status = partnerInRoom
     ? tr('In chat')
@@ -100,6 +119,9 @@ export function GlobalDmChat({
         >
           <Icon name="x" size={16} />
         </button>
+        <span data-testid="global-dm-header-avatar">
+          <Avatar name={friendName} color="#5865f2" size="sm" />
+        </span>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold" data-testid="global-dm-partner">
             {friendName}
@@ -127,11 +149,25 @@ export function GlobalDmChat({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3" data-testid="global-dm-messages">
+      <div className="message-list min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5" data-testid="global-dm-messages">
         {visibleMessages.length === 0 ? (
-          <p className="py-8 text-center text-xs text-base-content/50">
-            {searchQuery.trim() ? tr('No messages match your search.') : tr('No messages yet. Say hello — they will get a ring if they are online.')}
-          </p>
+          <div className="flex h-full items-center justify-center p-6">
+            <div className="max-w-sm text-center">
+              <div className="empty-state-art mx-auto mb-5" aria-hidden="true">
+                <span className="empty-state-orbit empty-state-orbit-one" />
+                <span className="empty-state-orbit empty-state-orbit-two" />
+                <span className="empty-state-icon"><Icon name="message-circle" size={29} /></span>
+              </div>
+              <h3 className="mb-1.5 text-lg font-semibold tracking-tight">
+                {searchQuery.trim() ? tr('No messages match your search.') : tr('Start the conversation')}
+              </h3>
+              {!searchQuery.trim() && (
+                <p className="text-sm leading-relaxed text-base-content/65">
+                  {tr('Messages are sent directly peer-to-peer. No server stores your data.')}
+                </p>
+              )}
+            </div>
+          </div>
         ) : (
           visibleMessages.map(msg => {
             const mine = msg.authorUserId === selfUserId
@@ -144,29 +180,75 @@ export function GlobalDmChat({
             const attachment = msg.attachment
             const attachmentUrl = attachment ? attachmentUrls[attachment.id] : undefined
             const transfer = attachment ? transfers.find(item => item.id === attachment.id) : undefined
+            const senderName = mine ? selfProfile.name : msg.name || friendName
             return (
               <div
                 key={msg.id}
-                className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
+                className="chat-message-row group flex gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-base-200/40"
                 data-testid={mine ? 'global-dm-mine' : 'global-dm-theirs'}
               >
-                <div
-                  className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-sm ${
-                    mine
-                      ? 'bg-primary text-primary-content'
-                      : 'bg-base-200 text-base-content'
-                  }`}
-                >
-                  {!mine && (
-                    <div className="mb-0.5 text-[0.65rem] font-medium opacity-70">{msg.name}</div>
-                  )}
+                <span data-testid="global-dm-avatar">
+                  <Avatar
+                    name={senderName}
+                    color={mine ? selfProfile.color : '#5865f2'}
+                    avatar={mine ? selfProfile.avatar : undefined}
+                    size="md"
+                  />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="truncate text-sm font-semibold text-base-content">{senderName}</span>
+                    <time
+                      className="shrink-0 text-[0.7rem] text-base-content/60"
+                      dateTime={new Date(msg.ts).toISOString()}
+                      data-testid="global-dm-time"
+                    >
+                      {formatTime(msg.ts)}
+                    </time>
+                    {msg.editedAt && !msg.deletedAt && (
+                      <span className="text-[0.65rem] text-base-content/65">{tr('edited')}</span>
+                    )}
+                    {mine && !msg.deletedAt && (
+                      <span className="ml-auto flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        {!attachment && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs btn-square"
+                            aria-label={tr('Edit message')}
+                            title={tr('Edit message')}
+                            onClick={() => {
+                              const next = window.prompt(tr('Edit message'), msg.text)?.trim()
+                              if (next && next !== msg.text) onEdit(msg.id, next)
+                            }}
+                          >
+                            <Icon name="pencil" size={13} />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs btn-square text-error"
+                          aria-label={tr('Delete message')}
+                          title={tr('Delete message')}
+                          onClick={() => {
+                            if (window.confirm(tr('Delete this message for everyone online?'))) {
+                              onDelete(msg.id)
+                            }
+                          }}
+                        >
+                          <Icon name="trash" size={13} />
+                        </button>
+                      </span>
+                    )}
+                  </div>
                   {(msg.deletedAt || body) && (
-                    <p className={msg.deletedAt ? 'italic opacity-70' : 'whitespace-pre-wrap break-words'}>
-                      {body}
-                    </p>
+                    <div className="text-sm leading-relaxed text-base-content/90">
+                      {msg.deletedAt
+                        ? <p className="italic text-base-content/65">{body}</p>
+                        : <SafeMessageText text={body} />}
+                    </div>
                   )}
                   {!msg.deletedAt && attachment && (
-                    <div className="mt-1.5 min-w-48 overflow-hidden rounded-xl border border-current/15 bg-base-100/10 p-2">
+                    <div className="mt-1.5 max-w-lg overflow-hidden rounded-xl border border-base-300 bg-base-100 p-2">
                       {safeThumbnailUrl(attachment.thumbnail) && !attachmentUrl && (
                         <img src={safeThumbnailUrl(attachment.thumbnail)} alt="" className="mb-2 max-h-44 w-full rounded-lg object-contain" />
                       )}
@@ -187,26 +269,17 @@ export function GlobalDmChat({
                         )}
                         <span className="shrink-0 opacity-60">{formatBytes(attachment.size)}</span>
                       </div>
-                      {transfer && <progress className="progress progress-primary mt-2 w-full" value={transfer.percent} max="100" />}
-                    </div>
-                  )}
-                  {mine && !msg.deletedAt && (
-                    <div className="mt-1 flex justify-end gap-1 text-[0.65rem] opacity-75">
-                      {!attachment && <button type="button" className="hover:underline" onClick={() => {
-                        const next = prompt(tr('Edit message'), msg.text)
-                        if (next?.trim()) onEdit(msg.id, next)
-                      }}>{tr('Edit')}</button>}
-                      <button type="button" className="hover:underline" onClick={() => onDelete(msg.id)}>{tr('Delete')}</button>
+                      {transfer && <progress className="progress progress-primary mt-2 w-full" value={transfer.percent} max="1" />}
                     </div>
                   )}
                   {!msg.deletedAt && (
-                    <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
                       {Object.entries(reactionCounts).map(([emoji, count]) => (
-                        <button key={emoji} type="button" className={`badge badge-sm cursor-pointer ${activeReactions.some(reaction => reaction.emoji === emoji && reaction.authorUserId === selfUserId) ? 'badge-primary' : 'badge-outline'}`} onClick={() => void onToggleReaction(msg.id, emoji)}>
+                        <button key={emoji} type="button" className={`badge h-6 cursor-pointer gap-1 ${activeReactions.some(reaction => reaction.emoji === emoji && reaction.authorUserId === selfUserId) ? 'badge-primary' : 'badge-outline border-base-300 bg-base-100'}`} onClick={() => void onToggleReaction(msg.id, emoji)}>
                           {emoji} {count}
                         </button>
                       ))}
-                      <span className="flex opacity-50 transition-opacity hover:opacity-100">
+                      <span className="flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                         {['👍', '❤️', '😂', '🎉'].map(emoji => (
                           <button key={emoji} type="button" className="btn btn-ghost btn-xs btn-square" onClick={() => void onToggleReaction(msg.id, emoji)} aria-label={tr('React {emoji}', { emoji })}>{emoji}</button>
                         ))}
@@ -262,10 +335,4 @@ export function GlobalDmChat({
       </form>
     </section>
   )
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }

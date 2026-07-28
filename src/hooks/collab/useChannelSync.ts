@@ -5,8 +5,6 @@ import {
   mergeWorkspaceChannel,
   removeWorkspaceChannel,
 } from '../../collab/channelStore'
-import { loadWorkspaceDms, mergeDmChannel, routeDmChannel } from '../../collab/dmStore'
-import { selfId } from '../../collab/identity'
 import type { ChannelPayload } from '../../protocol/types'
 import type { Channel } from '../../types'
 
@@ -54,20 +52,10 @@ export function useChannelSync(workspaceId: string, onChannelsChange?: () => voi
       const channel = payloadToChannel(payload)
 
       if (channel.kind === 'dm') {
-        // A DM is only ours to store if the channel id says it is between us and
-        // the peer that actually sent it. Otherwise any peer could fabricate a
-        // thread between two other people.
-        const route = routeDmChannel(channel.id, selfId)
-        if (route.kind !== 'dm' || route.peerId !== fromPeerId) return
-
-        // `payload.peerId` is the *sender's* view of the other side — i.e. us —
-        // and is attacker-controlled either way. The peer of this thread, from
-        // our side, is whoever sent it.
-        const merged = mergeDmChannel(workspaceIdRef.current, {
-          ...channel,
-          peerId: fromPeerId,
-        })
-        if (merged) onChannelsChange?.()
+        // Kept as an explicit compatibility boundary: old clients may still
+        // announce workspace-local DMs, but current clients neither persist nor
+        // surface them. All DMs live in the global friend system.
+        void fromPeerId
         return
       }
 
@@ -104,11 +92,6 @@ export function useChannelSync(workspaceId: string, onChannelsChange?: () => voi
       if (!channelActionRef.current) return
       for (const channel of getCustomChannels(workspaceIdRef.current)) {
         await sendChannel(channel, peerId)
-      }
-      for (const channel of loadWorkspaceDms(workspaceIdRef.current)) {
-        if (channel.peerId === peerId) {
-          await sendChannel(channel, peerId)
-        }
       }
     },
     [sendChannel]

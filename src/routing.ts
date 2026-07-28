@@ -18,7 +18,6 @@ export type StorageRoute = { screen: 'storage' }
 
 export type WorkspaceRoute =
   | { screen: 'workspace'; view: 'channel'; channelId: string; showFiles: boolean }
-  | { screen: 'workspace'; view: 'profile' }
   | { screen: 'workspace'; view: 'settings' }
 
 /** Public legal pages, reachable regardless of session/workspace state. */
@@ -69,8 +68,6 @@ export function pathForRoute(route: AppRoute): string {
       const base = `/workspace/channel/${encodeURIComponent(route.channelId)}`
       return route.showFiles ? `${base}?files=1` : base
     }
-    case 'profile':
-      return '/workspace/profile'
     case 'settings':
       return '/workspace/settings'
   }
@@ -121,7 +118,8 @@ function parsePathRoute(pathname: string, search: string, hash = ''): AppRoute |
   }
 
   if (path === '/workspace/profile') {
-    return { screen: 'workspace', view: 'profile' }
+    // Legacy route: identity profile is global, never workspace-scoped.
+    return { screen: 'account' }
   }
   if (path === '/workspace/settings') {
     return { screen: 'workspace', view: 'settings' }
@@ -163,6 +161,11 @@ export function resolveInitialRoute(hasWorkspaceSession: boolean, hasSignedInIde
     return fromUrl
   }
   if (fromUrl?.screen === 'devices' || fromUrl?.screen === 'sync') return fromUrl
+  // Global destinations remain global even when a workspace session is
+  // persisted. In particular, refreshing /profile must not reopen a workspace.
+  if (fromUrl?.screen === 'home' || fromUrl?.screen === 'account' || fromUrl?.screen === 'storage') {
+    return hasSignedInIdentity ? fromUrl : { screen: 'login' }
+  }
   if (hasWorkspaceSession) {
     return defaultWorkspaceRoute()
   }
@@ -171,9 +174,6 @@ export function resolveInitialRoute(hasWorkspaceSession: boolean, hasSignedInIde
   }
   if (fromUrl?.screen === 'login') {
     return hasSignedInIdentity ? { screen: 'home' } : fromUrl
-  }
-  if (fromUrl?.screen === 'home' || fromUrl?.screen === 'account' || fromUrl?.screen === 'storage') {
-    return hasSignedInIdentity ? fromUrl : { screen: 'login' }
   }
   if (fromUrl?.screen === 'picker') {
     return fromUrl.tab === 'join' || hasSignedInIdentity ? fromUrl : { screen: 'login' }

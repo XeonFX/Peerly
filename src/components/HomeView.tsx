@@ -47,6 +47,9 @@ type Props = {
    * a refresh returns to the conversation instead of the list.
    */
   dmUserId?: string | undefined
+  /** Message composed from a workspace member card, sent after the global DM opens. */
+  pendingMessage?: string
+  onPendingMessageConsumed: () => void
   onOpenDm: (userId: string | null) => void
 }
 
@@ -87,6 +90,8 @@ export function HomeView({
   pendingRing,
   onConsumeRing,
   dmUserId,
+  pendingMessage,
+  onPendingMessageConsumed,
   onOpenDm,
 }: Props) {
   const { tr } = useI18n()
@@ -393,6 +398,11 @@ export function HomeView({
               partnerInRoom={chat.partnerInRoom}
               messages={chat.messages}
               selfUserId={profile.userId}
+              selfProfile={{
+                name: profile.name,
+                color: profile.color ?? '#36c5f0',
+                avatar: profile.avatar,
+              }}
               error={chat.error}
               searchQuery={query}
               onSend={chat.sendMessage}
@@ -403,6 +413,8 @@ export function HomeView({
               transfers={chat.transfers}
               onEdit={chat.editMessage}
               onDelete={chat.deleteMessage}
+              pendingMessage={pendingMessage}
+              onPendingMessageConsumed={onPendingMessageConsumed}
               onClose={() => {
                 setActiveFriend(null)
                 setRoomCode(null)

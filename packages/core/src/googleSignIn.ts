@@ -105,7 +105,10 @@ export async function renderGoogleSignInButton(
         accounts.initialize({
           client_id: clientId,
           nonce,
-          auto_select: false,
+          // renderButton() does not call One Tap's prompt. Enabling automatic
+          // selection here lets a later silent-renewal prompt reuse this
+          // one-shot GIS initialization without changing the visible flow.
+          auto_select: true,
           use_fedcm_for_button: true,
           callback: response => activeCredentialHandler?.(response),
         })

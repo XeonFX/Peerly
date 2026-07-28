@@ -102,9 +102,28 @@ export {
 } from './oidcIdToken.js'
 export { renderGoogleSignInButton, requestGoogleCredentialSilently } from './googleSignIn.js'
 export {
+  createGoogleSignInClient,
   normalizeGoogleAuthBridgeOrigin,
+  requestGoogleCredentialSilentlyFromBridge,
   renderGoogleSignInBridgeButton,
+  type GoogleSignInClient,
+  type GoogleSignInClientOptions,
 } from './googleAuthBridge.js'
+export {
+  googleIdentityMatchesRemembered,
+  renewGoogleCredentialSilently,
+  type RememberedGoogleIdentity,
+  type RenewedGoogleCredential,
+  type RenewGoogleCredentialOptions,
+} from './googleCredentialRenewal.js'
+export {
+  credentialNeedsRenewal,
+  credentialRenewalDelay,
+  credentialRetryDelay,
+  DEFAULT_CREDENTIAL_RENEW_BEFORE_MS,
+  DEFAULT_CREDENTIAL_RETRY_MS,
+  type CredentialRenewalPolicy,
+} from './credentialRenewal.js'
 export {
   coordinationMemberId,
   coordinationScope,

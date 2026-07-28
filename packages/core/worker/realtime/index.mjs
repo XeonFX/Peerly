@@ -1,11 +1,7 @@
-// HeyHubs-only Durable Objects (InterestQueueDO, PresenceStatsShardDO,
-// RoomDirectoryShardDO) live in the HeyHubs repo, not here: they have exactly
-// one consumer, so keeping them in @peerly/core would mean Peerly source
-// carrying HeyHubs product code with no shared-code benefit (see
-// docs/DURABLE_OBJECTS_AUDIT.md finding A1). Everything below is genuinely
-// single-implementation code, shared through this package: the wire
-// protocol, crypto, auth routes, rate limiting, the routing entry point, and
-// UserGatewayDO/SignalScopeDO (bound by both apps).
+// Product-specific Durable Objects live in their consumer repositories. This
+// package contains only reusable control-plane primitives: the wire protocol,
+// crypto, auth routes, rate limiting, routing entry point, and shared gateway
+// and signal-scope implementations.
 //
 // A third class, WorkspaceDO, used to live here. It was never reachable — no
 // command, no dispatch branch, no route — and wiring it up would have moved

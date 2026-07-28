@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { appBuildLabel, WORKSPACE_COLOR } from '../config'
 import type { Channel, ConnectionStatus, P2pCapability, Peer, UserProfile } from '../types'
 import { Avatar } from './Avatar'
@@ -10,6 +10,10 @@ import { Icon } from './Icon'
 import { LegalLinks } from './LegalLinks'
 import { useI18n } from '../i18n'
 import { useRelayDiagnostics } from '../hooks/useRelayDiagnostics'
+import {
+  WorkspaceMemberPopover,
+  type WorkspaceMemberSelection,
+} from './WorkspaceMemberPopover'
 
 type Props = {
   workspace: string
@@ -28,13 +32,12 @@ type Props = {
     peerId: string
   ) => { userId: string; email: string; name: string } | undefined
   isFriend?: (userId: string | undefined) => boolean
-  onAddFriend?: (subject: { userId: string; name: string; email: string }) => Promise<void>
   inviteableFriends?: (
     alreadyInvited: readonly string[]
   ) => Array<{ subjectUserId: string; subjectName: string; subjectEmail?: string }>
   channels: Channel[]
   activeChannel: string
-  activeView: 'channel' | 'profile' | 'workspace'
+  activeView: 'channel' | 'workspace'
   peers: Peer[]
   selfProfile: UserProfile
   connectionStatus: ConnectionStatus
@@ -48,9 +51,12 @@ type Props = {
   onRenameChannel: (channelId: string, name: string) => void
   onDeleteChannel: (channelId: string) => void
   onMoveChannel: (channelId: string, direction: -1 | 1) => void
-  onCloseDirectMessage: (channelId: string) => void
-  onStartDirectMessage: (peer: Peer) => void
-  onProfileSelect: () => void
+  canMessageUser: (userId: string | undefined) => boolean
+  onRequestFriend: (
+    contact: { userId: string; email: string; name: string }
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  onSendDirectMessage: (userId: string, text: string) => void
+  onEditProfile: () => void
   onWorkspaceSettings: () => void
   unreadByChannel: Record<string, number>
 }
@@ -129,23 +135,24 @@ export function Sidebar({
   onRenameChannel,
   onDeleteChannel,
   onMoveChannel,
-  onCloseDirectMessage,
-  onStartDirectMessage,
-  onProfileSelect,
+  canMessageUser,
+  onRequestFriend,
+  onSendDirectMessage,
+  onEditProfile,
   onWorkspaceSettings,
   unreadByChannel,
   resolvePeerContact,
   isFriend,
-  onAddFriend,
   inviteableFriends,
 }: Props) {
   const { tr } = useI18n()
   const relayDiagnostics = useRelayDiagnostics()
   const [showAddChannel, setShowAddChannel] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
+  const [selectedMember, setSelectedMember] = useState<WorkspaceMemberSelection | null>(null)
+  const closeMember = useCallback(() => setSelectedMember(null), [])
 
   const publicChannels = channels.filter(channel => channel.kind !== 'dm')
-  const dmChannels = channels.filter(channel => channel.kind === 'dm')
   const totalUnread = Object.values(unreadByChannel).reduce((sum, count) => sum + count, 0)
 
   const handleAddChannel = (e: React.FormEvent) => {
@@ -158,6 +165,7 @@ export function Sidebar({
   }
 
   return (
+    <>
     <aside
       className={`sidebar flex w-65 min-w-65 flex-col border-r border-base-300/70 bg-base-200/75 backdrop-blur-xl max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-40 max-lg:w-68 max-lg:min-w-68 max-lg:transition-transform max-lg:duration-200 max-sm:bottom-16 motion-reduce:max-lg:transition-none ${
         open ? 'max-lg:translate-x-0 max-lg:shadow-2xl' : 'max-lg:-translate-x-full'
@@ -287,47 +295,6 @@ export function Sidebar({
         )}
       </nav>
 
-      {dmChannels.length > 0 && (
-        <nav className="mt-4">
-          <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/60">
-            {tr('Direct messages')}
-          </h3>
-          <ul className="space-y-0.5 px-2">
-            {dmChannels.map(channel => {
-              const peer = peers.find(entry => entry.id === channel.peerId)
-              return (
-                <ChannelButton
-                  key={channel.id}
-                  channel={channel}
-                  label={peer?.name ?? channel.name}
-                  prefix={
-                    <Avatar
-                      name={peer?.name ?? channel.name}
-                      color={peer?.color ?? '#ababad'}
-                      avatar={peer?.avatar}
-                    />
-                  }
-                  active={activeView === 'channel' && activeChannel === channel.id}
-                  unread={unreadByChannel[channel.id] ?? 0}
-                  onSelect={() => onChannelSelect(channel.id)}
-                  actions={
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-xs btn-square"
-                      title={tr('Close direct message')}
-                      aria-label={tr('Close direct message with {name}', { name: peer?.name ?? channel.name })}
-                      onClick={() => onCloseDirectMessage(channel.id)}
-                    >
-                      <Icon name="x" size={13} />
-                    </button>
-                  }
-                />
-              )
-            })}
-          </ul>
-        </nav>
-      )}
-
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
         <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-base-content/60">
           {tr('Online')} — {peers.length + 1}
@@ -336,12 +303,8 @@ export function Sidebar({
           <li className="px-2">
             <button
               type="button"
-              className={`flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-sm transition-colors ${
-                activeView === 'profile'
-                  ? 'bg-accent/15 font-medium text-accent'
-                  : 'hover:bg-base-content/5'
-              }`}
-              onClick={onProfileSelect}
+              className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-sm transition-colors hover:bg-base-content/5"
+              onClick={() => setSelectedMember({ kind: 'self', profile: selfProfile })}
               aria-label={tr('Open your profile')}
               data-testid="member-self"
             >
@@ -354,56 +317,32 @@ export function Sidebar({
               <span className="shrink-0 text-xs text-base-content/55">{tr('you')}</span>
             </button>
           </li>
-          {peers.map(peer => (
-            <li
-              key={peer.id}
-              className="group flex items-center gap-2 px-3 py-1 text-sm"
-              data-testid={`member-${peer.name}`}
-              data-peer-color={peer.color}
-            >
-              <Avatar name={peer.name} color={peer.color} avatar={peer.avatar} />
-              <span className="min-w-0 flex-1 truncate">{peer.name}</span>
-              {peer.presenceOnly && (
-                <span className="shrink-0 text-xs text-base-content/55">{tr('Connecting')}</span>
-              )}
-              {(() => {
-                const contact = resolvePeerContact?.(peer.id)
-                const friendAlready = contact ? isFriend?.(contact.userId) : false
-                return (
-                  <>
-                    {contact && onAddFriend && !friendAlready && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs btn-square shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                        title={tr('Add friend')}
-                        aria-label={tr('Add {name} as friend', { name: peer.name })}
-                        data-testid={`add-friend-${peer.name}`}
-                        onClick={() =>
-                          void onAddFriend({
-                            userId: contact.userId,
-                            name: contact.name || peer.name,
-                            email: contact.email,
-                          })
-                        }
-                      >
-                        <Icon name="plus" size={15} />
-                      </button>
-                    )}
-                    {!peer.presenceOnly && <button
-                      type="button"
-                      className="btn btn-ghost btn-xs btn-square shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                      title={tr('Message {name}', { name: peer.name })}
-                      aria-label={tr('Message {name}', { name: peer.name })}
-                      data-testid={`message-peer-${peer.name}`}
-                      onClick={() => onStartDirectMessage(peer)}
-                    >
-                      <Icon name="message-circle" size={15} />
-                    </button>}
-                  </>
-                )
-              })()}
-            </li>
-          ))}
+          {peers.map(peer => {
+            const contact = resolvePeerContact?.(peer.id)
+            return (
+              <li key={peer.id} className="px-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-sm transition-colors hover:bg-base-content/5"
+                  data-testid={`member-${peer.name}`}
+                  data-peer-color={peer.color}
+                  onClick={() => setSelectedMember({
+                    kind: 'peer',
+                    peer,
+                    contact,
+                    friend: contact ? Boolean(isFriend?.(contact.userId)) : false,
+                    canMessage: contact ? canMessageUser(contact.userId) : false,
+                  })}
+                >
+                  <Avatar name={peer.name} color={peer.color} avatar={peer.avatar} />
+                  <span className="min-w-0 flex-1 truncate">{peer.name}</span>
+                  {peer.presenceOnly && (
+                    <span className="shrink-0 text-xs text-base-content/55">{tr('Connecting')}</span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
         </ul>
       </div>
 
@@ -466,5 +405,13 @@ export function Sidebar({
         </div>
       </div>
     </aside>
+    <WorkspaceMemberPopover
+      member={selectedMember}
+      onClose={closeMember}
+      onEditProfile={onEditProfile}
+      onRequestFriend={onRequestFriend}
+      onSendMessage={onSendDirectMessage}
+    />
+    </>
   )
 }

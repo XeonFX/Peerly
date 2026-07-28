@@ -14,10 +14,11 @@ import { backupFileName, buildWorkspaceBackup } from '../../utils/workspaceBacku
 import { Avatar } from '../Avatar'
 import { BrowserStorageCard } from '../BrowserStorageCard'
 import type { useBrowserStorage } from '../../hooks/useBrowserStorage'
-import type { P2pCapability } from '../../types'
+import type { ConnectionStatus, P2pCapability } from '../../types'
 import { P2pCapabilityIndicator } from '../P2pCapabilityIndicator'
 import { RelayHealthCard } from './RelayHealthCard'
 import { useI18n } from '../../i18n'
+import { ConnectionStatus as ConnectionStatusLabel } from '../ConnectionStatus'
 
 type Props = {
   workspaceId: string
@@ -42,6 +43,10 @@ type Props = {
   onNameChange: (name: string) => void
   onAvatarChange: (avatarId: string, preview: string) => void
   onAvatarClear: () => void
+  selfId: string
+  inviteLink: string
+  relayOnline: boolean
+  connectionStatus: ConnectionStatus
   onBack: () => void
 }
 
@@ -68,6 +73,10 @@ export function WorkspaceSettingsPanel({
   onNameChange,
   onAvatarChange,
   onAvatarClear,
+  selfId,
+  inviteLink,
+  relayOnline,
+  connectionStatus,
   onBack,
 }: Props) {
   const { t, tr } = useI18n()
@@ -211,6 +220,51 @@ export function WorkspaceSettingsPanel({
               )}
             </div>
             {uploadError && <p className="text-sm text-error">{uploadError}</p>}
+          </div>
+        </section>
+
+        <section className="card mt-5 border border-base-300/80 bg-base-200/70 shadow-xl shadow-black/20 backdrop-blur-xl">
+          <div className="card-body gap-4">
+            <h3 className="text-base font-semibold">{tr('Workspace info')}</h3>
+            <dl className="flex flex-col gap-3 text-sm">
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-xs font-medium text-base-content/65">{tr('Workspace')}</dt>
+                <dd data-testid="workspace-info-name">{workspaceName}</dd>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-xs font-medium text-base-content/65">{tr('Your peer ID')}</dt>
+                <dd className="break-all font-mono text-xs">{selfId}</dd>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-xs font-medium text-base-content/65">{tr('Protection')}</dt>
+                <dd>{tr('Invite-only (verified accounts)')}</dd>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-xs font-medium text-base-content/65">{tr('Invite link')}</dt>
+                <dd>
+                  <input
+                    id="workspace-settings-invite-link"
+                    name="workspaceInviteLink"
+                    readOnly
+                    className="input input-bordered input-sm w-full font-mono text-xs"
+                    value={inviteLink}
+                    data-testid="workspace-settings-invite-link"
+                    onFocus={event => event.target.select()}
+                  />
+                </dd>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-xs font-medium text-base-content/65">{tr('Connection')}</dt>
+                <dd data-testid="workspace-settings-connection">
+                  <ConnectionStatusLabel
+                    relayOnline={relayOnline}
+                    connectionStatus={connectionStatus}
+                    rtcPeerCount={rtcPeerCount}
+                    variant="text"
+                  />
+                </dd>
+              </div>
+            </dl>
           </div>
         </section>
 

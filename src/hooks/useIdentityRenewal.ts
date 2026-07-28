@@ -1,13 +1,14 @@
-import { requestGoogleCredentialSilently, verifyGoogleIdToken } from '@peerly/core'
-import { useEffect, useRef } from 'react'
-import { deriveUserId } from '../collab/userId'
+import { renewGoogleCredentialSilently } from '@peerly/core'
+import { useCredentialRenewal } from '@peerly/core/react'
 import { isE2eAuthBypass } from '../collab/e2eAuth'
 import { getIdentityProvider } from '../collab/identityProviders'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
+import { googleSignInClient } from '../collab/googleAuth'
 import {
   idTokenExpiryMs,
   loadIdentityEmail,
   loadIdentityProvider,
+  loadIdentityUserId,
   loadIdToken,
   saveIdCredentials,
 } from '../session'
@@ -32,87 +33,42 @@ import {
  * not ask for.
  */
 
-/** Renew this far ahead of expiry, so nothing fails while we are asking. */
-const RENEW_BEFORE_MS = 5 * 60_000
+export function useIdentityRenewal(identity: DeviceIdentity, hasRememberedIdentity: boolean): number {
+  const token = loadIdToken()
+  const expiresAt = token ? idTokenExpiryMs(token) : null
 
-/** Floor on retries, so a provider that keeps declining is not hammered. */
-const MIN_RETRY_MS = 60_000
-
-export function useIdentityRenewal(identity: DeviceIdentity, signedIn: boolean): void {
-  // Held in a ref so a renewal in flight is never started twice, and so the
-  // timer can be replaced without re-running the effect.
-  const running = useRef(false)
-
-  useEffect(() => {
-    // The E2E bypass mints its own tokens; there is no Google to ask.
-    if (!signedIn || isE2eAuthBypass()) return
-
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-
-    const renew = async (): Promise<void> => {
-      if (running.current || cancelled) return
+  return useCredentialRenewal({
+    enabled: hasRememberedIdentity && !isE2eAuthBypass(),
+    expiresAt,
+    retryWhenMissing: true,
+    renew: async () => {
       const provider = loadIdentityProvider()
       const email = loadIdentityEmail()
       // Only Google exposes a silent re-issue path today. Other providers fall
       // through to the visible flow, exactly as before.
-      if (provider !== 'google' || !email) return
+      if (provider !== 'google' || !email) return null
 
       const config = getIdentityProvider('google')
-      if (!config?.clientId) return
+      if (!config?.clientId) return null
 
-      running.current = true
-      try {
-        const nonce = await identity.publicKeyId()
-        const token = await requestGoogleCredentialSilently(config.clientId, nonce)
-        if (!token || cancelled) return
-
-        // Verified before it is stored: a token we did not check is a token we
-        // would hand to peers and the worker on trust.
-        const claims = await verifyGoogleIdToken(token, {
-          expectedAudience: config.clientId,
-          expectedNonce: nonce,
-        })
-        if (cancelled) return
-        saveIdCredentials(token, 'google', claims.email, await deriveUserId(claims.iss, claims.sub))
-      } catch {
-        // Declined, blocked, or offline. The visible sign-in path remains.
-      } finally {
-        running.current = false
-      }
-    }
-
-    /** Sleep until shortly before the current token lapses, then renew. */
-    const schedule = (): void => {
-      if (cancelled) return
-      const token = loadIdToken()
-      const expiresAt = token ? idTokenExpiryMs(token) : null
-      // No token, or one we cannot read an expiry from: try now.
-      const delay = expiresAt === null
-        ? 0
-        : Math.max(MIN_RETRY_MS, expiresAt - Date.now() - RENEW_BEFORE_MS)
-      timer = setTimeout(() => {
-        void renew().finally(schedule)
-      }, delay)
-    }
-
-    schedule()
-
-    // Coming back to a tab that slept through its own timer is the common way
-    // to find an expired token, so re-check on return rather than waiting.
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return
-      const token = loadIdToken()
-      const expiresAt = token ? idTokenExpiryMs(token) : null
-      if (expiresAt !== null && expiresAt - Date.now() > RENEW_BEFORE_MS) return
-      void renew()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
-  }, [identity, signedIn])
+      return renewGoogleCredentialSilently({
+        client: googleSignInClient,
+        clientId: config.clientId,
+        nonce: await identity.publicKeyId(),
+        remembered: {
+          email,
+          userId: loadIdentityUserId() ?? undefined,
+        },
+        fetchJwks: config.fetchJwks,
+      })
+    },
+    onRenewed: renewed => {
+      saveIdCredentials(
+        renewed.token,
+        'google',
+        renewed.claims.email,
+        renewed.userId
+      )
+    },
+  })
 }

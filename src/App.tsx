@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { configureRuntimeAuthCredentialProvider } from '@peerly/core'
 import { DeviceIdentity } from './collab/deviceIdentity'
-import { loadStoredProfile } from './collab/profileStore'
+import { loadStoredProfile, saveStoredProfile } from './collab/profileStore'
 import { shouldRaiseNotification } from './collab/attentionPolicy'
 import { ConsentBanner } from './components/ConsentBanner'
 import { HomeView } from './components/HomeView'
@@ -36,6 +36,10 @@ import {
 } from './session'
 import type { IncomingFriendInvite } from './collab/friendInviteStore'
 import { loadDmNotificationsEnabled } from './collab/notificationPreference'
+import { DEFAULT_USER_COLOR } from './config'
+import type { UserProfile } from './types'
+import type { IncomingWorkspaceInvite } from './collab/workspaceInviteStore'
+import { resolveAvatarPreview } from './collab/avatarService'
 
 const MyDevicesPage = lazy(() => import('./components/MyDevicesPage').then(module => ({ default: module.MyDevicesPage })))
 const SyncActivityPage = lazy(() => import('./components/SyncActivityPage').then(module => ({ default: module.SyncActivityPage })))
@@ -54,7 +58,8 @@ configureRuntimeAuthCredentialProvider(() => {
 function App() {
   const { session, setSession, ready } = useSessionBootstrap()
   const [, setIdentityVersion] = useState(0)
-  const signedIn = Boolean(loadSignedInIdentity())
+  const hasRememberedIdentity = Boolean(loadIdentityEmail() && loadIdentityProvider())
+  const signedIn = Boolean(loadSignedInIdentity()) || hasRememberedIdentity
   const { route, navigate, pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
     useAppRouting(Boolean(session), signedIn, ready)
   const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedCurrentLegal())
@@ -67,7 +72,7 @@ function App() {
   const ownerUserId = session?.identityUserId ?? loadIdentityUserId() ?? undefined
   // App-wide, not inside the workspace: a token expiring on the friends or DM
   // screen used to have nothing offering to renew it.
-  useIdentityRenewal(deviceIdentity, signedIn)
+  useIdentityRenewal(deviceIdentity, hasRememberedIdentity)
   const friendsApi = useFriends(deviceIdentity, ownerUserId)
   const reloadFriends = friendsApi.reload
   const deviceSyncVersion = useApprovedDeviceSync(deviceIdentity, ownerUserId)
@@ -75,21 +80,48 @@ function App() {
     reloadFriends()
   }, [deviceSyncVersion, reloadFriends])
 
-  const lobbyProfile = useMemo(() => {
+  const storedProfile = loadStoredProfile()
+  const [globalAvatarPreview, setGlobalAvatarPreview] = useState<string | undefined>(
+    session?.avatar
+  )
+  useEffect(() => {
+    if (session?.avatar) {
+      setGlobalAvatarPreview(session.avatar)
+      return
+    }
+    let cancelled = false
+    void resolveAvatarPreview(storedProfile.avatarId).then(preview => {
+      if (!cancelled) setGlobalAvatarPreview(preview)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.avatar, storedProfile.avatarId])
+
+  const lobbyProfile = (() => {
     const email = session?.identityEmail ?? loadIdentityEmail()
     const userId = session?.identityUserId ?? loadIdentityUserId()
     if (!email || !userId) return null
-    const stored = loadStoredProfile()
     const name =
       session?.userName ??
-      stored.userName ??
+      storedProfile.userName ??
       email.split('@')[0] ??
       userId.slice(0, 12)
-    return { userId, name, email }
-  }, [session?.identityEmail, session?.identityUserId, session?.userName])
+    return {
+      userId,
+      name,
+      email,
+      color: session?.color ?? storedProfile.color ?? DEFAULT_USER_COLOR,
+      avatar: session?.avatar ?? globalAvatarPreview,
+    }
+  })()
 
   const [pendingDmRing, setPendingDmRing] = useState<DmRingPayload | null>(null)
   const [friendInviteNotice, setFriendInviteNotice] = useState<IncomingFriendInvite | null>(null)
+  const [pendingWorkspaceDm, setPendingWorkspaceDm] = useState<{
+    userId: string
+    text: string
+  } | null>(null)
 
   const notifyFriendInvite = (invite: IncomingFriendInvite) => {
     setFriendInviteNotice(invite)
@@ -113,6 +145,26 @@ function App() {
     }
   }
 
+  const notifyWorkspaceInvite = (invite: IncomingWorkspaceInvite) => {
+    const supported = typeof Notification !== 'undefined'
+    if (!shouldRaiseNotification({
+      visibility: document.visibilityState,
+      enabled: loadDmNotificationsEnabled(),
+      supported,
+      permission: supported ? Notification.permission : 'denied',
+    })) return
+
+    const notification = new Notification('Peerly workspace invitation', {
+      body: `${invite.fromName} invited you to ${invite.payload.invite.workspaceName}.`,
+      icon: '/icon-192.png',
+      tag: `peerly-workspace-${invite.payload.invite.workspaceId}`,
+    })
+    notification.onclick = () => {
+      window.focus()
+      notification.close()
+    }
+  }
+
   const presence = usePresenceLobby({
     identity: lobbyProfile ? deviceIdentity : null,
     profile: lobbyProfile,
@@ -124,6 +176,7 @@ function App() {
     onFriendsChanged: friendsApi.reload,
     onDmRing: ring => setPendingDmRing(ring),
     onFriendInvite: notifyFriendInvite,
+    onWorkspaceInvite: notifyWorkspaceInvite,
   })
 
   const { manager, peerHandshake, resolvePeerUserId, resolvePeerContact, signMessage, signReaction, getBoundUserId } =
@@ -150,6 +203,38 @@ function App() {
     leaveToPicker,
   })
 
+  const accountProfile: UserProfile = {
+    name:
+      session?.userName ??
+      storedProfile.userName ??
+      lobbyProfile?.name ??
+      (session?.identityEmail ?? loadIdentityEmail())?.split('@')[0] ??
+      'Peerly user',
+    color: session?.color ?? storedProfile.color ?? DEFAULT_USER_COLOR,
+    avatar: session?.avatar ?? globalAvatarPreview,
+  }
+
+  const updateGlobalProfile = (next: UserProfile & { avatarId?: string }) => {
+    saveStoredProfile({
+      userName: next.name,
+      color: next.color,
+      avatarId: next.avatarId,
+    })
+    setSession(previous => {
+      if (!previous) return previous
+      const updated = {
+        ...previous,
+        userName: next.name,
+        color: next.color,
+        avatar: next.avatar,
+        avatarId: next.avatarId,
+      }
+      saveSession(updated)
+      return updated
+    })
+    setIdentityVersion(version => version + 1)
+  }
+
   // Rail data: the signed-in email drives which workspaces to offer, and it
   // survives leaving a workspace (identity outlives the active session), so the
   // rail stays populated on the home view too. loadIdentityEmail() reads even
@@ -166,6 +251,17 @@ function App() {
     window.addEventListener(WORKSPACES_CHANGED_EVENT, refresh)
     return () => window.removeEventListener(WORKSPACES_CHANGED_EVENT, refresh)
   }, [identityEmail])
+
+  const workspaceInviteNotice = presence.incomingWorkspace[0] ?? null
+  const openWorkspaceInvitation = async (invite: IncomingWorkspaceInvite) => {
+    const workspace = {
+      ...invite.payload.invite,
+      lastOpenedAt: Date.now(),
+    }
+    rememberWorkspace(invite.payload.invite)
+    presence.dismissWorkspaceInvite(invite.inviteId)
+    await switchWorkspace(workspace)
+  }
 
   // Public legal pages render regardless of session/hydration state.
   if (route.screen === 'legal') {
@@ -211,8 +307,13 @@ function App() {
       onSessionChange={updateSession}
       friends={friendsApi.friends}
       isFriend={friendsApi.has}
-      onAddFriend={friendsApi.add}
-      onRemoveFriend={friendsApi.remove}
+      onRequestFriend={presence.inviteByEmail}
+      onSendGlobalDm={(userId, text) => {
+        setPendingWorkspaceDm({ userId, text })
+        navigate({ screen: 'home', dmUserId: userId })
+      }}
+      onOpenProfile={() => navigate({ screen: 'account' })}
+      onDeliverWorkspaceInvites={presence.inviteToWorkspace}
       inviteableFriends={emails => friendsApi.inviteable(emails)}
     />
   ) : lobbyProfile && (route.screen === 'home' || route.screen === 'devices' || route.screen === 'account' || route.screen === 'storage') ? (
@@ -231,7 +332,19 @@ function App() {
           initialSecret={route.screen === 'devices' ? route.pairSecret : undefined}
         />
       }
-      accountPanel={<AccountPreferencesPage email={identityEmail ?? ''} onSignOut={signOut} />}
+      accountPanel={
+        <AccountPreferencesPage
+          email={identityEmail ?? ''}
+          profile={accountProfile}
+          avatarId={session?.avatarId ?? storedProfile.avatarId}
+          onProfileChange={updateGlobalProfile}
+          onBack={() => {
+            if (session) enterWorkspace()
+            else navigate({ screen: 'home' })
+          }}
+          onSignOut={signOut}
+        />
+      }
       profile={lobbyProfile}
       identity={deviceIdentity}
       friends={friendsApi.friends}
@@ -248,6 +361,12 @@ function App() {
       pendingRing={pendingDmRing}
       onConsumeRing={() => setPendingDmRing(null)}
       dmUserId={route.screen === 'home' ? route.dmUserId : undefined}
+      pendingMessage={
+        route.screen === 'home' && pendingWorkspaceDm && pendingWorkspaceDm.userId === route.dmUserId
+          ? pendingWorkspaceDm.text
+          : undefined
+      }
+      onPendingMessageConsumed={() => setPendingWorkspaceDm(null)}
       onOpenDm={userId =>
         navigate(userId ? { screen: 'home', dmUserId: userId } : { screen: 'home' })
       }
@@ -317,6 +436,30 @@ function App() {
             <span><strong>{friendInviteNotice.fromName}</strong> sent you a friend request.</span>
             <button type="button" className="btn btn-sm" onClick={() => { navigate({ screen: 'home' }); setFriendInviteNotice(null) }}>Open</button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFriendInviteNotice(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
+      {workspaceInviteNotice && (
+        <div className="toast toast-end toast-top z-50" data-testid="workspace-invite-notification">
+          <div className="alert alert-info shadow-lg" role="status" aria-live="polite">
+            <span>
+              <strong>{workspaceInviteNotice.fromName}</strong>{' '}
+              invited you to <strong>{workspaceInviteNotice.payload.invite.workspaceName}</strong>.
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => void openWorkspaceInvitation(workspaceInviteNotice)}
+            >
+              Join
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => presence.dismissWorkspaceInvite(workspaceInviteNotice.inviteId)}
+            >
+              Dismiss
+            </button>
           </div>
         </div>
       )}

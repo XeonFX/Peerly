@@ -82,7 +82,7 @@ describe('resolveProbeIceServers', () => {
   it('sources credentials from the Durable Objects session under that strategy', async () => {
     await expect(resolveProbeIceServers({
       VITE_SIGNALING: 'durable-objects',
-      VITE_APP_ID: 'heyhubs',
+      VITE_APP_ID: 'consumer-app',
     })).resolves.toEqual([{
       urls: ['turn:turn.example:3478'], username: 'do-user', credential: 'do-credential',
     }])
