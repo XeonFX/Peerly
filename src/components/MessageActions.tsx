@@ -124,6 +124,24 @@ export function MessageActions({
         setPanel(null)
       },
     },
+    {
+      label: tr('Copy text'),
+      icon: 'copy',
+      run: () => {
+        void copyText(text)
+        setPanel(null)
+      },
+    },
+    ...(firstUrl
+      ? [{
+          label: tr('Copy link'),
+          icon: 'link' as const,
+          run: () => {
+            void copyText(firstUrl)
+            setPanel(null)
+          },
+        }]
+      : []),
     ...(canEdit
       ? [{
           label: tr('Edit message'),
@@ -141,24 +159,6 @@ export function MessageActions({
           danger: true,
           run: () => {
             onDelete()
-            setPanel(null)
-          },
-        }]
-      : []),
-    {
-      label: tr('Copy text'),
-      icon: 'copy',
-      run: () => {
-        void copyText(text)
-        setPanel(null)
-      },
-    },
-    ...(firstUrl
-      ? [{
-          label: tr('Copy link'),
-          icon: 'link' as const,
-          run: () => {
-            void copyText(firstUrl)
             setPanel(null)
           },
         }]

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n'
 import { MessageActions } from './MessageActions'
@@ -53,5 +53,21 @@ describe('MessageActions', () => {
     renderActions('No links here')
     fireEvent.click(screen.getByLabelText('More actions'))
     expect(screen.queryByText('Copy link')).toBeNull()
+  })
+
+  it('orders common actions for quick keyboard and pointer scanning', () => {
+    renderActions('No links here')
+    fireEvent.click(screen.getByLabelText('More actions'))
+    expect(
+      within(screen.getByTestId('message-more-menu'))
+        .getAllByRole('button')
+        .map(button => button.textContent?.trim())
+    ).toEqual([
+      'Add reaction',
+      'Reply',
+      'Copy text',
+      'Edit message',
+      'Delete message',
+    ])
   })
 })
