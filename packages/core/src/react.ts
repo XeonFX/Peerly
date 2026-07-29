@@ -5,11 +5,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react'
+import { firstSafeLink } from './safeLinks.js'
+import { searchReactionCategories } from './reactions.js'
 import {
   credentialNeedsRenewal,
   credentialRenewalDelay,
@@ -85,6 +88,124 @@ export function useLatest<T>(value: T) {
   const ref = useRef(value)
   ref.current = value
   return ref
+}
+
+export type MessageActionPanel = 'reactions' | 'more' | null
+export type MessageActionPanelPosition = {
+  left: number
+  top: number
+  visible: boolean
+}
+
+export type MessageActionMenuOptions = {
+  text: string
+  onReact(emoji: string): void
+  onOpenChange?(open: boolean): void
+  panelGap?: number
+  viewportMargin?: number
+}
+
+/**
+ * Shared, headless controller for message actions.
+ *
+ * Products keep their own visual language and icon component, while panel
+ * placement, outside-click/Escape handling, reaction search, Copy-link
+ * discovery, and open-state behavior have one implementation.
+ */
+export function useMessageActionMenu(options: MessageActionMenuOptions) {
+  const {
+    text,
+    onReact,
+    onOpenChange,
+    panelGap = 6,
+    viewportMargin = 8,
+  } = options
+  const rootRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [panel, setPanel] = useState<MessageActionPanel>(null)
+  const [position, setPosition] = useState<MessageActionPanelPosition>({
+    left: 0,
+    top: 0,
+    visible: false,
+  })
+  const [search, setSearch] = useState('')
+  const categories = useMemo(() => searchReactionCategories(search), [search])
+  const firstUrl = useMemo(() => firstSafeLink(text), [text])
+  const openChangeRef = useLatest(onOpenChange)
+
+  useEffect(() => {
+    openChangeRef.current?.(panel !== null)
+  }, [openChangeRef, panel])
+
+  useEffect(() => {
+    if (!panel) return
+    const close = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (!rootRef.current?.contains(target) && !panelRef.current?.contains(target)) {
+        setPanel(null)
+      }
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPanel(null)
+    }
+    document.addEventListener('pointerdown', close)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('pointerdown', close)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [panel])
+
+  useLayoutEffect(() => {
+    if (!panel) return
+    const place = () => {
+      const anchor = rootRef.current?.getBoundingClientRect()
+      const floating = panelRef.current
+      if (!anchor || !floating) return
+      const left = Math.min(
+        window.innerWidth - floating.offsetWidth - viewportMargin,
+        Math.max(viewportMargin, anchor.right - floating.offsetWidth)
+      )
+      const roomBelow = window.innerHeight - anchor.bottom - viewportMargin
+      const top = roomBelow >= floating.offsetHeight + panelGap
+        ? anchor.bottom + panelGap
+        : Math.max(viewportMargin, anchor.top - floating.offsetHeight - panelGap)
+      setPosition({ left, top, visible: true })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [panel, panelGap, viewportMargin])
+
+  const chooseReaction = useCallback((emoji: string) => {
+    onReact(emoji)
+    setPanel(null)
+    setSearch('')
+  }, [onReact])
+
+  const closePanel = useCallback(() => setPanel(null), [])
+  const togglePanel = useCallback((next: Exclude<MessageActionPanel, null>) => {
+    setPosition(current => ({ ...current, visible: false }))
+    setPanel(current => current === next ? null : next)
+  }, [])
+
+  return {
+    rootRef,
+    panelRef,
+    panel,
+    position,
+    search,
+    setSearch,
+    categories,
+    firstUrl,
+    chooseReaction,
+    closePanel,
+    togglePanel,
+  }
 }
 
 export type CredentialRenewalOptions<T> = {
@@ -358,6 +479,78 @@ import { probeTurnCapability, type TurnCapability } from './turnCapability.js'
 import { createSpeakingDetector, type SpeakingDetector } from './speaking.js'
 import { createRelayCoordinator } from './coordination.js'
 import { createRelayChannel, type RelayChannelRoom } from './relayChannel.js'
+import {
+  openDurableChannel,
+  type DurableChannelAuthorization,
+} from './durableChannel.js'
+
+export type UseDurableChannelOptions = {
+  enabled: boolean
+  authorize(): Promise<DurableChannelAuthorization>
+  endpointPrefix: string
+  onError?: (message: string) => void
+  connectTimeoutMs?: number
+  encryptionSecret?: string
+}
+
+/** React lifecycle wrapper around the reusable Durable Object action channel. */
+export function useDurableChannel(
+  options: UseDurableChannelOptions
+): { room: RelayChannelRoom | null } {
+  const {
+    enabled,
+    authorize,
+    endpointPrefix,
+    onError,
+    connectTimeoutMs,
+    encryptionSecret,
+  } = options
+  const authorizeRef = useLatest(authorize)
+  const onErrorRef = useLatest(onError)
+  const [room, setRoom] = useState<RelayChannelRoom | null>(null)
+
+  useEffect(() => {
+    if (!enabled) {
+      setRoom(null)
+      return
+    }
+    let cancelled = false
+    let opened: RelayChannelRoom | null = null
+    void openDurableChannel({
+      authorize: () => authorizeRef.current(),
+      endpointPrefix,
+      ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
+      ...(encryptionSecret === undefined ? {} : { encryptionSecret }),
+    }).then(channel => {
+      if (cancelled) {
+        channel.leave()
+        return
+      }
+      opened = channel
+      setRoom(channel)
+    }).catch(error => {
+      if (!cancelled) {
+        onErrorRef.current?.(
+          error instanceof Error ? error.message : 'durable-channel-failed'
+        )
+      }
+    })
+    return () => {
+      cancelled = true
+      opened?.leave()
+      setRoom(null)
+    }
+  }, [
+    authorizeRef,
+    connectTimeoutMs,
+    enabled,
+    encryptionSecret,
+    endpointPrefix,
+    onErrorRef,
+  ])
+
+  return { room }
+}
 
 export type UseRelayChannelOptions = {
   /** Stable P2P namespace owned by the host application. */

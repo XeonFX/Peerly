@@ -25,6 +25,11 @@ export interface CoordinationTransport {
   /** Revoke one of this account's own devices server-side (sessions + sockets). */
   revokeDevice(deviceKeyId: string): Promise<void>
   releaseScope(routeId: string): Promise<void>
+  /**
+   * App-owned control-plane command. Core owns delivery/retry/idempotency;
+   * the consumer owns the command schema and handler.
+   */
+  sendCommand<T = unknown>(type: string, payload?: unknown): Promise<T>
   events: EventTarget
   readonly diagnostics: TransportDiagnostics
 }
@@ -104,6 +109,10 @@ class DurableObjectTransport implements CoordinationTransport {
 
   async releaseScope(routeId: string): Promise<void> {
     await this.client.send('scope.leave', { routeId })
+  }
+
+  sendCommand<T = unknown>(type: string, payload?: unknown): Promise<T> {
+    return this.client.send<T>(type, payload)
   }
 }
 

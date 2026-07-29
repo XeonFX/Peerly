@@ -185,4 +185,46 @@ describe('authenticateUpgrade', () => {
     const response = await authenticateUpgrade(upgradeRequest({ cookie: nameValue }), env, config)
     expect(response).toMatchObject({ uid: 'u1', deviceKeyId: 'dk1', sid: 's1' })
   })
+
+  it('carries the stable public user id only from the signed cookie', async () => {
+    const now = Date.now()
+    const cookieValue = await mintCookie(env.NETWORK_SESSION_SECRET, {
+      app: 'peerly',
+      uid: 'opaque-u1',
+      publicUserId: 'public-u1',
+      deviceKeyId: 'dk1',
+      sid: 's1',
+      now,
+      ttlMs: 600_000,
+    })
+    const response = await authenticateUpgrade(
+      upgradeRequest({ cookie: `pnet=${cookieValue}` }),
+      env,
+      { ...config, requirePublicUserId: true }
+    )
+    expect(response).toMatchObject({
+      uid: 'opaque-u1',
+      publicUserId: 'public-u1',
+      deviceKeyId: 'dk1',
+      sid: 's1',
+    })
+  })
+
+  it('rejects an old cookie when an app requires public identity', async () => {
+    const now = Date.now()
+    const cookieValue = await mintCookie(env.NETWORK_SESSION_SECRET, {
+      app: 'peerly',
+      uid: 'opaque-u1',
+      deviceKeyId: 'dk1',
+      sid: 's1',
+      now,
+      ttlMs: 600_000,
+    })
+    const response = await authenticateUpgrade(
+      upgradeRequest({ cookie: `pnet=${cookieValue}` }),
+      env,
+      { ...config, requirePublicUserId: true }
+    )
+    expect(response.error?.status).toBe(401)
+  })
 })

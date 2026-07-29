@@ -143,9 +143,10 @@ const CAPABILITY_PREFIX = 'realtime-capability-v1'
 const COOKIE_PREFIX = 'realtime-cookie-v1'
 
 /** Mint the 30-day device-session capability returned by /api/network/enroll. */
-export async function mintCapability(secret, { app, uid, deviceKeyId, sid, epoch, now, ttlMs }) {
+export async function mintCapability(secret, { app, uid, publicUserId, deviceKeyId, sid, epoch, now, ttlMs }) {
   return signToken(CAPABILITY_PREFIX, secret, {
-    app, uid, dk: deviceKeyId, sid, epoch, iat: now, exp: now + ttlMs, ver: 1,
+    app, uid, ...(publicUserId ? { user: publicUserId } : {}),
+    dk: deviceKeyId, sid, epoch, iat: now, exp: now + ttlMs, ver: 1,
   })
 }
 
@@ -158,9 +159,10 @@ export async function verifyCapability(secret, token, { app, now }) {
 }
 
 /** Mint the 10-minute HttpOnly network cookie value (not the Set-Cookie header). */
-export async function mintCookie(secret, { app, uid, deviceKeyId, sid, now, ttlMs }) {
+export async function mintCookie(secret, { app, uid, publicUserId, deviceKeyId, sid, now, ttlMs }) {
   return signToken(COOKIE_PREFIX, secret, {
-    app, uid, dk: deviceKeyId, sid, iat: now, exp: now + ttlMs,
+    app, uid, ...(publicUserId ? { user: publicUserId } : {}),
+    dk: deviceKeyId, sid, iat: now, exp: now + ttlMs,
   })
 }
 

@@ -43,6 +43,7 @@ type Attachment = {
   readonly dk: string
   readonly sid: string
   readonly negotiated: boolean
+  readonly publicUserId?: string
 }
 
 export type GatewayRuntimeOptions = {
@@ -83,6 +84,7 @@ export class GatewayRuntime {
     return {
       id: attachment.cid,
       deviceKeyId: attachment.dk as DeviceKeyId,
+      ...(attachment.publicUserId ? { publicUserId: attachment.publicUserId } : {}),
       negotiated: () => attachment.negotiated === true,
       markNegotiated: () => raw.serializeAttachment({ ...attachment, negotiated: true }),
       send: frame => raw.send(frame),
@@ -107,7 +109,7 @@ export class GatewayRuntime {
    */
   async accept(
     raw: RawSocket,
-    identity: { uid: string; deviceKeyId: string; sid: string }
+    identity: { uid: string; deviceKeyId: string; sid: string; publicUserId?: string }
   ): Promise<{ ok: true } | { ok: false; status: number }> {
     const uid = asOpaqueUserId(identity.uid)
     const deviceKeyId = asDeviceKeyId(identity.deviceKeyId)
@@ -132,6 +134,7 @@ export class GatewayRuntime {
       dk: deviceKeyId,
       sid: identity.sid,
       negotiated: false,
+      ...(identity.publicUserId ? { publicUserId: identity.publicUserId } : {}),
     } satisfies Attachment)
 
     await this.publishPresence(nowMs, true)

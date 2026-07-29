@@ -73,6 +73,17 @@ export function getDurableObjectsTransport(app: string): CoordinationTransport {
   return transport
 }
 
+/** Sends one app-owned command over the shared authenticated control socket. */
+export async function sendRealtimeCommand<T = unknown>(
+  app: string,
+  type: string,
+  payload?: unknown
+): Promise<T> {
+  const transport = getDurableObjectsTransport(app)
+  await transport.connect()
+  return transport.sendCommand<T>(type, payload)
+}
+
 export async function getDurableObjectsIceServers(app: string): Promise<TurnServer[] | undefined> {
   const transport = getDurableObjectsTransport(app)
   const arrival = turnArrival(app)

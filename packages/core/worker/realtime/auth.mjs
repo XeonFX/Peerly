@@ -5,6 +5,7 @@ import {
   verifyCapability, verifyCookie, verifyDeviceSignature,
 } from './crypto.mjs'
 import { LIMITS } from '../../dist/protocol/index.js'
+import { deriveUserId } from '../../dist/userId.js'
 
 function json(body, init) {
   return Response.json(body, {
@@ -72,6 +73,7 @@ export async function handleEnroll(request, env, config) {
   if (!proof) return unauthorized()
 
   const uid = await deriveOpaqueUserId(env.OPAQUE_USER_ID_SECRET, config.app, claims.iss, claims.sub)
+  const publicUserId = await deriveUserId(claims.iss, claims.sub)
   const gateway = gatewayFor(env, config.app, uid)
 
   const nonceHash = await sha256Hex(`enroll\n${deviceKeyId}\n${nonce}`)
@@ -85,7 +87,8 @@ export async function handleEnroll(request, env, config) {
   if (registered.code) return conflict(registered.code)
 
   const capability = await mintCapability(env.NETWORK_SESSION_SECRET, {
-    app: config.app, uid, deviceKeyId, sid: registered.sid, epoch: registered.epoch,
+    app: config.app, uid, publicUserId, deviceKeyId,
+    sid: registered.sid, epoch: registered.epoch,
     now, ttlMs: LIMITS.capabilityTtlMs,
   })
   return json({ capability, expiresAt: now + LIMITS.capabilityTtlMs })
@@ -114,7 +117,11 @@ export async function handleSession(request, env, config) {
 
   const now = Date.now()
   const claims = await verifyCapability(env.NETWORK_SESSION_SECRET, capabilityToken, { app: config.app, now })
-  if (!claims || claims.dk !== deviceKeyId) return unauthorized()
+  if (
+    !claims ||
+    claims.dk !== deviceKeyId ||
+    (config.requirePublicUserId && typeof claims.user !== 'string')
+  ) return unauthorized()
 
   // The device signature is over the SAME fields the client signs in
   // src/realtime/client.ts establishSession(): purpose, app, deviceKeyId,
@@ -143,7 +150,8 @@ export async function handleSession(request, env, config) {
   if (!validation.ok) return unauthorized()
 
   const cookie = await mintCookie(env.NETWORK_SESSION_SECRET, {
-    app: config.app, uid: claims.uid, deviceKeyId, sid: claims.sid, now, ttlMs: LIMITS.cookieTtlMs,
+    app: config.app, uid: claims.uid, publicUserId: claims.user,
+    deviceKeyId, sid: claims.sid, now, ttlMs: LIMITS.cookieTtlMs,
   })
   const turn = await mintTurnCredential(env, { subject: claims.uid, now, ttlMs: LIMITS.cookieTtlMs })
 
@@ -167,5 +175,13 @@ export async function authenticateUpgrade(request, env, config) {
   if (!cookieToken) return { error: new Response('Unauthorized', { status: 401 }) }
   const claims = await verifyCookie(env.NETWORK_SESSION_SECRET, cookieToken, { app: config.app, now: Date.now() })
   if (!claims) return { error: new Response('Unauthorized', { status: 401 }) }
-  return { uid: claims.uid, deviceKeyId: claims.dk, sid: claims.sid }
+  if (config.requirePublicUserId && typeof claims.user !== 'string') {
+    return { error: new Response('Unauthorized', { status: 401 }) }
+  }
+  return {
+    uid: claims.uid,
+    deviceKeyId: claims.dk,
+    sid: claims.sid,
+    ...(typeof claims.user === 'string' ? { publicUserId: claims.user } : {}),
+  }
 }

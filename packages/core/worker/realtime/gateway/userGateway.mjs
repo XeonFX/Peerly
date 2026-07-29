@@ -130,11 +130,17 @@ export function defineUserGateway(app = {}) {
       const uid = request.headers.get('x-realtime-uid')
       const dk = request.headers.get('x-realtime-dk')
       const sid = request.headers.get('x-realtime-sid')
+      const publicUserId = request.headers.get('x-realtime-user') ?? undefined
       if (!uid || !dk || !sid) return new Response('Unauthorized', { status: 401 })
 
       const pair = new WebSocketPair()
       const [client, server] = [pair[0], pair[1]]
-      const accepted = await this.runtime.accept(server, { uid, deviceKeyId: dk, sid })
+      const accepted = await this.runtime.accept(server, {
+        uid,
+        deviceKeyId: dk,
+        sid,
+        publicUserId,
+      })
       if (!accepted.ok) return new Response('Unauthorized', { status: accepted.status })
       return new Response(null, { status: 101, webSocket: client })
     }

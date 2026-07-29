@@ -143,6 +143,11 @@ export {
   type RelayChannelRoom,
 } from './relayChannel.js'
 export {
+  openDurableChannel,
+  type DurableChannelAuthorization,
+  type DurableChannelOptions,
+} from './durableChannel.js'
+export {
   GOOGLE_ISSUERS,
   GOOGLE_JWKS_URL,
   GOOGLE_JWKS_PROXY_PATH,
@@ -161,6 +166,11 @@ export {
   type ReactionCategory,
   type ReactionEmoji,
 } from './reactions.js'
+export {
+  firstSafeLink,
+  splitSafeLinks,
+  type SafeTextPart,
+} from './safeLinks.js'
 export {
   clockFormatPreferenceKey,
   dateFormatPreferenceKey,
@@ -417,6 +427,7 @@ export {
 export { RealtimeClient } from './app/realtimeClient.js'
 export type { RealtimeClientConfig } from './realtime/transport.js'
 export { selectDurableObjectsTransport, type CoordinationTransport } from './realtime/transport.js'
+export { sendRealtimeCommand } from './realtime/runtime.js'
 export { revokeRealtimeDevice } from './realtime/runtime.js'
 export {
   type DeviceSignerLike,

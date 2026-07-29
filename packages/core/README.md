@@ -78,6 +78,19 @@ function Chat({ code }: { code: string }) {
 // useLatest(value) — ref always pointing at the latest value (stale-closure helper)
 ```
 
+### Shared message actions and durable content channels
+
+`useMessageActionMenu()` is the headless reaction/action controller shared by
+Peerly and HeyHubs. It owns reaction search, fixed/portal panel positioning,
+Escape/outside-click closing, and first-safe-link discovery while each product
+keeps its own icons and CSS.
+
+`openDurableChannel()` exposes the small `makeAction/getPeers/onPeerJoin`
+surface used by room features. A consumer supplies its own authorization
+command and Durable Object route; passing a high-entropy `encryptionSecret`
+encrypts every action payload with browser-side AES-GCM before storage. Product
+schemas and Durable Object classes remain in the consumer repository.
+
 The hook carries Peerly's hard-won teardown handling: `leave()` is async and
 Nostr batches relay subscriptions across rooms, so a leave landing after the
 next join silently kills that room's signaling. The hook serializes them —

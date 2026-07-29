@@ -21,6 +21,8 @@ import type { Clock, ControlSocket, GatewayStorage } from '../ports/index.js'
 
 export type CommandContext = {
   readonly identity: OpaqueUserId
+  /** Stable public account id derived from OIDC iss+sub, when requested by the app. */
+  readonly publicUserId?: string
   readonly deviceKeyId: DeviceKeyId
   readonly socket: ControlSocket
 }
@@ -144,6 +146,7 @@ export class GatewayService {
     try {
       const result = await handler(payload as never, {
         identity,
+        publicUserId: socket.publicUserId,
         deviceKeyId: socket.deviceKeyId,
         socket,
       })

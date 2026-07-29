@@ -1,12 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   QUICK_REACTIONS,
-  searchReactionCategories,
 } from '@peerly/core'
+import { useMessageActionMenu } from '@peerly/core/react'
 import { useI18n } from '../i18n'
 import { Icon, type IconName } from './Icon'
-import { firstSafeLink } from '../utils/safeLinks'
 
 type Props = {
   text: string
@@ -27,11 +25,6 @@ type MenuAction = {
   run: () => void
 }
 
-type PanelPosition = { left: number; top: number; visible: boolean }
-
-const PANEL_GAP = 6
-const VIEWPORT_MARGIN = 8
-
 async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value)
 }
@@ -48,80 +41,32 @@ export function MessageActions({
   testIdPrefix = 'message',
 }: Props) {
   const { tr } = useI18n()
-  const rootRef = useRef<HTMLDivElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-  const [panel, setPanel] = useState<'reactions' | 'more' | null>(null)
-  const [position, setPosition] = useState<PanelPosition>({ left: 0, top: 0, visible: false })
-  const [search, setSearch] = useState('')
-  const categories = useMemo(() => searchReactionCategories(search), [search])
-  const firstUrl = useMemo(() => firstSafeLink(text), [text])
-
-  useEffect(() => {
-    onOpenChange?.(panel !== null)
-  }, [onOpenChange, panel])
-
-  useEffect(() => {
-    if (!panel) return
-    const close = (event: PointerEvent) => {
-      const target = event.target as Node
-      if (!rootRef.current?.contains(target) && !panelRef.current?.contains(target)) setPanel(null)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPanel(null)
-    }
-    document.addEventListener('pointerdown', close)
-    document.addEventListener('keydown', escape)
-    return () => {
-      document.removeEventListener('pointerdown', close)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [panel])
-
-  useLayoutEffect(() => {
-    if (!panel) return
-    const place = () => {
-      const anchor = rootRef.current?.getBoundingClientRect()
-      const floating = panelRef.current
-      if (!anchor || !floating) return
-      const width = floating.offsetWidth
-      const height = floating.offsetHeight
-      const left = Math.min(
-        window.innerWidth - width - VIEWPORT_MARGIN,
-        Math.max(VIEWPORT_MARGIN, anchor.right - width)
-      )
-      const roomBelow = window.innerHeight - anchor.bottom - VIEWPORT_MARGIN
-      const top = roomBelow >= height + PANEL_GAP
-        ? anchor.bottom + PANEL_GAP
-        : Math.max(VIEWPORT_MARGIN, anchor.top - height - PANEL_GAP)
-      setPosition({ left, top, visible: true })
-    }
-    place()
-    window.addEventListener('resize', place)
-    window.addEventListener('scroll', place, true)
-    return () => {
-      window.removeEventListener('resize', place)
-      window.removeEventListener('scroll', place, true)
-    }
-  }, [panel])
-
-  const chooseReaction = (emoji: string) => {
-    onReact(emoji)
-    setPanel(null)
-    setSearch('')
-  }
+  const {
+    rootRef,
+    panelRef,
+    panel,
+    position,
+    search,
+    setSearch,
+    categories,
+    firstUrl,
+    chooseReaction,
+    closePanel,
+    togglePanel,
+  } = useMessageActionMenu({ text, onReact, onOpenChange })
 
   const menuActions: MenuAction[] = [
     {
       label: tr('Add reaction'),
       icon: 'smile',
-      run: () => setPanel('reactions'),
+      run: () => togglePanel('reactions'),
     },
     {
       label: tr('Reply'),
       icon: 'reply',
       run: () => {
         onReply()
-        setPanel(null)
+        closePanel()
       },
     },
     {
@@ -129,7 +74,7 @@ export function MessageActions({
       icon: 'copy',
       run: () => {
         void copyText(text)
-        setPanel(null)
+        closePanel()
       },
     },
     ...(firstUrl
@@ -138,7 +83,7 @@ export function MessageActions({
           icon: 'link' as const,
           run: () => {
             void copyText(firstUrl)
-            setPanel(null)
+            closePanel()
           },
         }]
       : []),
@@ -148,7 +93,7 @@ export function MessageActions({
           icon: 'pencil' as const,
           run: () => {
             onEdit()
-            setPanel(null)
+            closePanel()
           },
         }]
       : []),
@@ -159,7 +104,7 @@ export function MessageActions({
           danger: true,
           run: () => {
             onDelete()
-            setPanel(null)
+            closePanel()
           },
         }]
       : []),
@@ -253,7 +198,7 @@ export function MessageActions({
         <button
           type="button"
           className="btn btn-ghost btn-xs btn-square"
-          onClick={() => setPanel(current => current === 'reactions' ? null : 'reactions')}
+          onClick={() => togglePanel('reactions')}
           aria-label={tr('Add reaction')}
           title={tr('Add reaction')}
           aria-expanded={panel === 'reactions'}
@@ -276,7 +221,7 @@ export function MessageActions({
         <button
           type="button"
           className="btn btn-ghost btn-xs btn-square"
-          onClick={() => setPanel(current => current === 'more' ? null : 'more')}
+          onClick={() => togglePanel('more')}
           aria-label={tr('More actions')}
           title={tr('More actions')}
           aria-expanded={panel === 'more'}

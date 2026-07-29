@@ -93,6 +93,8 @@ export type GatewayStorage = {
 export interface ControlSocket {
   readonly id: string
   readonly deviceKeyId: DeviceKeyId
+  /** Stable public account id from the authenticated session, when enabled. */
+  readonly publicUserId?: string
   negotiated(): boolean
   markNegotiated(): void
   send(frame: string): void

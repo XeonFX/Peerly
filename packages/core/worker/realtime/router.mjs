@@ -22,6 +22,22 @@ function serviceUnavailable() {
 }
 
 /**
+ * Authenticates an app-owned realtime WebSocket route and returns a request
+ * carrying server-stamped identity headers. Inbound spoofed headers are
+ * removed before the trusted values are added.
+ */
+export async function prepareAuthenticatedRealtimeUpgrade(request, env, config) {
+  const auth = await authenticateUpgrade(request, env, config)
+  if (auth.error) return auth
+  const trusted = stripTrustedHeaders(request)
+  trusted.headers.set('x-realtime-uid', auth.uid)
+  trusted.headers.set('x-realtime-dk', auth.deviceKeyId)
+  trusted.headers.set('x-realtime-sid', auth.sid)
+  if (auth.publicUserId) trusted.headers.set('x-realtime-user', auth.publicUserId)
+  return { auth, request: trusted }
+}
+
+/**
  * Owns every `/api/network/*` and `/api/realtime/*` route. Returns `null`
  * for paths outside that set so each app's existing worker entry chain
  * (Google auth bridge, legacy network credentials, static assets) is
@@ -40,26 +56,19 @@ export async function handleRealtimeRoute(request, env, config) {
   if (url.pathname === SESSION_PATH) return handleSession(request, env, config)
 
   if (url.pathname === CONTROL_PATH) {
-    const auth = await authenticateUpgrade(request, env, config)
-    if (auth.error) return auth.error
-    const trusted = stripTrustedHeaders(request)
-    trusted.headers.set('x-realtime-uid', auth.uid)
-    trusted.headers.set('x-realtime-dk', auth.deviceKeyId)
-    trusted.headers.set('x-realtime-sid', auth.sid)
-    const stub = env.USER_GATEWAYS.getByName(`${config.app}:${auth.uid}`)
-    return stub.fetch(trusted)
+    const prepared = await prepareAuthenticatedRealtimeUpgrade(request, env, config)
+    if (prepared.error) return prepared.error
+    const stub = env.USER_GATEWAYS.getByName(`${config.app}:${prepared.auth.uid}`)
+    return stub.fetch(prepared.request)
   }
 
   if (isSignal) {
     const routeId = url.pathname.slice(SIGNAL_PREFIX.length)
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(routeId)) return new Response('Not found', { status: 404 })
-    const auth = await authenticateUpgrade(request, env, config)
-    if (auth.error) return auth.error
-    const trusted = stripTrustedHeaders(request)
-    trusted.headers.set('x-realtime-uid', auth.uid)
-    trusted.headers.set('x-realtime-dk', auth.deviceKeyId)
+    const prepared = await prepareAuthenticatedRealtimeUpgrade(request, env, config)
+    if (prepared.error) return prepared.error
     const stub = env.SIGNAL_SCOPES.getByName(`${config.app}:${routeId}`)
-    return stub.fetch(trusted)
+    return stub.fetch(prepared.request)
   }
 
   return null
