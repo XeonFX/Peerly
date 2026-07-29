@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   loadGlobalDmHistory,
+  mergeGlobalDmMessages,
   saveGlobalDmHistory,
   upsertGlobalDmMessage,
   type GlobalDmMessage,
@@ -56,5 +57,14 @@ describe('globalDmHistory', () => {
     expect(list[0]?.text).toBe('b')
     list = upsertGlobalDmMessage(list, { ...msg('1', 1, 'old'), editedAt: 1 })
     expect(list[0]?.text).toBe('b')
+  })
+
+  it('keeps a message composed while stored history is hydrating', () => {
+    const persisted = msg('persisted', 1)
+    const justComposed = msg('composed', 2)
+    expect(mergeGlobalDmMessages([justComposed], [persisted])).toEqual([
+      persisted,
+      justComposed,
+    ])
   })
 })

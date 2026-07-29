@@ -16,6 +16,7 @@ import { LOBBY_APP_ID } from '../collab/mesh'
 import {
   loadGlobalDmHistory,
   loadGlobalDmReactions,
+  mergeGlobalDmMessages,
   mergeGlobalDmReactions,
   saveGlobalDmHistory,
   upsertGlobalDmMessage,
@@ -87,6 +88,9 @@ export function useGlobalDmChat({
   const reactionsRef = useRef(reactions)
   reactionsRef.current = reactions
   const blobUrlsRef = useRef(new BlobUrlRegistry())
+  /** Messages composed before Trystero actions have been bound to this room. */
+  const pendingOutboundRef = useRef<GlobalDmMessage[]>([])
+  const pendingOutboundRoomRef = useRef<string | null>(null)
 
   useEffect(() => () => blobUrlsRef.current.revokeAll(), [])
 
@@ -171,6 +175,8 @@ export function useGlobalDmChat({
   useEffect(() => {
     blobUrlsRef.current.revokeAll()
     setAttachmentUrls({})
+    pendingOutboundRef.current = []
+    pendingOutboundRoomRef.current = roomCode
     if (!roomCode) {
       setMessages([])
       setReactions([])
@@ -191,8 +197,12 @@ export function useGlobalDmChat({
         if (await verifyReaction(reaction)) safeReactions.push(reaction)
       }
       if (!cancelled) {
-        setMessages(verified)
-        setReactions(safeReactions)
+        setMessages(current => {
+          const next = mergeGlobalDmMessages(current, verified)
+          messagesRef.current = next
+          return next
+        })
+        setReactions(current => mergeGlobalDmReactions(current, safeReactions))
         for (const wire of verified) {
           if (wire.attachment) void materializeAttachment(wire.attachment)
         }
@@ -218,8 +228,12 @@ export function useGlobalDmChat({
         for (const reaction of loadGlobalDmReactions(roomCode)) {
           if (await verifyReaction(reaction)) safeReactions.push(reaction)
         }
-        setMessages(verified)
-        setReactions(safeReactions)
+        setMessages(current => {
+          const next = mergeGlobalDmMessages(current, verified)
+          messagesRef.current = next
+          return next
+        })
+        setReactions(current => mergeGlobalDmReactions(current, safeReactions))
         for (const wire of verified) if (wire.attachment) void materializeAttachment(wire.attachment)
       })()
     }
@@ -304,6 +318,15 @@ export function useGlobalDmChat({
       histReq: to => void histReqAction.send(true, { target: to }),
       file: (data, attachment, to) => fileAction.send(data, { metadata: attachment, ...(to ? { target: to } : {}) }),
       fileReq: (id, to) => void fileReqAction.send(id, { target: to }),
+    }
+
+    // A workspace-profile popup can create a message during the render where
+    // the DM opens. Do not lose it merely because this room's actions were one
+    // passive-effect behind the UI; flush as soon as the action is safe to use.
+    if (pendingOutboundRoomRef.current === roomCode) {
+      const pending = pendingOutboundRef.current
+      pendingOutboundRef.current = []
+      for (const message of pending) void chatAction.send(message)
     }
 
     chatAction.onMessage = (msg, { peerId }) => {
@@ -424,12 +447,21 @@ export function useGlobalDmChat({
         })
         const wire: GlobalDmMessage = signed
         wire.deviceGrant = findAuthorizingDeviceGrant(me.userId, wire.deviceKeyId)
-        setMessages(prev => {
-          const next = upsertGlobalDmMessage(prev, wire)
-          messagesRef.current = next
-          return next
-        })
-        sendersRef.current?.chat(wire)
+        const nextMessages = upsertGlobalDmMessage(messagesRef.current, wire)
+        messagesRef.current = nextMessages
+        setMessages(nextMessages)
+        // Persist synchronously so a message created before the peer joins is
+        // included in the history snapshot sent from onPeerJoin.
+        saveGlobalDmHistory(code, nextMessages, reactionsRef.current)
+        if (sendersRef.current) {
+          sendersRef.current.chat(wire)
+        } else {
+          if (pendingOutboundRoomRef.current !== code) {
+            pendingOutboundRoomRef.current = code
+            pendingOutboundRef.current = []
+          }
+          pendingOutboundRef.current = upsertGlobalDmMessage(pendingOutboundRef.current, wire)
+        }
         recordSyncActivity({
           direction: 'sent', kind: 'message',
           peer: { userId: friendUserIdRef.current ?? undefined, name: friendNameRef.current ?? undefined, relationship: 'friend' },

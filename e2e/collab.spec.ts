@@ -1243,6 +1243,10 @@ test.describe('Peerly P2P collaboration', () => {
       await alice.getByTestId('workspace-member-message-send').click()
 
       await expect(alice.getByTestId('global-dm-chat')).toBeVisible({ timeout: 15_000 })
+      await expect(alice.getByTestId('global-dm-messages')).toContainText(
+        'Global DM from workspace',
+        { timeout: 15_000 }
+      )
       await bob.getByTestId('rail-home').click()
       await expect(bob.getByTestId('global-dm-messages')).toContainText(
         'Global DM from workspace',
