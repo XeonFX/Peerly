@@ -2,15 +2,8 @@ export type TextPart =
   | { kind: 'text'; value: string }
   | { kind: 'link'; value: string; href: string }
 
-// Accept the common `https//example.com` typo as well as valid HTTPS links.
-// We canonicalize it below before using it as a link target; other schemes are
-// deliberately not recognized.
-const URL_CANDIDATE = /https(?::)?\/\/[^\s<]+/gi
+const URL_CANDIDATE = /https:\/\/[^\s<]+/gi
 const TRAILING_PUNCTUATION = /[),.!?;:'\]]+$/
-
-function normalizeHttpsCandidate(value: string): string {
-  return value.startsWith('https//') ? `https://${value.slice('https//'.length)}` : value
-}
 
 export function splitSafeLinks(text: string): TextPart[] {
   const parts: TextPart[] = []
@@ -22,7 +15,7 @@ export function splitSafeLinks(text: string): TextPart[] {
     const trailing = candidate.match(TRAILING_PUNCTUATION)?.[0] ?? ''
     const value = trailing ? candidate.slice(0, -trailing.length) : candidate
     try {
-      const parsed = new URL(normalizeHttpsCandidate(value))
+      const parsed = new URL(value)
       if (parsed.protocol === 'https:') {
         parts.push({ kind: 'link', value, href: parsed.href })
       } else {
@@ -40,5 +33,5 @@ export function splitSafeLinks(text: string): TextPart[] {
 
 /** The first URL the user can see in a message, suitable for clipboard actions. */
 export function firstSafeLink(text: string): string | null {
-  return splitSafeLinks(text).find(part => part.kind === 'link')?.href ?? null
+  return splitSafeLinks(text).find(part => part.kind === 'link')?.value ?? null
 }

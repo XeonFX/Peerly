@@ -49,13 +49,6 @@ describe('MessageActions', () => {
     expect(clipboardWrite).toHaveBeenCalledWith('https://first.example/docs')
   })
 
-  it('offers Copy link for a common missing-colon HTTPS typo', () => {
-    renderActions('Open https//heyhubs.app')
-    fireEvent.click(screen.getByLabelText('More actions'))
-    fireEvent.click(screen.getByText('Copy link'))
-    expect(clipboardWrite).toHaveBeenCalledWith('https://heyhubs.app/')
-  })
-
   it('does not offer Copy link when the message has no URL', () => {
     renderActions('No links here')
     fireEvent.click(screen.getByLabelText('More actions'))
