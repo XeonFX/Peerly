@@ -1266,6 +1266,19 @@ test.describe('Peerly P2P collaboration', () => {
       await alice.locator('[data-testid^="friend-message-"]').click()
       await expect(bob.getByTestId('global-dm-chat')).toBeVisible({ timeout: 15_000 })
 
+      const [chatBox, composerBox] = await Promise.all([
+        alice.getByTestId('global-dm-chat').boundingBox(),
+        alice.getByTestId('global-dm-compose').boundingBox(),
+      ])
+      expect(chatBox).not.toBeNull()
+      expect(composerBox).not.toBeNull()
+      expect(
+        Math.abs(
+          ((chatBox?.y ?? 0) + (chatBox?.height ?? 0)) -
+          ((composerBox?.y ?? 0) + (composerBox?.height ?? 0))
+        )
+      ).toBeLessThanOrEqual(3)
+
       await alice.getByTestId('global-dm-input').fill('React to this DM')
       await alice.getByTestId('global-dm-send').click()
       await expect(bob.getByTestId('global-dm-messages')).toContainText('React to this DM', { timeout: 15_000 })

@@ -389,7 +389,7 @@ export function HomeView({
         </button>
       </aside>
 
-      <div className={`${mobileDetailOpen ? 'block' : 'hidden md:block'} min-h-0 min-w-0 flex-1 overflow-hidden bg-base-100`}>
+      <div className={`${mobileDetailOpen ? 'flex' : 'hidden md:flex'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-base-100`}>
           {section === 'friends' && activeFriend && roomCode ? (
             <GlobalDmChat
               friendName={activeFriend.subjectName}
