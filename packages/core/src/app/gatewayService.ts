@@ -23,6 +23,8 @@ export type CommandContext = {
   readonly identity: OpaqueUserId
   /** Stable public account id derived from OIDC iss+sub, when requested by the app. */
   readonly publicUserId?: string
+  /** Server-derived identity used to match creator-signed email allow-lists. */
+  readonly privateMemberId?: string
   readonly deviceKeyId: DeviceKeyId
   readonly socket: ControlSocket
 }
@@ -147,6 +149,7 @@ export class GatewayService {
       const result = await handler(payload as never, {
         identity,
         publicUserId: socket.publicUserId,
+        privateMemberId: socket.privateMemberId,
         deviceKeyId: socket.deviceKeyId,
         socket,
       })

@@ -20,6 +20,7 @@
   "vars": {
     "APP_ID": "peerly",
     "COORDINATION_BACKEND": "durable-objects",
+    "CONTENT_BACKEND": "durable-objects",
 
     // The harness's own origin, matched as one exact string. Production sets
     // nothing here and so allows nothing extra — see worker/index.mjs.
@@ -43,10 +44,19 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  "ratelimits": [
+    {
+      "name": "RENDEZVOUS_RATE_LIMITER",
+      "namespace_id": "1099",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
   "durable_objects": {
     "bindings": [
       { "name": "USER_GATEWAYS", "class_name": "UserGatewayDO" },
-      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" }
+      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" },
+      { "name": "CONTENT_CHANNELS", "class_name": "ContentChannelDO" },
+      { "name": "LOBBY_CHANNELS", "class_name": "LobbyChannelDO" }
     ]
   },
   // No applied history to respect — this namespace is created fresh on every
@@ -56,7 +66,7 @@
   "migrations": [
     {
       "tag": "realtime-v1",
-      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO"]
+      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO", "ContentChannelDO", "LobbyChannelDO"]
     }
   ]
 }

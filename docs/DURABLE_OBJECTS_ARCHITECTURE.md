@@ -1,14 +1,15 @@
 # Durable Objects architecture and implementation plan
 
 Status: implemented in `@peerly/core` and Peerly's own Worker (enrollment,
-session, `UserGatewayDO`, `SignalScopeDO`, `WorkspaceDO`, and the
-`durable-objects` client signaling strategy); running in Peerly's stable
-preview deployment (`wrangler.preview.jsonc`, `preview.peerly.cc`) only.
-Production (`peerly.cc`) still pins `COORDINATION_BACKEND=legacy-relay` — see
-Phase 5 for the cutover this plan gates on. HeyHubs' rollout status lives in
-its own repo.  
-Date: 2026-07-23  
-Applies to: Peerly, HeyHubs, `@peerly/core`, and production network infrastructure
+session, control/signaling Durable Objects, plus Peerly's authorized encrypted
+content channel). Peerly preview (`wrangler.preview.jsonc`,
+`preview.peerly.cc`) defaults both coordination and content to Durable Objects.
+The P2P content adapter remains an explicit build/deploy rollback, and file
+bodies plus call media remain P2P in every mode. Production (`peerly.cc`) stays
+unchanged until a separate production-cutover request. HeyHubs' rollout status
+lives in its own repo.
+Date: 2026-07-29
+Applies to: Peerly and `@peerly/core`; other apps consume the generic core primitives through their own adapters
 
 This document decides what to build and why. The exact file map, wire
 schemas, SQL DDL, crypto recipes, endpoint contracts, algorithms, tests, and
@@ -22,12 +23,12 @@ runs.
 ## Decision
 
 Move the application control plane from the self-hosted Node/WebSocket relay to
-Cloudflare Workers and SQLite-backed Durable Objects (DOs). Keep media, calls,
-chat, files, and other private user content peer-to-peer over WebRTC. The VPS
-will run coturn as its only application workload; it will not run signaling,
-matching, discovery, presence, or application APIs. Phase 6 additionally
-evaluates replacing self-hosted coturn with Cloudflare Realtime TURN; if
-measured relay egress fits its free tier, the VPS is retired entirely.
+Cloudflare Workers and SQLite-backed Durable Objects (DOs). For Peerly,
+client-encrypted messages, reactions, and channel definitions use an authorized
+Durable Object by default: persist first, acknowledge, then fan out and replay
+bounded recent history. Keep file bodies and call media peer-to-peer over
+WebRTC, and keep the complete message/history P2P adapter as an explicit
+deployment rollback. The server never receives the workspace/DM encryption key.
 
 The existing relay is now maintenance-only:
 
@@ -72,8 +73,9 @@ presence, matchmaking, and room directories across two authorities.
 
 ### Non-goals
 
-- Durable Objects do not carry WebRTC audio/video, chat messages, files, or
-  Peerly workspace history.
+- Durable Objects do not carry WebRTC audio/video or file bodies.
+- Durable Objects are not a plaintext content store or a permanent archive:
+  event envelopes are end-to-end encrypted and bounded by time and count.
 - The migration does not add features to the legacy relay.
 - “Free” is not treated as unlimited or as an availability SLA. TURN VPS and
   bandwidth costs remain outside the Cloudflare application-plane budget.
@@ -387,11 +389,19 @@ Responsibilities:
 - Delivery of friend-invite and device-sync notifications through user
   gateways.
 
-Private workspace messages, files, reactions, calls, and history remain P2P and
-locally persisted. The first migration keeps the existing invite-secret-derived
-scope plus peer authorization. A later capability-ledger step may centralize
-revocation only after existing-workspace migration and ownership recovery have
-explicit tests.
+Workspace and DM messages, reactions, and channel definitions use a separate
+authorized content Durable Object. The browser encrypts each event with its
+high-entropy workspace/DM secret; the object persists only ciphertext plus
+opaque sender/device IDs, event type, and time. Authority is the creator-signed
+workspace member list (or the exact two authenticated DM users), represented in
+storage by HMAC-derived opaque member IDs and a monotonic fingerprint. Newer
+authority immediately closes removed members' sockets. Duplicate message IDs
+are acknowledged without a second write or broadcast, and history is capped at
+1,000 events and 30 days.
+
+File bodies, file requests, and calls remain P2P and locally persisted. Setting
+both browser and Worker content backends to `p2p` restores the complete legacy
+content transport without silently mixing authorities.
 
 ### `InterestQueueDO` — HeyHubs only
 

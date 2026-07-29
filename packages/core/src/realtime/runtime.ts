@@ -73,6 +73,16 @@ export function getDurableObjectsTransport(app: string): CoordinationTransport {
   return transport
 }
 
+/**
+ * Establishes the shared authenticated control session before an app opens
+ * any direct Durable Object channel that relies on its HttpOnly session
+ * cookie. This keeps session bootstrapping inside the realtime boundary
+ * instead of making product hooks send a fake command as a side effect.
+ */
+export async function ensureDurableObjectsSession(app: string): Promise<void> {
+  await getDurableObjectsTransport(app).connect()
+}
+
 /** Sends one app-owned command over the shared authenticated control socket. */
 export async function sendRealtimeCommand<T = unknown>(
   app: string,

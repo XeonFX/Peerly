@@ -28,6 +28,7 @@ import {
   type ClockFormat,
   type DateFormat,
 } from './format.js'
+import { ensureDurableObjectsSession } from './realtime/runtime.js'
 
 type ClockFormatContextValue = {
   clockFormat: ClockFormat
@@ -459,7 +460,7 @@ export function useAccessibleDialog(open: boolean, onClose: () => void) {
   }, [open, onCloseRef])
   return dialogRef
 }
-import type { Env } from './env.js'
+import { requireAppId, type Env } from './env.js'
 import {
   classifyJoinError,
   isRecoverableJoinError,
@@ -491,6 +492,8 @@ export type UseDurableChannelOptions = {
   onError?: (message: string) => void
   connectTimeoutMs?: number
   encryptionSecret?: string
+  /** Reconnect when the app's authorization policy revision changes. */
+  authorizationKey?: string
 }
 
 /** React lifecycle wrapper around the reusable Durable Object action channel. */
@@ -504,6 +507,7 @@ export function useDurableChannel(
     onError,
     connectTimeoutMs,
     encryptionSecret,
+    authorizationKey,
   } = options
   const authorizeRef = useLatest(authorize)
   const onErrorRef = useLatest(onError)
@@ -516,32 +520,42 @@ export function useDurableChannel(
     }
     let cancelled = false
     let opened: RelayChannelRoom | null = null
-    void openDurableChannel({
-      authorize: () => authorizeRef.current(),
-      endpointPrefix,
-      ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
-      ...(encryptionSecret === undefined ? {} : { encryptionSecret }),
-    }).then(channel => {
-      if (cancelled) {
-        channel.leave()
-        return
-      }
-      opened = channel
-      setRoom(channel)
-    }).catch(error => {
-      if (!cancelled) {
+    let retryTimer: number | null = null
+    let retryAttempt = 0
+    const open = () => {
+      void openDurableChannel({
+        authorize: () => authorizeRef.current(),
+        endpointPrefix,
+        ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
+        ...(encryptionSecret === undefined ? {} : { encryptionSecret }),
+      }).then(channel => {
+        if (cancelled) {
+          channel.leave()
+          return
+        }
+        opened = channel
+        retryAttempt = 0
+        setRoom(channel)
+      }).catch(error => {
+        if (cancelled) return
         onErrorRef.current?.(
           error instanceof Error ? error.message : 'durable-channel-failed'
         )
-      }
-    })
+        const delay = Math.min(10_000, 500 * 2 ** retryAttempt)
+        retryAttempt += 1
+        retryTimer = window.setTimeout(open, delay)
+      })
+    }
+    open()
     return () => {
       cancelled = true
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
       opened?.leave()
       setRoom(null)
     }
   }, [
     authorizeRef,
+    authorizationKey,
     connectTimeoutMs,
     enabled,
     encryptionSecret,
@@ -563,6 +577,9 @@ export type UseRelayChannelOptions = {
   onError?: (message: string) => void
   /** Time without a coordinator acknowledgement before surfacing an error. */
   connectTimeoutMs?: number
+  /** Authenticated non-persistent DO route for public lobby deployments. */
+  durableEndpointPrefix?: string
+  durableRouteId?: string
 }
 
 /**
@@ -573,13 +590,40 @@ export type UseRelayChannelOptions = {
 export function useRelayChannel(
   options: UseRelayChannelOptions
 ): { room: RelayChannelRoom | null } {
-  const { appId, channel, memberId, env, onError, connectTimeoutMs = 10_000 } = options
-  const durableObjects = resolveSignalingStrategy(env) === 'durable-objects'
-  const { room: durableRoom } = useRoom({
+  const {
     appId,
-    roomId: durableObjects ? channel : '',
+    channel,
+    memberId,
+    env,
+    onError,
+    connectTimeoutMs = 10_000,
+    durableEndpointPrefix,
+    durableRouteId,
+  } = options
+  const durableObjects = resolveSignalingStrategy(env) === 'durable-objects'
+  const durableForwarder = durableObjects &&
+    Boolean(durableEndpointPrefix && durableRouteId)
+  const durableAuthAppId = durableForwarder ? requireAppId(env) : ''
+  const { room: durableP2pRoom } = useRoom({
+    appId,
+    roomId: durableObjects && !durableForwarder ? channel : '',
     password: channel,
     env,
+    onError,
+  })
+  const authorizeDurableLobby = useCallback(
+    async () => {
+      await ensureDurableObjectsSession(durableAuthAppId)
+      return { routeId: durableRouteId ?? '' }
+    },
+    [durableAuthAppId, durableRouteId]
+  )
+  const { room: durableForwardedRoom } = useDurableChannel({
+    enabled: durableForwarder && Boolean(channel && memberId),
+    authorize: authorizeDurableLobby,
+    endpointPrefix: durableEndpointPrefix ?? '/api/realtime/lobby/',
+    connectTimeoutMs,
+    authorizationKey: durableRouteId,
     onError,
   })
   const [room, setRoom] = useState<RelayChannelRoom | null>(null)
@@ -618,7 +662,9 @@ export function useRelayChannel(
 
   return {
     room: durableObjects
-      ? durableRoom as unknown as RelayChannelRoom | null
+      ? durableForwarder
+        ? durableForwardedRoom
+        : durableP2pRoom as unknown as RelayChannelRoom | null
       : room,
   }
 }

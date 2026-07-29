@@ -263,7 +263,7 @@ export function MessageList({
           </div>
           <h3 className="mb-1.5 text-lg font-semibold tracking-tight">{tr('Start the conversation')}</h3>
           <p className="text-sm leading-relaxed text-base-content/65">
-            {tr('Messages are sent directly peer-to-peer. No server stores your data.')}
+            {tr('Messages are encrypted on your device. Files and calls stay peer-to-peer.')}
           </p>
         </div>
       </div>

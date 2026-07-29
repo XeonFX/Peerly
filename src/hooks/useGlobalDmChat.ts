@@ -9,8 +9,9 @@ import {
   syncPayloadBytes,
   verifyTextChat,
   verifyTextReaction,
+  type RelayChannelAction,
 } from '@peerly/core'
-import { useLatest, useRoom } from '@peerly/core/react'
+import { useDurableChannel, useLatest, useRoom } from '@peerly/core/react'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
 import { LOBBY_APP_ID } from '../collab/mesh'
 import {
@@ -24,7 +25,7 @@ import {
   type GlobalDmReaction,
 } from '../collab/globalDmHistory'
 import type { LobbyProfile } from './usePresenceLobby'
-import { PUBLIC_NETWORK_ENV } from '../config'
+import { CONTENT_BACKEND, PUBLIC_NETWORK_ENV } from '../config'
 import { findAuthorizingDeviceGrant, findDeviceGrant, grantAuthorizes, verifyDeviceGrant } from '../collab/deviceAuthorization'
 import { MAX_FILE_BYTES, FILE_TOO_LARGE_ERROR } from '../collab/constants'
 import { hashFileBytes, fileContentMatchesId } from '../utils/fileHash'
@@ -33,6 +34,7 @@ import { makeMediaThumbnail } from '../utils/imageThumbnail'
 import { loadFileBlob, saveFileBlob } from '../utils/fileStore'
 import { BlobUrlRegistry } from '../utils/blobUrls'
 import { safeThumbnailUrl } from '../utils/avatarUrl'
+import { authorizeDmContent } from '../realtime/content'
 
 const CHAT_SCHEME = 'peerly-gdm-v2'
 const MAX_TEXT = 4000
@@ -170,6 +172,21 @@ export function useGlobalDmChat({
     recoverIceFailures: true,
     onError: message => setError(message),
   })
+  const authorizeDurableContent = useCallback(
+    () => authorizeDmContent(roomCode ?? '', friendUserId ?? ''),
+    [friendUserId, roomCode]
+  )
+  const { room: durableRoom } = useDurableChannel({
+    enabled:
+      CONTENT_BACKEND === 'durable-objects' &&
+      Boolean(roomCode && profile && friendUserId),
+    authorize: authorizeDurableContent,
+    endpointPrefix: '/api/realtime/content/',
+    encryptionSecret: roomCode ?? undefined,
+    onError: message => setError(message),
+  })
+  const contentRoom =
+    CONTENT_BACKEND === 'durable-objects' ? durableRoom : room
 
   // Load local history when the room code changes.
   useEffect(() => {
@@ -248,28 +265,40 @@ export function useGlobalDmChat({
   }, [roomCode, messages, reactions])
 
   const sendersRef = useRef<{
-    chat: (msg: GlobalDmMessage, to?: string) => void
-    reaction: (reaction: GlobalDmReaction, to?: string) => void
-    hist: (payload: { messages: GlobalDmMessage[]; reactions: GlobalDmReaction[] }, to?: string) => void
-    histReq: (to: string) => void
+    chat: (msg: GlobalDmMessage, to?: string) => Promise<void>
+    reaction: (reaction: GlobalDmReaction, to?: string) => Promise<void>
     file: (data: ArrayBuffer, attachment: NonNullable<GlobalDmMessage['attachment']>, to?: string) => Promise<void>
     fileReq: (id: string, to: string) => void
   } | null>(null)
 
   useEffect(() => {
-    if (!room || !roomCode) {
+    if (!contentRoom || !roomCode) {
       sendersRef.current = null
       setPeerCount(0)
       return
     }
 
-    const chatAction = room.makeAction<GlobalDmMessage>('gdm')
-    const reactionAction = room.makeAction<GlobalDmReaction>('gdmreact')
+    const chatAction: RelayChannelAction<GlobalDmMessage> =
+      CONTENT_BACKEND === 'durable-objects'
+        ? durableRoom!.makeAction<GlobalDmMessage>('gdm')
+        : room!.makeAction<GlobalDmMessage>('gdm')
+    const reactionAction: RelayChannelAction<GlobalDmReaction> =
+      CONTENT_BACKEND === 'durable-objects'
+        ? durableRoom!.makeAction<GlobalDmReaction>('gdmreact')
+        : room!.makeAction<GlobalDmReaction>('gdmreact')
     type HistoryPayload = GlobalDmMessage[] | { messages: GlobalDmMessage[]; reactions: GlobalDmReaction[] }
-    const histAction = room.makeAction<HistoryPayload>('gdmhist')
-    const histReqAction = room.makeAction<true>('gdmreq')
-    const fileAction = room.makeAction<ArrayBuffer>('gdmfile')
-    const fileReqAction = room.makeAction<string>('gdmfilereq')
+    // Durable history is replayed by the server after authorization. P2P
+    // snapshots remain available only in the explicit rollback transport.
+    const histAction: RelayChannelAction<HistoryPayload> | null =
+      CONTENT_BACKEND === 'p2p'
+        ? room!.makeAction<HistoryPayload>('gdmhist')
+        : null
+    const histReqAction: RelayChannelAction<true> | null =
+      CONTENT_BACKEND === 'p2p'
+        ? room!.makeAction<true>('gdmreq')
+        : null
+    const fileAction = room?.makeAction<ArrayBuffer>('gdmfile') ?? null
+    const fileReqAction = room?.makeAction<string>('gdmfilereq') ?? null
 
     const mergeWire = async (wire: GlobalDmMessage, peerId?: string) => {
       if (!(await verifyWire(wire))) return
@@ -290,8 +319,16 @@ export function useGlobalDmChat({
         messagesRef.current = next
         return next
       })
-      if (!wire.deletedAt && wire.attachment && !(await materializeAttachment(wire.attachment)) && peerId) {
-        void fileReqAction.send(wire.attachment.id, { target: peerId })
+      if (
+        fileReqAction &&
+        !wire.deletedAt &&
+        wire.attachment &&
+        !(await materializeAttachment(wire.attachment))
+      ) {
+        void fileReqAction.send(
+          wire.attachment.id,
+          CONTENT_BACKEND === 'p2p' && peerId ? { target: peerId } : undefined
+        )
       }
       if (wire.authorUserId === friendUserIdRef.current) recordSyncActivity({
         direction: 'received', kind: 'message',
@@ -312,12 +349,24 @@ export function useGlobalDmChat({
     }
 
     sendersRef.current = {
-      chat: (msg, to) => void chatAction.send(msg, to ? { target: to } : undefined),
-      reaction: (reaction, to) => void reactionAction.send(reaction, to ? { target: to } : undefined),
-      hist: (payload, to) => void histAction.send(payload, to ? { target: to } : undefined),
-      histReq: to => void histReqAction.send(true, { target: to }),
-      file: (data, attachment, to) => fileAction.send(data, { metadata: attachment, ...(to ? { target: to } : {}) }),
-      fileReq: (id, to) => void fileReqAction.send(id, { target: to }),
+      chat: (msg, to) => chatAction.send(msg, to ? { target: to } : undefined),
+      reaction: (reaction, to) =>
+        reactionAction.send(reaction, to ? { target: to } : undefined),
+      file: (data, attachment, to) =>
+        fileAction
+          ? fileAction.send(data, {
+              metadata: attachment,
+              ...(CONTENT_BACKEND === 'p2p' && to ? { target: to } : {}),
+            })
+          : Promise.reject(new Error('p2p-file-channel-unavailable')),
+      fileReq: (id, to) => {
+        if (fileReqAction) {
+          void fileReqAction.send(
+            id,
+            CONTENT_BACKEND === 'p2p' ? { target: to } : undefined
+          )
+        }
+      },
     }
 
     // A workspace-profile popup can create a message during the render where
@@ -326,7 +375,11 @@ export function useGlobalDmChat({
     if (pendingOutboundRoomRef.current === roomCode) {
       const pending = pendingOutboundRef.current
       pendingOutboundRef.current = []
-      for (const message of pending) void chatAction.send(message)
+      for (const message of pending) {
+        void chatAction.send(message).catch(() => {
+          setError('Could not send message.')
+        })
+      }
     }
 
     chatAction.onMessage = (msg, { peerId }) => {
@@ -337,7 +390,7 @@ export function useGlobalDmChat({
       void mergeReaction(reaction, peerId)
     }
 
-    histAction.onMessage = (payload, { peerId }) => {
+    if (histAction) histAction.onMessage = (payload, { peerId }) => {
       // v1 peers sent a bare message array. Continue accepting it so a rolling
       // deployment does not temporarily make existing DM history disappear.
       const historyMessages = Array.isArray(payload) ? payload : payload?.messages
@@ -351,12 +404,12 @@ export function useGlobalDmChat({
       })()
     }
 
-    histReqAction.onMessage = (_msg, { peerId }) => {
+    if (histReqAction && histAction) histReqAction.onMessage = (_msg, { peerId }) => {
       const snapshot = messagesRef.current.slice(-DEFAULT_HISTORY_CAP)
       if (snapshot.length || reactionsRef.current.length) void histAction.send({ messages: snapshot, reactions: reactionsRef.current }, { target: peerId })
     }
 
-    fileAction.onReceiveProgress = (percent, { metadata }) => {
+    if (fileAction) fileAction.onReceiveProgress = (percent, { metadata }) => {
       const attachment = metadata as GlobalDmMessage['attachment']
       if (!attachment || typeof attachment.id !== 'string') return
       setTransfers(current => [
@@ -364,7 +417,7 @@ export function useGlobalDmChat({
         { id: attachment.id, name: attachment.name, percent, direction: 'receive' },
       ])
     }
-    fileAction.onMessage = (data, { metadata }) => {
+    if (fileAction) fileAction.onMessage = (data, { metadata }) => {
       const claimed = metadata as GlobalDmMessage['attachment']
       if (!claimed || typeof claimed.id !== 'string') return
       const attachment = messagesRef.current.find(message => message.attachment?.id === claimed.id)?.attachment
@@ -382,31 +435,60 @@ export function useGlobalDmChat({
         })
       })()
     }
-    fileReqAction.onMessage = (id, { peerId }) => {
+    if (fileReqAction) fileReqAction.onMessage = (id, { peerId }) => {
       if (typeof id !== 'string' || !messagesRef.current.some(message => !message.deletedAt && message.attachment?.id === id)) return
       const attachment = messagesRef.current.find(message => !message.deletedAt && message.attachment?.id === id)?.attachment
       if (!attachment) return
       void loadFileBlob(id).then(stored => {
-        if (stored) return fileAction.send(stored.buffer, { metadata: attachment, target: peerId })
+        if (stored && fileAction) {
+          return fileAction.send(stored.buffer, {
+            metadata: attachment,
+            target: peerId,
+          })
+        }
       })
     }
 
     const refresh = () => {
-      setPeerCount(Object.keys(room.getPeers()).length)
+      setPeerCount(Object.keys(contentRoom.getPeers()).length)
     }
 
-    room.onPeerJoin = (peerId: string) => {
+    contentRoom.onPeerJoin = (peerId: string) => {
       refresh()
-      // Offer our history to late joiners.
-      const snapshot = messagesRef.current.slice(-DEFAULT_HISTORY_CAP)
-      if (snapshot.length || reactionsRef.current.length) void histAction.send({ messages: snapshot, reactions: reactionsRef.current }, { target: peerId })
+      if (histAction) {
+        // In rollback mode, late joiners need a peer-provided snapshot.
+        const snapshot = messagesRef.current.slice(-DEFAULT_HISTORY_CAP)
+        if (snapshot.length || reactionsRef.current.length) {
+          void histAction.send(
+            { messages: snapshot, reactions: reactionsRef.current },
+            { target: peerId }
+          )
+        }
+      }
     }
-    room.onPeerLeave = () => refresh()
+    contentRoom.onPeerLeave = () => refresh()
     refresh()
+
+    if (CONTENT_BACKEND === 'durable-objects' && room && fileReqAction) {
+      // Message metadata can arrive through durable replay before WebRTC has a
+      // usable data channel. Retry missing file bodies when a direct peer
+      // finally joins instead of treating the first zero-peer request as final.
+      room.onPeerJoin = peerId => {
+        for (const message of messagesRef.current) {
+          const attachment = message.deletedAt ? undefined : message.attachment
+          if (!attachment) continue
+          void materializeAttachment(attachment).then(available => {
+            if (!available) {
+              void fileReqAction.send(attachment.id, { target: peerId })
+            }
+          })
+        }
+      }
+    }
 
     // Ring until they join (same cadence as lobby presence).
     const ringTimer = window.setInterval(() => {
-      if (Object.keys(room.getPeers()).length > 0) return
+      if (Object.keys(contentRoom.getPeers()).length > 0) return
       ringFriendRef.current?.('open')
     }, PRESENCE_INTERVAL_MS)
     ringFriendRef.current?.('open')
@@ -415,16 +497,21 @@ export function useGlobalDmChat({
       window.clearInterval(ringTimer)
       chatAction.onMessage = null
       reactionAction.onMessage = null
-      histAction.onMessage = null
-      histReqAction.onMessage = null
-      fileAction.onMessage = null
-      fileAction.onReceiveProgress = null
-      fileReqAction.onMessage = null
-      room.onPeerJoin = null
-      room.onPeerLeave = null
+      if (histAction) histAction.onMessage = null
+      if (histReqAction) histReqAction.onMessage = null
+      if (fileAction) {
+        fileAction.onMessage = null
+        fileAction.onReceiveProgress = null
+      }
+      if (fileReqAction) fileReqAction.onMessage = null
+      contentRoom.onPeerJoin = null
+      contentRoom.onPeerLeave = null
+      if (CONTENT_BACKEND === 'durable-objects' && room) {
+        room.onPeerJoin = null
+      }
       sendersRef.current = null
     }
-  }, [room, roomCode, ringFriendRef, profileRef, friendUserIdRef, friendNameRef, verifyWire, verifyReaction, materializeAttachment])
+  }, [contentRoom, durableRoom, room, roomCode, ringFriendRef, profileRef, friendUserIdRef, friendNameRef, verifyWire, verifyReaction, materializeAttachment])
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -447,21 +534,24 @@ export function useGlobalDmChat({
         })
         const wire: GlobalDmMessage = signed
         wire.deviceGrant = findAuthorizingDeviceGrant(me.userId, wire.deviceKeyId)
-        const nextMessages = upsertGlobalDmMessage(messagesRef.current, wire)
-        messagesRef.current = nextMessages
-        setMessages(nextMessages)
-        // Persist synchronously so a message created before the peer joins is
-        // included in the history snapshot sent from onPeerJoin.
-        saveGlobalDmHistory(code, nextMessages, reactionsRef.current)
         if (sendersRef.current) {
-          sendersRef.current.chat(wire)
+          await sendersRef.current.chat(wire)
         } else {
           if (pendingOutboundRoomRef.current !== code) {
             pendingOutboundRoomRef.current = code
             pendingOutboundRef.current = []
           }
-          pendingOutboundRef.current = upsertGlobalDmMessage(pendingOutboundRef.current, wire)
+          pendingOutboundRef.current = upsertGlobalDmMessage(
+            pendingOutboundRef.current,
+            wire
+          )
         }
+        const nextMessages = upsertGlobalDmMessage(messagesRef.current, wire)
+        messagesRef.current = nextMessages
+        setMessages(nextMessages)
+        // The server-backed path reaches local history only after its durable
+        // ack. The pre-room popup path is held in the scoped outbound queue.
+        saveGlobalDmHistory(code, nextMessages, reactionsRef.current)
         recordSyncActivity({
           direction: 'sent', kind: 'message',
           peer: { userId: friendUserIdRef.current ?? undefined, name: friendNameRef.current ?? undefined, relationship: 'friend' },
@@ -514,15 +604,27 @@ export function useGlobalDmChat({
         await saveFileBlob(fileId, mimeType, buffer)
         const url = blobUrlsRef.current.create(fileId, new Blob([buffer], { type: mimeType }))
         setAttachmentUrls(urls => ({ ...urls, [fileId]: url }))
+        const sender = sendersRef.current
+        if (sender) {
+          await sender.chat(signed)
+        } else {
+          if (pendingOutboundRoomRef.current !== roomCode) {
+            pendingOutboundRoomRef.current = roomCode
+            pendingOutboundRef.current = []
+          }
+          pendingOutboundRef.current = upsertGlobalDmMessage(
+            pendingOutboundRef.current,
+            signed
+          )
+        }
         setMessages(current => {
           const next = upsertGlobalDmMessage(current, signed)
           messagesRef.current = next
           return next
         })
-        sendersRef.current?.chat(signed)
-        if (sendersRef.current) {
+        if (sender) {
           setTransfers(current => [...current.filter(transfer => transfer.id !== fileId), { id: fileId, name: attachment.name, percent: 0, direction: 'send' }])
-          await sendersRef.current.file(buffer, attachment)
+          await sender.file(buffer, attachment)
           setTransfers(current => current.filter(transfer => transfer.id !== fileId))
         }
         recordSyncActivity({
@@ -555,8 +657,13 @@ export function useGlobalDmChat({
         authorUserId: me.userId,
       }) as GlobalDmReaction
       wire.deviceGrant = findAuthorizingDeviceGrant(me.userId, wire.deviceKeyId)
+      const sender = sendersRef.current
+      if (!sender) {
+        setError('Could not update reaction.')
+        return
+      }
+      await sender.reaction(wire)
       setReactions(current => mergeGlobalDmReactions(current, [wire]))
-      sendersRef.current?.reaction(wire)
       recordSyncActivity({
         direction: 'sent', kind: 'reaction', peer: { userId: friendUserIdRef.current ?? undefined, name: friendNameRef.current ?? undefined, relationship: 'friend' },
         itemCount: 1, bytes: syncPayloadBytes(wire), summary: `Direct-message reaction ${emoji}`,
@@ -568,38 +675,44 @@ export function useGlobalDmChat({
   }, [profileRef, identityRef, friendUserIdRef, friendNameRef])
 
   const reviseMessage = useCallback(async (messageId: string, nextText: string | null) => {
-    const me = profileRef.current
-    const id = identityRef.current
-    const existing = messagesRef.current.find(message => message.id === messageId)
-    if (!me || !id || !existing || existing.authorUserId !== me.userId) return
-    const currentKey = await id.publicKeyId()
-    const deviceGrant = currentKey === existing.deviceKeyId
-      ? undefined
-      : findDeviceGrant(me.userId, existing.deviceKeyId, currentKey)
-    if (currentKey !== existing.deviceKeyId && !deviceGrant) return
-    const now = Date.now()
-    const wire = await signTextChat(id, CHAT_SCHEME, {
-      id: existing.id,
-      ts: existing.ts,
-      text: nextText === null ? '' : nextText.trim().slice(0, MAX_TEXT),
-      name: me.name,
-      authorUserId: me.userId,
-      editedAt: nextText === null ? existing.editedAt : now,
-      deletedAt: nextText === null ? now : undefined,
-      attachment: existing.attachment,
-    }) as GlobalDmMessage
-    wire.deviceGrant = deviceGrant
-    setMessages(prev => {
-      const next = upsertGlobalDmMessage(prev, wire)
-      messagesRef.current = next
-      return next
-    })
-    sendersRef.current?.chat(wire)
-    recordSyncActivity({
-      direction: 'sent', kind: 'message',
-      peer: { userId: friendUserIdRef.current ?? undefined, name: friendNameRef.current ?? undefined, relationship: 'friend' },
-      itemCount: 1, bytes: syncPayloadBytes(wire), summary: nextText === null ? 'Direct-message deletion' : 'Direct-message edit',
-    })
+    try {
+      const me = profileRef.current
+      const id = identityRef.current
+      const existing = messagesRef.current.find(message => message.id === messageId)
+      const sender = sendersRef.current
+      if (!me || !id || !existing || existing.authorUserId !== me.userId || !sender) return
+      const currentKey = await id.publicKeyId()
+      const deviceGrant = currentKey === existing.deviceKeyId
+        ? undefined
+        : findDeviceGrant(me.userId, existing.deviceKeyId, currentKey)
+      if (currentKey !== existing.deviceKeyId && !deviceGrant) return
+      const now = Date.now()
+      const wire = await signTextChat(id, CHAT_SCHEME, {
+        id: existing.id,
+        ts: existing.ts,
+        text: nextText === null ? '' : nextText.trim().slice(0, MAX_TEXT),
+        name: me.name,
+        authorUserId: me.userId,
+        editedAt: nextText === null ? existing.editedAt : now,
+        deletedAt: nextText === null ? now : undefined,
+        attachment: existing.attachment,
+      }) as GlobalDmMessage
+      wire.deviceGrant = deviceGrant
+      await sender.chat(wire)
+      setMessages(prev => {
+        const next = upsertGlobalDmMessage(prev, wire)
+        messagesRef.current = next
+        return next
+      })
+      recordSyncActivity({
+        direction: 'sent', kind: 'message',
+        peer: { userId: friendUserIdRef.current ?? undefined, name: friendNameRef.current ?? undefined, relationship: 'friend' },
+        itemCount: 1, bytes: syncPayloadBytes(wire), summary: nextText === null ? 'Direct-message deletion' : 'Direct-message edit',
+      })
+    } catch (err) {
+      console.error('Failed to revise DM:', err)
+      setError('Could not update message.')
+    }
   }, [identityRef, profileRef, friendUserIdRef, friendNameRef])
 
   return {

@@ -6,7 +6,7 @@ import {
   installFreshSession,
   joinWorkspace,
   sendMessage,
-  waitForPeerConnection,
+  withTwoGlobalUsers,
   waitForSignaling,
 } from './helpers'
 
@@ -73,12 +73,13 @@ test.describe('durable objects control plane', () => {
     }
   })
 
-  test('two users in one workspace see each other and exchange messages', async ({ browser }) => {
+  test('two users exchange a message and a fresh browser replays it with both senders offline', async ({ browser }) => {
     // The whole point of the suite: two independent browsers, each with its
     // own device key and its own server-derived account, meeting through the
     // gateway and exchanging a message a person would see.
     const aliceCtx = await browser.newContext()
     const bobCtx = await browser.newContext()
+    const contexts = [aliceCtx, bobCtx]
     try {
       const alice = await aliceCtx.newPage()
       const bob = await bobCtx.newPage()
@@ -87,15 +88,67 @@ test.describe('durable objects control plane', () => {
       await waitForSignaling(alice)
       await joinWorkspace(bob, { name: 'Bob', email: 'bob@e2e.test' })
 
-      await waitForPeerConnection(alice)
-      await waitForPeerConnection(bob)
+      // Text uses the authorized content Durable Object. Requiring a WebRTC
+      // peer here would make the reliability test fail on the optional file/
+      // call path before it can exercise durable delivery.
+      await waitForSignaling(alice)
+      await waitForSignaling(bob)
       await expectPeerVisible(alice, 'Bob')
 
       await sendMessage(alice, 'through the gateway')
       await expectMessage(bob, 'through the gateway')
+
+      // Remove both local copies and every possible P2P history source. A new
+      // browser can display this only if the encrypted event was committed by
+      // the content Durable Object before the original send was acknowledged.
+      await Promise.all([aliceCtx.close(), bobCtx.close()])
+      const freshBobCtx = await browser.newContext()
+      contexts.push(freshBobCtx)
+      const freshBob = await freshBobCtx.newPage()
+      await joinWorkspace(freshBob, { name: 'Bob', email: 'bob@e2e.test' })
+      await expectMessage(freshBob, 'through the gateway')
     } finally {
-      await Promise.allSettled([aliceCtx.close(), bobCtx.close()])
+      await Promise.allSettled(contexts.map(context => context.close()))
     }
+  })
+
+  test('global DMs persist text and reactions while attachment bytes stay P2P', async ({
+    browser,
+  }) => {
+    await withTwoGlobalUsers(browser, async (alice, bob, accounts) => {
+      await alice.getByTestId('friend-invite-email').fill(accounts.bobEmail)
+      await alice.getByTestId('friend-invite-submit').click()
+      await expect(bob.getByTestId('friend-incoming')).toBeVisible({ timeout: 20_000 })
+      await bob.locator('[data-testid^="friend-accept-"]').click()
+
+      await expect(alice.locator('[data-testid^="friend-message-"]')).toBeVisible({
+        timeout: 20_000,
+      })
+      await alice.locator('[data-testid^="friend-message-"]').click()
+      await expect(bob.getByTestId('global-dm-chat')).toBeVisible({ timeout: 20_000 })
+
+      await alice.getByTestId('global-dm-input').fill('Durable direct message')
+      await alice.getByTestId('global-dm-send').click()
+      await expect(bob.getByTestId('global-dm-messages')).toContainText(
+        'Durable direct message',
+        { timeout: 20_000 }
+      )
+
+      await bob.getByTestId('global-dm-theirs').hover()
+      await bob.getByLabel('React 👍').click()
+      await expect(alice.getByTestId('global-dm-messages')).toContainText('👍 1', {
+        timeout: 20_000,
+      })
+
+      await alice.getByTestId('global-dm-file-input').setInputFiles({
+        name: 'hybrid.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('Durable metadata, peer-to-peer bytes'),
+      })
+      const receivedFile = bob.getByRole('link', { name: 'hybrid.txt' })
+      await expect(receivedFile).toBeVisible({ timeout: 30_000 })
+      await expect(receivedFile).toHaveAttribute('href', /^blob:/)
+    })
   })
 })
 

@@ -7,7 +7,7 @@
  */
 import { createLegalConsent } from '@peerly/core'
 
-export const LEGAL_VERSION = 3
+export const LEGAL_VERSION = 4
 
 /**
  * Exported so e2e can seed acceptance rather than click through the banner.

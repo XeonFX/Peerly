@@ -42,7 +42,8 @@ type ServerWire =
     }
   | { type: 'members'; members: MemberWire[] }
   | EventWire
-  | { type: 'error'; code: string }
+  | { type: 'ack'; messageId: string }
+  | { type: 'error'; code: string; messageId?: string }
 
 type PendingMessage = {
   value: unknown
@@ -50,6 +51,10 @@ type PendingMessage = {
 }
 
 const MAX_BUFFERED_PER_ACTION = 1_000
+const MAX_PENDING_OUTBOUND = 1_000
+const OUTBOUND_ACK_TIMEOUT_MS = 30_000
+const RECONNECT_BASE_MS = 250
+const RECONNECT_CAP_MS = 10_000
 
 type EncryptedData = {
   v: 1
@@ -128,16 +133,26 @@ export async function openDurableChannel(
   const contentKey = options.encryptionSecret
     ? await encryptionKey(options.encryptionSecret)
     : null
-  const authorization = await options.authorize()
-  const socket = (options.webSocketFactory ?? (url => new WebSocket(url)))(
-    webSocketUrl(options.endpointPrefix, authorization.routeId)
-  )
+  const webSocketFactory = options.webSocketFactory ?? (url => new WebSocket(url))
   const actions = new Map<string, RelayChannelAction<unknown>>()
   const pending = new Map<string, PendingMessage[]>()
+  const outbound = new Map<string, {
+    frame: string
+    resolve: () => void
+    reject: (error: Error) => void
+    timeout: number
+  }>()
   let peers: RelayChannelPeers = {}
   let ownConnectionId = ''
   let ownUserId = ''
   let closed = false
+  let socket: WebSocket | null = null
+  let reconnectTimer: number | null = null
+  let reconnectAttempt = 0
+  let connecting: Promise<void> | null = null
+  const closeCurrentSocket = () => {
+    if (socket) socket.close()
+  }
 
   const room: RelayChannelRoom = {
     makeAction<T>(event: string): RelayChannelAction<T> {
@@ -146,17 +161,30 @@ export async function openDurableChannel(
       const action: RelayChannelAction<T> = {
         onMessage: null,
         async send(value, sendOptions) {
-          if (closed || socket.readyState !== WebSocket.OPEN) {
+          if (closed) {
             throw new Error('durable-channel-not-open')
           }
           const data = contentKey ? await encryptData(value, contentKey) : value
-          socket.send(JSON.stringify({
+          if (outbound.size >= MAX_PENDING_OUTBOUND) {
+            throw new Error('durable-channel-queue-full')
+          }
+          const messageId = crypto.randomUUID()
+          const frame = JSON.stringify({
             type: 'event',
             event,
-            messageId: crypto.randomUUID(),
+            messageId,
             data,
             ...(sendOptions?.target ? { target: sendOptions.target } : {}),
-          }))
+          })
+          await new Promise<void>((resolve, reject) => {
+            const timeout = window.setTimeout(() => {
+              outbound.delete(messageId)
+              reject(new Error('durable-channel-ack-timeout'))
+            }, OUTBOUND_ACK_TIMEOUT_MS)
+            outbound.set(messageId, { frame, resolve, reject, timeout })
+            if (socket?.readyState === WebSocket.OPEN) socket.send(frame)
+            else scheduleReconnect()
+          })
         },
       }
       actions.set(event, action as RelayChannelAction<unknown>)
@@ -175,7 +203,15 @@ export async function openDurableChannel(
     leave() {
       if (closed) return
       closed = true
-      socket.close(1000, 'left')
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
+      reconnectTimer = null
+      socket?.close(1000, 'left')
+      socket = null
+      for (const item of outbound.values()) {
+        window.clearTimeout(item.timeout)
+        item.reject(new Error('durable-channel-closed'))
+      }
+      outbound.clear()
       for (const peerId of Object.keys(peers)) room.onPeerLeave?.(peerId)
       peers = {}
       actions.clear()
@@ -225,54 +261,128 @@ export async function openDurableChannel(
     pending.set(wire.event, queued)
   }
 
-  const ready = new Promise<void>((resolve, reject) => {
-    let inbound = Promise.resolve()
-    const enqueue = (wire: EventWire) => {
-      inbound = inbound.then(() => deliver(wire)).catch(() => undefined)
+  const clearPeers = () => {
+    const previous = Object.keys(peers)
+    peers = {}
+    ownConnectionId = ''
+    ownUserId = ''
+    for (const peerId of previous) room.onPeerLeave?.(peerId)
+  }
+
+  const scheduleReconnect = () => {
+    if (closed || reconnectTimer !== null) return
+    if (connecting) {
+      const activeConnection = connecting
+      const retryAfterSettlement = () => {
+        if (!closed && !socket) scheduleReconnect()
+      }
+      void activeConnection.then(retryAfterSettlement, retryAfterSettlement)
+      return
     }
-    const timeout = window.setTimeout(
-      () => reject(new Error('durable-channel-timeout')),
-      options.connectTimeoutMs ?? 10_000
+    const delay = Math.min(
+      RECONNECT_CAP_MS,
+      RECONNECT_BASE_MS * 2 ** reconnectAttempt
     )
-    const settle = (callback: () => void) => {
-      window.clearTimeout(timeout)
-      callback()
-    }
-    socket.addEventListener('error', () => settle(() => reject(new Error('durable-channel-failed'))), {
-      once: true,
+    reconnectAttempt += 1
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null
+      void connect().catch(() => scheduleReconnect())
+    }, delay)
+  }
+
+  const connect = async (): Promise<void> => {
+    if (closed) throw new Error('durable-channel-closed')
+    if (connecting) return connecting
+    connecting = (async () => {
+      const authorization = await options.authorize()
+      if (closed) throw new Error('durable-channel-closed')
+      const candidate = webSocketFactory(
+        webSocketUrl(options.endpointPrefix, authorization.routeId)
+      )
+      socket = candidate
+      await new Promise<void>((resolve, reject) => {
+        let settled = false
+        let inbound = Promise.resolve()
+        const enqueue = (wire: EventWire) => {
+          inbound = inbound.then(() => deliver(wire)).catch(() => undefined)
+        }
+        const timeout = window.setTimeout(() => {
+          if (settled) return
+          settled = true
+          reject(new Error('durable-channel-timeout'))
+          candidate.close()
+        }, options.connectTimeoutMs ?? 10_000)
+        const settle = (callback: () => void) => {
+          if (settled) return
+          settled = true
+          window.clearTimeout(timeout)
+          callback()
+        }
+        candidate.addEventListener('error', () => {
+          if (!settled) settle(() => reject(new Error('durable-channel-failed')))
+        })
+        candidate.addEventListener('close', () => {
+          if (socket === candidate) {
+            socket = null
+            clearPeers()
+            if (!closed) scheduleReconnect()
+          }
+          if (!settled) {
+            settle(() => reject(new Error('durable-channel-closed')))
+          }
+        })
+        candidate.addEventListener('message', event => {
+          let wire: ServerWire
+          try {
+            wire = JSON.parse(String(event.data)) as ServerWire
+          } catch {
+            return
+          }
+          if (wire.type === 'snapshot') {
+            ownConnectionId = wire.connectionId
+            ownUserId = wire.members.find(
+              member => member.connectionId === ownConnectionId
+            )?.userId ?? ''
+            refreshMembers(wire.members)
+            for (const historical of wire.events ?? []) enqueue(historical)
+            void inbound.then(() => {
+              if (socket !== candidate || closed) return
+              reconnectAttempt = 0
+              for (const item of outbound.values()) candidate.send(item.frame)
+              settle(resolve)
+            })
+          } else if (wire.type === 'members') {
+            refreshMembers(wire.members)
+          } else if (wire.type === 'event') {
+            enqueue(wire)
+          } else if (wire.type === 'ack') {
+            const item = outbound.get(wire.messageId)
+            if (!item) return
+            outbound.delete(wire.messageId)
+            window.clearTimeout(item.timeout)
+            item.resolve()
+          } else if (wire.type === 'error' && wire.messageId) {
+            const item = outbound.get(wire.messageId)
+            if (!item) return
+            outbound.delete(wire.messageId)
+            window.clearTimeout(item.timeout)
+            item.reject(new Error(wire.code))
+          }
+        })
+      })
+    })().finally(() => {
+      connecting = null
     })
-    socket.addEventListener('close', () => {
-      if (!ownConnectionId) settle(() => reject(new Error('durable-channel-closed')))
-    }, { once: true })
-    socket.addEventListener('message', event => {
-      let wire: ServerWire
-      try {
-        wire = JSON.parse(String(event.data)) as ServerWire
-      } catch {
-        return
-      }
-      if (wire.type === 'snapshot') {
-        ownConnectionId = wire.connectionId
-        ownUserId = wire.members.find(
-          member => member.connectionId === ownConnectionId
-        )?.userId ?? ''
-        refreshMembers(wire.members)
-        for (const historical of wire.events ?? []) enqueue(historical)
-        void inbound.then(() => settle(resolve))
-      } else if (wire.type === 'members') {
-        refreshMembers(wire.members)
-      } else if (wire.type === 'event') {
-        enqueue(wire)
-      }
-    })
-  })
+    return connecting
+  }
 
   try {
-    await ready
+    await connect()
     return room
   } catch (error) {
     closed = true
-    socket.close()
+    closeCurrentSocket()
+    socket = null
     throw error
   }
 }

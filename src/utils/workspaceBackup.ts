@@ -20,10 +20,11 @@ import { mergeHistoryEntries } from './historyMerge'
 /**
  * A workspace's local record as a file the user owns.
  *
- * Serverless means there is no archive to lean on: history lives in each
- * member's browser, capped at MAX_HISTORY_ENTRIES per channel, and a cleared
- * profile is gone. Export is the escape hatch — messages (with their author
- * signatures), channel structure, and workspace access.
+ * This export is the user-owned recovery copy. Browser history is capped at
+ * MAX_HISTORY_ENTRIES per channel, while the server-backed transport retains
+ * only a bounded recent encrypted event window; neither is a permanent
+ * archive. Export includes messages (with author signatures), channel
+ * structure, and workspace access.
  *
  * File BODIES are deliberately not included: they can be re-fetched from any
  * member who holds them, thumbnails already ride inside messages, and bundling

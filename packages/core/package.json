@@ -1,7 +1,7 @@
 {
   "name": "@peerly/core",
-  "version": "1.14.0",
-  "description": "Peerly's P2P room core — join encrypted Trystero rooms by high-entropy room codes, with device identity, signing, media, attention, and signed people lists",
+  "version": "1.15.0",
+  "description": "Reusable encrypted realtime core with authenticated Durable Objects, P2P rooms, device identity, signing, media, and presence",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -65,6 +65,12 @@
     },
     "./worker/realtime/gateway": {
       "default": "./worker/realtime/gateway/userGateway.mjs"
+    },
+    "./worker/realtime/channel": {
+      "default": "./worker/realtime/gateway/authorizedChannel.mjs"
+    },
+    "./worker/realtime/ephemeral-channel": {
+      "default": "./worker/realtime/gateway/ephemeralChannel.mjs"
     }
   },
   "files": [
@@ -108,6 +114,7 @@
     "webrtc",
     "p2p",
     "trystero",
+    "durable-objects",
     "peerly",
     "room",
     "nostr"

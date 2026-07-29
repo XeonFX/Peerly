@@ -143,9 +143,13 @@ const CAPABILITY_PREFIX = 'realtime-capability-v1'
 const COOKIE_PREFIX = 'realtime-cookie-v1'
 
 /** Mint the 30-day device-session capability returned by /api/network/enroll. */
-export async function mintCapability(secret, { app, uid, publicUserId, deviceKeyId, sid, epoch, now, ttlMs }) {
+export async function mintCapability(
+  secret,
+  { app, uid, publicUserId, privateMemberId, deviceKeyId, sid, epoch, now, ttlMs }
+) {
   return signToken(CAPABILITY_PREFIX, secret, {
     app, uid, ...(publicUserId ? { user: publicUserId } : {}),
+    ...(privateMemberId ? { member: privateMemberId } : {}),
     dk: deviceKeyId, sid, epoch, iat: now, exp: now + ttlMs, ver: 1,
   })
 }
@@ -159,9 +163,13 @@ export async function verifyCapability(secret, token, { app, now }) {
 }
 
 /** Mint the 10-minute HttpOnly network cookie value (not the Set-Cookie header). */
-export async function mintCookie(secret, { app, uid, publicUserId, deviceKeyId, sid, now, ttlMs }) {
+export async function mintCookie(
+  secret,
+  { app, uid, publicUserId, privateMemberId, deviceKeyId, sid, now, ttlMs }
+) {
   return signToken(COOKIE_PREFIX, secret, {
     app, uid, ...(publicUserId ? { user: publicUserId } : {}),
+    ...(privateMemberId ? { member: privateMemberId } : {}),
     dk: deviceKeyId, sid, iat: now, exp: now + ttlMs,
   })
 }
@@ -196,6 +204,24 @@ export function readNetworkCookie(request) {
  */
 export async function deriveOpaqueUserId(secret, app, issuer, subject) {
   return bytesBase64Url(await hmacSha256(secret, `opaque-user-v1\n${app}\n${issuer}\n${subject}`))
+}
+
+/**
+ * Deployment-keyed membership identifier derived from an OIDC-verified email.
+ *
+ * Workspace allow-lists are creator-signed email lists, but raw email must not
+ * become a long-lived socket claim or Durable Object storage key. This
+ * identifier lets an app compare the authenticated account with a signed
+ * allow-list without exposing an enumerable, cross-deployment email hash.
+ */
+export async function derivePrivateMemberId(secret, app, email) {
+  const normalized = String(email ?? '').trim().toLowerCase()
+  if (!normalized || !normalized.includes('@')) {
+    throw new Error('verified email is required')
+  }
+  return bytesBase64Url(
+    await hmacSha256(secret, `private-member-v1\n${app}\n${normalized}`)
+  )
 }
 
 /** Route id for a signaling scope: HMAC of the app-supplied capability string, never reversible. */

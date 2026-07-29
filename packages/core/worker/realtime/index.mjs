@@ -11,9 +11,11 @@
 // the easy direction.
 export { defineUserGateway, UserGatewayDO } from './gateway/userGateway.mjs'
 export { SignalScopeDO } from './gateway/signalScope.mjs'
+export { defineAuthorizedChannel } from './gateway/authorizedChannel.mjs'
+export { defineEphemeralChannel } from './gateway/ephemeralChannel.mjs'
 export {
   handleRealtimeRoute,
   prepareAuthenticatedRealtimeUpgrade,
 } from './router.mjs'
 export { LIMITS } from '../../dist/protocol/index.js'
-export { deriveScopeRouteId } from './crypto.mjs'
+export { derivePrivateMemberId, deriveScopeRouteId } from './crypto.mjs'

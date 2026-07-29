@@ -236,7 +236,7 @@ export const waitForRelay = waitForSignaling
 export async function waitForPeerConnection(page: Page, timeout = 30_000) {
   await waitForRelay(page)
   const status = page.getByTestId('connection-status')
-  await expect(status).toContainText('Connected', { timeout })
+  await expect(status).toContainText(/Connected \([1-9]\d* peers?\)/, { timeout })
 }
 
 export async function expectPeerVisible(page: Page, peerName: string) {

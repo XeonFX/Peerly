@@ -1,4 +1,7 @@
 import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createProcessRunner } from './spawn-utils.mjs'
 
 /**
@@ -53,6 +56,12 @@ runToCompletion('npm', ['run', 'build:e2e'], {
 runToCompletion('node', ['scripts/emit-e2e-jwks.mjs', 'dist-e2e'], {})
 
 const { run } = createProcessRunner()
+const persistenceDirectory = mkdtempSync(
+  join(tmpdir(), 'peerly-do-e2e-')
+)
+process.on('exit', () => {
+  rmSync(persistenceDirectory, { recursive: true, force: true })
+})
 run('wrangler', 'npx', [
   'wrangler', 'dev',
   '-c', 'wrangler.e2e.jsonc',
@@ -61,4 +70,8 @@ run('wrangler', 'npx', [
   // Let the OS pick, so a stale inspector from a previous run cannot wedge
   // the whole suite on a port collision.
   '--inspector-port', '0',
+  // A fresh Durable Object namespace per run is essential: the fixed E2E
+  // workspace otherwise replays messages written by an earlier invocation,
+  // allowing a broken persistence test to pass against stale local state.
+  '--persist-to', persistenceDirectory,
 ])

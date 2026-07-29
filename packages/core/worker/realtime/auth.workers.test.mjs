@@ -227,4 +227,34 @@ describe('authenticateUpgrade', () => {
     )
     expect(response.error?.status).toBe(401)
   })
+
+  it('carries a private membership id only from the signed cookie', async () => {
+    const now = Date.now()
+    const cookieValue = await mintCookie(env.NETWORK_SESSION_SECRET, {
+      app: 'peerly',
+      uid: 'opaque-u1',
+      publicUserId: 'public-u1',
+      privateMemberId: 'private-member-u1',
+      deviceKeyId: 'dk1',
+      sid: 's1',
+      now,
+      ttlMs: 600_000,
+    })
+    const response = await authenticateUpgrade(
+      upgradeRequest({ cookie: `pnet=${cookieValue}` }),
+      env,
+      {
+        ...config,
+        requirePublicUserId: true,
+        requirePrivateMemberId: true,
+      }
+    )
+    expect(response).toMatchObject({
+      uid: 'opaque-u1',
+      publicUserId: 'public-u1',
+      privateMemberId: 'private-member-u1',
+      deviceKeyId: 'dk1',
+      sid: 's1',
+    })
+  })
 })

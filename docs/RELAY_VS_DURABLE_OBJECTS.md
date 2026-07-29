@@ -9,18 +9,20 @@ Companion docs: [DURABLE_OBJECTS_ARCHITECTURE.md](./DURABLE_OBJECTS_ARCHITECTURE
 wire/file specifics), [relay-deployment.md](./relay-deployment.md) /
 [production-rollout.md](./production-rollout.md) (today's relay ops)
 
-This document compares the two *coordination* backends Peerly can run against —
+This document primarily compares the two *coordination* backends Peerly can run against —
 the self-hosted `ws-relay` + coturn VPS stack that production uses today, and
 the Cloudflare Workers + Durable Objects control plane that currently backs
-only the stable preview deployment. It does not cover WebRTC media itself:
-chat, files, and calls are peer-to-peer under **both** backends, and that does
-not change.
+only the stable preview deployment. Preview additionally selects the Durable
+Objects **content** backend: messages, reactions, and channel definitions are
+encrypted in the browser and retained as ciphertext. File bodies and WebRTC
+media remain peer-to-peer under both coordination and content modes.
 
 ## TL;DR
 
 | | **ws-relay** (production, `peerly.cc`) | **Durable Objects** (preview, `preview.peerly.cc`) |
 |---|---|---|
 | Selects via | `COORDINATION_BACKEND=legacy-relay` (default) | `COORDINATION_BACKEND=durable-objects` |
+| Content selection | `CONTENT_BACKEND=p2p` | `CONTENT_BACKEND=durable-objects` (encrypted, bounded persistence) |
 | Client picks it with | `VITE_SIGNALING=ws-relay` (or `nostr`/`supabase`, which don't touch the VPS coordinator at all) | `VITE_SIGNALING=durable-objects` |
 | Hosting | One Node process on one VPS (`codefusion-vps`) | One Cloudflare Worker + Durable Object namespace per app, on Cloudflare's edge |
 | Coordination state | In-process JS `Map`s — gone on restart | SQLite per Durable Object, survives restarts and hibernation |
@@ -33,8 +35,9 @@ not change.
 
 ## What stays identical either way
 
-- **No message/file/call content ever reaches either backend.** Both are
-  signaling/coordination only — WebRTC data/media stays P2P.
+- **No file body or call media reaches either backend.** WebRTC file/media
+  stays P2P. In preview, only client-encrypted message/reaction/channel
+  envelopes reach the content Durable Object; it has no decryption key.
 - **No static, long-lived relay or TURN credential ships in the bundle.**
   Both mint short-lived, device-bound credentials at connect time (relay
   tickets + coturn REST credentials via `/api/network/credentials` for

@@ -510,6 +510,8 @@ export function Workspace({
       profile={profile}
       avatarId={session.avatarId}
       workspaceSecret={session.workspaceId}
+      creatorKeyId={session.creatorKeyId}
+      allowList={session.allowList}
       identityExpired={identityExpiry.phase === 'expired'}
       peerHandshake={peerHandshake}
       selfUserId={session.identityUserId}

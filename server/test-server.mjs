@@ -22,6 +22,7 @@ const { run } = createProcessRunner()
 if (useNostr) {
   run('vite', 'npx', ['vite', '--host', '--port', String(APP_PORT), '--strictPort'], {
     VITE_SIGNALING: 'nostr',
+    VITE_CONTENT_BACKEND: 'p2p',
   })
 } else {
   writeFileSync('.relay-port', String(RELAY_PORT))
@@ -30,6 +31,7 @@ if (useNostr) {
   setTimeout(() => {
     run('vite', 'npx', ['vite', '--host', '--port', String(APP_PORT), '--strictPort'], {
       VITE_SIGNALING: 'ws-relay',
+      VITE_CONTENT_BACKEND: 'p2p',
       VITE_RELAY_PORT: String(RELAY_PORT),
       VITE_E2E_AUTH_BYPASS: 'true',
     })

@@ -131,6 +131,7 @@ export function defineUserGateway(app = {}) {
       const dk = request.headers.get('x-realtime-dk')
       const sid = request.headers.get('x-realtime-sid')
       const publicUserId = request.headers.get('x-realtime-user') ?? undefined
+      const privateMemberId = request.headers.get('x-realtime-member') ?? undefined
       if (!uid || !dk || !sid) return new Response('Unauthorized', { status: 401 })
 
       const pair = new WebSocketPair()
@@ -140,6 +141,7 @@ export function defineUserGateway(app = {}) {
         deviceKeyId: dk,
         sid,
         publicUserId,
+        privateMemberId,
       })
       if (!accepted.ok) return new Response('Unauthorized', { status: accepted.status })
       return new Response(null, { status: 101, webSocket: client })

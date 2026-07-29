@@ -2,11 +2,20 @@ import { handleGoogleAuthRoute } from '../packages/core/worker/googleAuth.mjs'
 import { issueNetworkCredentials } from '../packages/core/worker/networkCredentials.mjs'
 import { lookupRendezvous } from '../packages/core/worker/rendezvous.mjs'
 import { handleRealtimeRoute } from '../packages/core/worker/realtime/index.mjs'
+import { prepareAuthenticatedRealtimeUpgrade } from '../packages/core/worker/realtime/index.mjs'
+import { ContentChannelDO } from './realtime/contentChannel.mjs'
+import { LobbyChannelDO } from './realtime/lobbyChannel.mjs'
 
-export { UserGatewayDO, SignalScopeDO } from '../packages/core/worker/realtime/index.mjs'
+export { SignalScopeDO } from '../packages/core/worker/realtime/index.mjs'
+export { UserGatewayDO } from './realtime/gateway.mjs'
+export { ContentChannelDO }
+export { LobbyChannelDO }
 
 const NETWORK_CREDENTIALS_PATH = '/api/network/credentials'
 const RENDEZVOUS_LOOKUP_PATH = '/api/rendezvous/lookup'
+const CONTENT_CHANNEL_PREFIX = '/api/realtime/content/'
+const LOBBY_CHANNEL_PREFIX = '/api/realtime/lobby/'
+const LOBBY_ROUTE_ID = 'peerly-lobby-v1'
 
 export function allowedAuthParent(origin) {
   try {
@@ -51,7 +60,60 @@ export default {
     const url = new URL(request.url)
     if (url.pathname === NETWORK_CREDENTIALS_PATH) return issueNetworkCredentials(request, env)
     if (url.pathname === RENDEZVOUS_LOOKUP_PATH) return lookupRendezvous(request, env)
-    const realtimeConfig = { app: 'peerly', allowedOrigin: originAllowedBy(env) }
+    const realtimeConfig = {
+      app: 'peerly',
+      allowedOrigin: originAllowedBy(env),
+      requirePublicUserId:
+        env.CONTENT_BACKEND === 'durable-objects' ||
+        env.COORDINATION_BACKEND === 'durable-objects',
+      requirePrivateMemberId: env.CONTENT_BACKEND === 'durable-objects',
+    }
+    if (url.pathname.startsWith(LOBBY_CHANNEL_PREFIX)) {
+      if (
+        env.COORDINATION_BACKEND !== 'durable-objects' ||
+        !env.LOBBY_CHANNELS ||
+        url.pathname.slice(LOBBY_CHANNEL_PREFIX.length) !== LOBBY_ROUTE_ID
+      ) {
+        return Response.json(
+          { code: 'service-unavailable' },
+          { status: 503 }
+        )
+      }
+      const prepared = await prepareAuthenticatedRealtimeUpgrade(
+        request,
+        env,
+        realtimeConfig
+      )
+      if (prepared.error) return prepared.error
+      return env.LOBBY_CHANNELS
+        .getByName('peerly:public-lobby-v1')
+        .fetch(prepared.request)
+    }
+    if (url.pathname.startsWith(CONTENT_CHANNEL_PREFIX)) {
+      if (
+        env.COORDINATION_BACKEND !== 'durable-objects' ||
+        env.CONTENT_BACKEND !== 'durable-objects' ||
+        !env.CONTENT_CHANNELS
+      ) {
+        return Response.json(
+          { code: 'service-unavailable' },
+          { status: 503 }
+        )
+      }
+      const routeId = url.pathname.slice(CONTENT_CHANNEL_PREFIX.length)
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(routeId)) {
+        return new Response('Not found', { status: 404 })
+      }
+      const prepared = await prepareAuthenticatedRealtimeUpgrade(
+        request,
+        env,
+        realtimeConfig
+      )
+      if (prepared.error) return prepared.error
+      return env.CONTENT_CHANNELS
+        .getByName(`peerly:${routeId}`)
+        .fetch(prepared.request)
+    }
     const realtimeResponse = await handleRealtimeRoute(request, env, realtimeConfig)
     if (realtimeResponse) return realtimeResponse
     const authResponse = await handleGoogleAuthRoute(request, env, context, authConfig)

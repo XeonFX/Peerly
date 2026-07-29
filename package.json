@@ -1,8 +1,8 @@
 {
   "name": "peerly",
   "private": false,
-  "version": "1.14.0",
-  "description": "Serverless P2P team collaboration — verified identity, invite-only workspaces, chat, files, and video via Trystero",
+  "version": "1.15.0",
+  "description": "Encrypted hybrid team collaboration — Durable Object chat with P2P files and video",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -29,7 +29,7 @@
   "scripts": {
     "dev": "node server/dev.mjs",
     "dev:relay": "node server/dev-relay.mjs",
-    "dev:app": "VITE_APP_ID=peerly vite --host",
+    "dev:app": "VITE_APP_ID=peerly VITE_CONTENT_BACKEND=p2p vite --host",
     "stop": "lsof -ti :8080 -ti :5173 -ti :5174 -ti :17273 2>/dev/null | xargs kill -9 2>/dev/null || true",
     "build": "VITE_APP_ID=peerly tsc -b && VITE_APP_ID=peerly vite build && npm run guard:bundle && npm run guard:size",
     "postbuild": "node scripts/configure-auth-bridge.mjs",

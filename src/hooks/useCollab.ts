@@ -2,7 +2,8 @@ import type { PeerHandshake } from '@trystero-p2p/core'
 import { selfId } from '../collab/identity'
 import { loadSelfIds, rememberSelfId } from '../collab/selfIdRegistry'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { APP_ID, buildRoomId } from '../config'
+import { useDurableChannel } from '@peerly/core/react'
+import { APP_ID, buildRoomId, CONTENT_BACKEND } from '../config'
 import { routeDmChannel } from '../collab/dmStore'
 import { FileCache } from '../collab/fileCache'
 import type { ChatPayload, ReactionPayload } from '../protocol/types'
@@ -33,6 +34,8 @@ import { useRoom } from './useRoom'
 import { useAttention } from './useAttention'
 import { messageFromFileMeta, toHistoryEntry } from '../protocol/mappers'
 import { aggregatePeersByUserId } from '../utils/peerPresence'
+import type { SignedAllowList } from '../collab/allowList'
+import { authorizeWorkspaceContent } from '../realtime/content'
 
 export type UseCollabOptions = {
   workspaceId: string
@@ -40,6 +43,8 @@ export type UseCollabOptions = {
   activeChannelId: string
   profile: UserProfile
   workspaceSecret?: string
+  creatorKeyId?: string
+  allowList?: SignedAllowList
   onProfileChange?: (profile: UserProfile & { avatarId?: string }) => void
   avatarId?: string
   channelIds?: string[]
@@ -72,6 +77,8 @@ export function useCollab({
   activeChannelId,
   profile,
   workspaceSecret,
+  creatorKeyId,
+  allowList,
   onProfileChange,
   avatarId,
   channelIds = ['general'],
@@ -132,6 +139,30 @@ export function useCollab({
     message => setErrorRef.current(message),
     peerHandshake
   )
+  const authorizeDurableContent = useCallback(
+    () =>
+      authorizeWorkspaceContent({
+        capability: workspaceSecret ?? workspaceId,
+        creatorKeyId: creatorKeyId ?? '',
+        allowList: allowList ?? { emails: [], signedAt: 0, signature: '' },
+      }),
+    [allowList, creatorKeyId, workspaceId, workspaceSecret]
+  )
+  const { room: durableContentRoom } = useDurableChannel({
+    enabled:
+      CONTENT_BACKEND === 'durable-objects' &&
+      !identityExpired &&
+      Boolean(workspaceSecret && creatorKeyId && allowList),
+    authorize: authorizeDurableContent,
+    endpointPrefix: '/api/realtime/content/',
+    encryptionSecret: workspaceSecret,
+    authorizationKey: allowList
+      ? `${creatorKeyId ?? ''}:${allowList.signedAt}:${allowList.signature}`
+      : undefined,
+    onError: message => setErrorRef.current(message),
+  })
+  const contentRoom =
+    CONTENT_BACKEND === 'durable-objects' ? durableContentRoom : undefined
 
   const connection = useConnectionHealth(room)
   setErrorRef.current = connection.setError
@@ -189,10 +220,17 @@ export function useCollab({
     sendFile: sendFileTransfer,
   } = files
   const sanitizeEntries = useCallback(
-    (entries: Parameters<typeof sanitizeHistoryEntries>[0]) =>
-      sanitizeHistoryEntries(entries, deviceKeyId =>
+    async (entries: Parameters<typeof sanitizeHistoryEntries>[0]) => {
+      const sanitized = await sanitizeHistoryEntries(entries, deviceKeyId =>
         identityRef.current?.getBoundUserId?.(deviceKeyId)
-      ),
+      )
+      // The Durable Object is the authority for text/channel history. The
+      // parallel WebRTC history lane exists only to discover file metadata and
+      // bodies that deliberately remain peer-to-peer.
+      return CONTENT_BACKEND === 'durable-objects'
+        ? sanitized.filter(entry => entry.type === 'file')
+        : sanitized
+    },
     []
   )
   const history = useHistorySync(
@@ -211,12 +249,22 @@ export function useCollab({
   } = history
   const video = useVideoCall(room)
   const { reset: resetVideo } = video
-  const chatAction = useRoomAction<ChatPayload>()
-  const { bind: bindChatAction, unbind: unbindChatAction, send: sendChatPayload } = chatAction
-  const reactionAction = useRoomAction<ReactionPayload>()
+  const chatAction = useRoomAction<ChatPayload>({
+    queueWhenUnbound: CONTENT_BACKEND === 'durable-objects',
+  })
+  const {
+    bind: bindChatAction,
+    unbind: unbindChatAction,
+    clearPending: clearPendingChatActions,
+    send: sendChatPayload,
+  } = chatAction
+  const reactionAction = useRoomAction<ReactionPayload>({
+    queueWhenUnbound: CONTENT_BACKEND === 'durable-objects',
+  })
   const {
     bind: bindReactionAction,
     unbind: unbindReactionAction,
+    clearPending: clearPendingReactionActions,
     send: sendReactionPayload,
   } = reactionAction
   const callEndAction = useRoomAction<true>()
@@ -271,16 +319,24 @@ export function useCollab({
     onPeerStream: () => {},
     onPeerCallEnd: () => {},
     onInitialPeers: () => {},
+    onContentPeerJoin: () => {},
+    onContentPeerLeave: () => {},
+    onInitialContentPeers: () => {},
     onChannel: () => {},
     onReaction: () => {},
   })
 
   handlersRef.current = {
-    onProfile: (peerProfile, peerId) => {
-      peers.upsertPeer(peerId, peerProfile, identityRef.current?.resolvePeerUserId?.(peerId))
+    onProfile: (peerProfile, peerId, transportIdentity) => {
+      peers.upsertPeer(
+        peerId,
+        peerProfile,
+        transportIdentity?.userId ??
+          identityRef.current?.resolvePeerUserId?.(peerId)
+      )
       connection.markConnected()
     },
-    onChat: payload => {
+    onChat: (payload, transportIdentity) => {
       const route = routeDmChannel(payload.channelId, selfId)
       if (route.kind === 'foreign-dm') return
       if (
@@ -294,7 +350,23 @@ export function useCollab({
       // this lookup binds the message to the identity verified in that peer's
       // handshake. The payload's own senderUserId is deliberately not a
       // fallback: a verified member must not be able to write as someone else.
-      const senderUserId = identityRef.current?.resolvePeerUserId?.(payload.senderId)
+      const senderUserId =
+        transportIdentity?.userId ??
+        identityRef.current?.resolvePeerUserId?.(payload.senderId)
+      if (
+        transportIdentity?.deviceKeyId &&
+        payload.senderDeviceKeyId &&
+        transportIdentity.deviceKeyId !== payload.senderDeviceKeyId
+      ) {
+        return
+      }
+      if (
+        payload.senderUserId &&
+        senderUserId &&
+        payload.senderUserId !== senderUserId
+      ) {
+        return
+      }
       const message = chatPayloadToMessage({ ...payload, senderUserId })
       const sender = senderDirectoryRef.current[payload.senderId]
       recordSyncActivity({
@@ -343,7 +415,12 @@ export function useCollab({
         if (route.kind === 'dm') notifyDirectMessageRef.current(messageFromFileMeta(safeMeta, ''))
       })
     },
-    onHistoryRequest: channelId => channelStore.getHistoryEntries(channelId),
+    onHistoryRequest: channelId => {
+      const entries = channelStore.getHistoryEntries(channelId)
+      return CONTENT_BACKEND === 'durable-objects'
+        ? entries.filter(entry => entry.type === 'file')
+        : entries
+    },
     onFileRequest: (fileIds, peerId) => {
       void files.handleFileRequest(fileIds, peerId)
     },
@@ -377,18 +454,38 @@ export function useCollab({
         }
       }
     },
+    onContentPeerJoin: peerId => {
+      peers.upsertPeer(peerId, undefined, peerId)
+      connection.markConnected()
+    },
+    onContentPeerLeave: peerId => {
+      peers.removePeer(peerId)
+    },
+    onInitialContentPeers: peerIds => {
+      for (const peerId of peerIds) peers.upsertPeer(peerId, undefined, peerId)
+      if (peerIds.length > 0) connection.markConnected()
+    },
     onChannel: (payload, peerId) => {
       channelSync.handleChannel(payload, peerId)
     },
-    onReaction: (payload, peerId) => {
+    onReaction: (payload, peerId, transportIdentity) => {
       const route = routeDmChannel(payload.channelId, selfId)
       if (route.kind === 'foreign-dm' || (route.kind === 'dm' && route.peerId !== peerId)) return
-      const actorUserId = identityRef.current?.resolvePeerUserId?.(peerId)
+      const actorUserId =
+        transportIdentity?.userId ??
+        identityRef.current?.resolvePeerUserId?.(peerId)
       void (async () => {
         // Verify exactly what was signed before replacing the claimed identity
         // with the one established by this live peer's handshake.
         if (!(await verifyReaction(payload, payload.messageId, payload.channelId))) return
         if (payload.actorUserId && actorUserId !== payload.actorUserId) return
+        if (
+          transportIdentity?.deviceKeyId &&
+          payload.actorDeviceKeyId &&
+          transportIdentity.deviceKeyId !== payload.actorDeviceKeyId
+        ) {
+          return
+        }
         const boundUserId = payload.actorDeviceKeyId
           ? identityRef.current?.getBoundUserId?.(payload.actorDeviceKeyId)
           : undefined
@@ -413,6 +510,8 @@ export function useCollab({
     resetHistory()
     resetConnection()
     resetVideo()
+    clearPendingChatActions()
+    clearPendingReactionActions()
   }, [
     workspaceId,
     fileCache,
@@ -422,6 +521,8 @@ export function useCollab({
     resetHistory,
     resetConnection,
     resetVideo,
+    clearPendingChatActions,
+    clearPendingReactionActions,
   ])
 
   useEffect(() => {
@@ -447,6 +548,12 @@ export function useCollab({
       onPeerStream: (...args) => handlersRef.current.onPeerStream(...args),
       onPeerCallEnd: (...args) => handlersRef.current.onPeerCallEnd(...args),
       onInitialPeers: (...args) => handlersRef.current.onInitialPeers(...args),
+      onContentPeerJoin: (...args) =>
+        handlersRef.current.onContentPeerJoin(...args),
+      onContentPeerLeave: (...args) =>
+        handlersRef.current.onContentPeerLeave(...args),
+      onInitialContentPeers: (...args) =>
+        handlersRef.current.onInitialContentPeers(...args),
       onChannel: (...args) => handlersRef.current.onChannel(...args),
       onReaction: (...args) => handlersRef.current.onReaction(...args),
     }
@@ -462,7 +569,7 @@ export function useCollab({
       bindReactionAction,
       bindCallEndAction,
       broadcastProfile,
-    })
+    }, { contentRoom: contentRoom ?? undefined })
 
     return () => {
       cleanup()
@@ -478,6 +585,7 @@ export function useCollab({
     }
   }, [
     room,
+    contentRoom,
     bindChatAction,
     unbindChatAction,
     bindProfileAction,
@@ -520,30 +628,34 @@ export function useCollab({
       // Sign before anything leaves or persists, so our local copy is the same
       // relayable artifact peers will verify (~1–2 ms; see messageSigning).
       void (async () => {
-        const signer = identityRef.current?.signMessage
-        const signed = signer
-          ? {
-              ...payload,
-              ...(await signer({
-                id: payload.id,
-                type: 'text',
-                text: payload.text,
-                senderUserId: payload.senderUserId,
-                timestamp: payload.timestamp,
-                channelId: payload.channelId,
-              })),
-            }
-          : payload
-        void sendChatPayload(signed, target ? { target } : undefined)
-        const targets = target
-          ? peersRef.current.filter(peer => peer.id === target)
-          : peersRef.current
-        for (const peer of targets) recordSyncActivity({
-          direction: 'sent', kind: 'message',
-          peer: { peerId: peer.id, userId: peer.userId, name: peer.name, avatar: peer.avatar, relationship: 'workspace-member' },
-          itemCount: 1, bytes: syncPayloadBytes(signed), summary: `${channelId} · message`,
-        })
-        appendMessage(chatPayloadToMessage(signed), senderDirectoryRef.current)
+        try {
+          const signer = identityRef.current?.signMessage
+          const signed = signer
+            ? {
+                ...payload,
+                ...(await signer({
+                  id: payload.id,
+                  type: 'text',
+                  text: payload.text,
+                  senderUserId: payload.senderUserId,
+                  timestamp: payload.timestamp,
+                  channelId: payload.channelId,
+                })),
+              }
+            : payload
+          await sendChatPayload(signed, target ? { target } : undefined)
+          const targets = target
+            ? peersRef.current.filter(peer => peer.id === target)
+            : peersRef.current
+          for (const peer of targets) recordSyncActivity({
+            direction: 'sent', kind: 'message',
+            peer: { peerId: peer.id, userId: peer.userId, name: peer.name, avatar: peer.avatar, relationship: 'workspace-member' },
+            itemCount: 1, bytes: syncPayloadBytes(signed), summary: `${channelId} · message`,
+          })
+          appendMessage(chatPayloadToMessage(signed), senderDirectoryRef.current)
+        } catch {
+          setErrorRef.current('Could not send message.')
+        }
       })()
     },
     // The narrow deps are the point: `channelStore` and `chatAction` are fresh
@@ -580,38 +692,42 @@ export function useCollab({
         type: 'text',
       }
       void (async () => {
-        const signer = identityRef.current?.signMessage
-        const fields = {
-          id: payload.id,
-          type: 'text' as const,
-          text: payload.text,
-          senderUserId: payload.senderUserId,
-          timestamp: payload.timestamp,
-          channelId: payload.channelId,
-          editedAt: payload.editedAt,
-          deletedAt: payload.deletedAt,
+        try {
+          const signer = identityRef.current?.signMessage
+          const fields = {
+            id: payload.id,
+            type: 'text' as const,
+            text: payload.text,
+            senderUserId: payload.senderUserId,
+            timestamp: payload.timestamp,
+            channelId: payload.channelId,
+            editedAt: payload.editedAt,
+            deletedAt: payload.deletedAt,
+          }
+          let signed: ChatPayload = payload
+          if (signer) {
+            const initial = await signer(fields)
+            const deviceGrant = selfUserId && existing.senderDeviceKeyId &&
+              initial.senderDeviceKeyId !== existing.senderDeviceKeyId
+              ? findDeviceGrant(selfUserId, existing.senderDeviceKeyId, initial.senderDeviceKeyId)
+              : undefined
+            if (initial.senderDeviceKeyId !== existing.senderDeviceKeyId && !deviceGrant) return
+            const proof = deviceGrant ? await signer({ ...fields, deviceGrant }) : initial
+            signed = { ...payload, deviceGrant, ...proof }
+          }
+          const target = route.kind === 'dm' ? route.peerId : undefined
+          await sendChatPayload(signed, target ? { target } : undefined)
+          const targets = target ? peersRef.current.filter(peer => peer.id === target) : peersRef.current
+          for (const peer of targets) recordSyncActivity({
+            direction: 'sent', kind: 'message',
+            peer: { peerId: peer.id, userId: peer.userId, name: peer.name, avatar: peer.avatar, relationship: 'workspace-member' },
+            itemCount: 1, bytes: syncPayloadBytes(signed),
+            summary: `${channelId} · ${nextText === null ? 'message deletion' : 'message edit'}`,
+          })
+          applyMessageRevision(chatPayloadToMessage(signed))
+        } catch {
+          setErrorRef.current('Could not update message.')
         }
-        let signed: ChatPayload = payload
-        if (signer) {
-          const initial = await signer(fields)
-          const deviceGrant = selfUserId && existing.senderDeviceKeyId &&
-            initial.senderDeviceKeyId !== existing.senderDeviceKeyId
-            ? findDeviceGrant(selfUserId, existing.senderDeviceKeyId, initial.senderDeviceKeyId)
-            : undefined
-          if (initial.senderDeviceKeyId !== existing.senderDeviceKeyId && !deviceGrant) return
-          const proof = deviceGrant ? await signer({ ...fields, deviceGrant }) : initial
-          signed = { ...payload, deviceGrant, ...proof }
-        }
-        const target = route.kind === 'dm' ? route.peerId : undefined
-        await sendChatPayload(signed, target ? { target } : undefined)
-        const targets = target ? peersRef.current.filter(peer => peer.id === target) : peersRef.current
-        for (const peer of targets) recordSyncActivity({
-          direction: 'sent', kind: 'message',
-          peer: { peerId: peer.id, userId: peer.userId, name: peer.name, avatar: peer.avatar, relationship: 'workspace-member' },
-          itemCount: 1, bytes: syncPayloadBytes(signed),
-          summary: `${channelId} · ${nextText === null ? 'message deletion' : 'message edit'}`,
-        })
-        applyMessageRevision(chatPayloadToMessage(signed))
       })()
     },
     [applyMessageRevision, channelStore.messages, pastSelfIds, profileRef, sendChatPayload, peersRef]
@@ -642,28 +758,32 @@ export function useCollab({
           (actorUserId ? reaction.actorUserId === actorUserId : reaction.actorId === selfId)
       )
       void (async () => {
-        const timestamp = Date.now()
-        const signed = await signer({
-          messageId,
-          channelId,
-          emoji,
-          active: !existing?.active,
-          actorUserId,
-          timestamp,
-        })
-        const payload: ReactionPayload = {
-          messageId,
-          channelId,
-          emoji,
-          active: !existing?.active,
-          actorId: selfId,
-          actorUserId,
-          timestamp,
-          ...signed,
+        try {
+          const timestamp = Date.now()
+          const signed = await signer({
+            messageId,
+            channelId,
+            emoji,
+            active: !existing?.active,
+            actorUserId,
+            timestamp,
+          })
+          const payload: ReactionPayload = {
+            messageId,
+            channelId,
+            emoji,
+            active: !existing?.active,
+            actorId: selfId,
+            actorUserId,
+            timestamp,
+            ...signed,
+          }
+          const target = route.kind === 'dm' ? route.peerId : undefined
+          await sendReactionPayload(payload, target ? { target } : undefined)
+          applyReaction(messageId, channelId, payload)
+        } catch {
+          setErrorRef.current('Could not update reaction.')
         }
-        const target = route.kind === 'dm' ? route.peerId : undefined
-        await sendReactionPayload(payload, target ? { target } : undefined)
-        applyReaction(messageId, channelId, payload)
       })()
     },
     [applyReaction, channelStore.messages, sendReactionPayload]
@@ -733,6 +853,8 @@ export function useCollab({
       identity?.selfUserId
     )
   }, [peers.peers, relayPresencePeers, identity?.selfUserId])
+  const durableContentOnline =
+    CONTENT_BACKEND === 'durable-objects' && contentRoom !== null
 
   return {
     selfId,
@@ -745,15 +867,24 @@ export function useCollab({
     sharedFiles,
     transfers: files.transfers,
     fileError: files.fileError,
-    connectionStatus: connection.connectionStatus,
+    connectionStatus:
+      durableContentOnline
+        ? 'connected'
+        : connection.connectionStatus,
     connectionError: connection.connectionError,
     connectionNotice: connection.connectionNotice,
-    relayOnline: connection.relayOnline,
+    // The primary message path is healthy once its authenticated content
+    // socket is open. P2P signaling remains independently visible through the
+    // diagnostics and capability indicator for files and calls.
+    relayOnline: durableContentOnline || connection.relayOnline,
     rtcPeerCount: connection.rtcPeerCount,
     p2pCapability: connection.p2pCapability,
     retryP2pCapability: connection.retryP2pCapability,
     relayUrls: connection.relayUrls,
-    isReady: connection.isReady,
+    isReady:
+      CONTENT_BACKEND === 'durable-objects'
+        ? durableContentOnline
+        : connection.isReady,
     inCall: video.inCall,
     callMode: video.callMode,
     incomingCallPeerId: video.incomingCallPeerId,

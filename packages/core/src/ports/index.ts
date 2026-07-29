@@ -95,6 +95,8 @@ export interface ControlSocket {
   readonly deviceKeyId: DeviceKeyId
   /** Stable public account id from the authenticated session, when enabled. */
   readonly publicUserId?: string
+  /** Deployment-private HMAC of the OIDC-verified normalized email. */
+  readonly privateMemberId?: string
   negotiated(): boolean
   markNegotiated(): void
   send(frame: string): void

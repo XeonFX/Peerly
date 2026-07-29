@@ -87,16 +87,22 @@ describe('openDurableChannel', () => {
         { connectionId: 'bob-tab', userId: 'bob', deviceKeyId: 'dk-b' },
       ],
     })
-    await room.makeAction<{ text: string }>('chat').send(
+    const sending = room.makeAction<{ text: string }>('chat').send(
       { text: 'hello' },
       { target: 'bob' }
     )
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
     expect(JSON.parse(socket.sent[0])).toMatchObject({
       type: 'event',
       event: 'chat',
       data: { text: 'hello' },
       target: 'bob',
     })
+    socket.receive({
+      type: 'ack',
+      messageId: JSON.parse(socket.sent[0]).messageId,
+    })
+    await sending
   })
 
   it('encrypts room payloads before they reach the Durable Object', async () => {
@@ -110,7 +116,10 @@ describe('openDurableChannel', () => {
     }, 'high-entropy-room-capability')
     const received = vi.fn()
     room.makeAction<{ text: string }>('chat').onMessage = received
-    await room.makeAction<{ text: string }>('chat').send({ text: 'private message' })
+    const sending = room.makeAction<{ text: string }>('chat').send({
+      text: 'private message',
+    })
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
     const outbound = JSON.parse(socket.sent[0])
     expect(JSON.stringify(outbound.data)).not.toContain('private message')
     expect(outbound.data).toMatchObject({ v: 1 })
@@ -122,9 +131,53 @@ describe('openDurableChannel', () => {
       senderUserId: 'bob',
       senderDeviceKeyId: 'dk-b',
     })
+    socket.receive({ type: 'ack', messageId: outbound.messageId })
+    await sending
     await vi.waitFor(() => expect(received).toHaveBeenCalledWith(
       { text: 'private message' },
       { peerId: 'bob', userId: 'bob', deviceKeyId: 'dk-b' }
     ))
+  })
+
+  it('re-authorizes and replays the same unacknowledged frame after reconnecting', async () => {
+    const sockets: FakeWebSocket[] = []
+    const authorize = vi.fn(async () => ({ routeId: 'opaque-route' }))
+    const opening = openDurableChannel({
+      authorize,
+      endpointPrefix: '/api/realtime/room/',
+      webSocketFactory: () => {
+        const candidate = new FakeWebSocket()
+        sockets.push(candidate)
+        return candidate as unknown as WebSocket
+      },
+    })
+
+    await vi.waitFor(() => expect(sockets).toHaveLength(1))
+    sockets[0].receive({
+      type: 'snapshot',
+      connectionId: 'alice-first',
+      members: [{ connectionId: 'alice-first', userId: 'alice', deviceKeyId: 'dk-a' }],
+    })
+    const room = await opening
+    const sending = room.makeAction<{ text: string }>('chat').send({ text: 'retry me' })
+    await vi.waitFor(() => expect(sockets[0].sent).toHaveLength(1))
+    const original = sockets[0].sent[0]
+
+    sockets[0].close()
+    await vi.waitFor(() => expect(sockets).toHaveLength(2), { timeout: 2_000 })
+    expect(authorize).toHaveBeenCalledTimes(2)
+    sockets[1].receive({
+      type: 'snapshot',
+      connectionId: 'alice-second',
+      members: [{ connectionId: 'alice-second', userId: 'alice', deviceKeyId: 'dk-a' }],
+    })
+    await vi.waitFor(() => expect(sockets[1].sent).toEqual([original]))
+
+    sockets[1].receive({
+      type: 'ack',
+      messageId: JSON.parse(original).messageId,
+    })
+    await sending
+    room.leave()
   })
 })

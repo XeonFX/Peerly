@@ -156,6 +156,8 @@ export function usePresenceLobby({
     channel: roomEnabled ? `peerly:presence:${LOBBY_ROOM_ID}` : '',
     memberId: roomEnabled ? profile?.userId ?? '' : '',
     env: PUBLIC_NETWORK_ENV,
+    durableEndpointPrefix: '/api/realtime/lobby/',
+    durableRouteId: 'peerly-lobby-v1',
     onError: message => {
       if (connectedPeersRef.current === 0) setLobbyError(message)
     },

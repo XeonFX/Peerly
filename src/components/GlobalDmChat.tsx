@@ -220,7 +220,7 @@ export function GlobalDmChat({
               </h3>
               {!searchQuery.trim() && (
                 <p className="text-sm leading-relaxed text-base-content/65">
-                  {tr('Messages are sent directly peer-to-peer. No server stores your data.')}
+                  {tr('Messages are encrypted on your device. Files and calls stay peer-to-peer.')}
                 </p>
               )}
             </div>

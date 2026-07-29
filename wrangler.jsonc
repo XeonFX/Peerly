@@ -10,7 +10,7 @@
   // fails on a clean checkout while every local build succeeds on a warm one.
   // Declared here so any path that bundles this worker gets it, not only the
   // ones that happen to run `npm run build` first.
-  "build": { "command": "npm run build:core" },
+  "build": { "command": "VITE_CONTENT_BACKEND=p2p npm run build:core" },
   "vars": {
     // The auth bridge executes in the Worker runtime, where Cloudflare's
     // build-time VITE_* variables are not available automatically.
@@ -26,7 +26,8 @@
     // version that carries a Durable Object migration (API error 10211) —
     // migrations only apply through a full deploy, which happens on merge to
     // main. The DO-enabled staging worker lives in wrangler.preview.jsonc.
-    "COORDINATION_BACKEND": "legacy-relay"
+    "COORDINATION_BACKEND": "legacy-relay",
+    "CONTENT_BACKEND": "p2p"
   },
   "assets": {
     "binding": "ASSETS",

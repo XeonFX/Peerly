@@ -34,6 +34,7 @@ export async function prepareAuthenticatedRealtimeUpgrade(request, env, config) 
   trusted.headers.set('x-realtime-dk', auth.deviceKeyId)
   trusted.headers.set('x-realtime-sid', auth.sid)
   if (auth.publicUserId) trusted.headers.set('x-realtime-user', auth.publicUserId)
+  if (auth.privateMemberId) trusted.headers.set('x-realtime-member', auth.privateMemberId)
   return { auth, request: trusted }
 }
 

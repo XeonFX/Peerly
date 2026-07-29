@@ -49,6 +49,17 @@ export const PUBLIC_NETWORK_ENV: Env = {
 }
 export const NETWORK_APP_ID = requireAppId(PUBLIC_NETWORK_ENV)
 
+export type ContentBackend = 'durable-objects' | 'p2p'
+
+/** Durable encrypted history is the default; deployments can explicitly roll back. */
+export function resolveContentBackend(
+  value: string | undefined = import.meta.env.VITE_CONTENT_BACKEND
+): ContentBackend {
+  return value === 'p2p' ? 'p2p' : 'durable-objects'
+}
+
+export const CONTENT_BACKEND = resolveContentBackend()
+
 export const DEFAULT_USER_COLOR = '#36c5f0'
 
 export { GENERAL_CHANNEL } from './collab/channelStore'

@@ -156,8 +156,8 @@ const plByEnglish: Record<string, string> = {
   'Message {channel}': 'Wiadomość do {channel}',
   'Message #{channel}': 'Wiadomość na #{channel}',
   'Start the conversation': 'Rozpocznij rozmowę',
-  'Messages are sent directly peer-to-peer. No server stores your data.':
-    'Wiadomości są wysyłane bezpośrednio peer-to-peer. Żaden serwer nie przechowuje Twoich danych.',
+  'Messages are encrypted on your device. Files and calls stay peer-to-peer.':
+    'Wiadomości są szyfrowane na Twoim urządzeniu. Pliki i połączenia pozostają peer-to-peer.',
   edited: 'edytowano',
   'Edit message': 'Edytuj wiadomość',
   'Delete message': 'Usuń wiadomość',
@@ -226,12 +226,12 @@ const plByEnglish: Record<string, string> = {
   'Your email (test mode)': 'Twój e-mail (tryb testowy)',
   'Continue with': 'Kontynuuj przez',
   'Private by design': 'Prywatność od podstaw',
-  'Your team space, directly between your devices.':
-    'Przestrzeń Twojego zespołu, bezpośrednio między urządzeniami.',
-  'No message or file server in the middle. Invite-only workspaces connect through verified identities.':
-    'Bez pośredniego serwera wiadomości ani plików. Przestrzenie na zaproszenie łączą zweryfikowane tożsamości.',
-  'Serverless team collaboration — chat, video, and files, peer-to-peer.':
-    'Współpraca zespołowa bez serwera — czat, wideo i pliki peer-to-peer.',
+  'Your private team space, across all your devices.':
+    'Prywatna przestrzeń Twojego zespołu na wszystkich Twoich urządzeniach.',
+  'Encrypted messages are delivered reliably; files and calls stay peer-to-peer. Invite-only workspaces use verified identities.':
+    'Zaszyfrowane wiadomości są dostarczane niezawodnie; pliki i połączenia pozostają peer-to-peer. Przestrzenie na zaproszenie używają zweryfikowanych tożsamości.',
+  'Private hybrid collaboration — encrypted chat, peer-to-peer files and calls.':
+    'Prywatna współpraca hybrydowa — szyfrowany czat oraz pliki i połączenia peer-to-peer.',
   'Sign in to continue': 'Zaloguj się, aby kontynuować',
   "Only invited accounts can connect. Peers verify each other's identity before any data flows. Sign in with the account you were invited with — a different provider or email counts as a different person.":
     'Połączyć mogą się wyłącznie zaproszone konta. Peery weryfikują wzajemnie tożsamość przed przesłaniem danych. Zaloguj się zaproszonym kontem — inny dostawca lub e-mail oznacza inną osobę.',
