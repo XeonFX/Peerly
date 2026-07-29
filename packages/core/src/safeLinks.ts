@@ -3,7 +3,13 @@ export type SafeTextPart =
   | { kind: 'link'; value: string; href: string }
 
 const URL_CANDIDATE = /https:\/\/[^\s<]+/gi
-const TRAILING_PUNCTUATION = /[),.!?;:'\]]+$/
+const TRAILING_PUNCTUATION = new Set([')', ',', '.', '!', '?', ';', ':', "'", ']'])
+
+function trailingPunctuationStart(value: string): number {
+  let index = value.length
+  while (index > 0 && TRAILING_PUNCTUATION.has(value[index - 1])) index -= 1
+  return index
+}
 
 /**
  * Splits user-authored text into inert text and HTTPS links.
@@ -19,8 +25,9 @@ export function splitSafeLinks(text: string): SafeTextPart[] {
     const index = match.index ?? 0
     if (index > cursor) parts.push({ kind: 'text', value: text.slice(cursor, index) })
     const candidate = match[0]
-    const trailing = candidate.match(TRAILING_PUNCTUATION)?.[0] ?? ''
-    const value = trailing ? candidate.slice(0, -trailing.length) : candidate
+    const trailingStart = trailingPunctuationStart(candidate)
+    const value = candidate.slice(0, trailingStart)
+    const trailing = candidate.slice(trailingStart)
     try {
       const parsed = new URL(value)
       parts.push(
