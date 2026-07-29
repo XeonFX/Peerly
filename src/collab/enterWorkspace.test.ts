@@ -27,10 +27,11 @@ afterEach(() => {
 })
 
 describe('persistWorkspaceSession', () => {
-  it('persists the session, credentials, and remembers the workspace', () => {
-    const session = persistWorkspaceSession(access, identity, 'Alice')
+  it('persists the session, credentials, and remembers the workspace', async () => {
+    const session = await persistWorkspaceSession(access, identity, 'Alice')
 
     expect(session.workspaceId).toBe('ws-secret-123')
+    expect(session.workspaceRouteId).toMatch(/^[a-f0-9]{32}$/)
     expect(session.identityEmail).toBe('a@b.com')
     // Reads back from storage — this is what App/JoinScreen rely on.
     expect(loadPersistedSession()?.workspaceId).toBe('ws-secret-123')
@@ -38,8 +39,8 @@ describe('persistWorkspaceSession', () => {
     expect(loadWorkspaces().some(w => w.workspaceId === 'ws-secret-123')).toBe(true)
   })
 
-  it('uses the display name only as a fallback for a fresh profile', () => {
-    const session = persistWorkspaceSession(access, identity, 'Alice')
+  it('uses the display name only as a fallback for a fresh profile', async () => {
+    const session = await persistWorkspaceSession(access, identity, 'Alice')
     expect(session.userName).toBe('Alice')
   })
 })

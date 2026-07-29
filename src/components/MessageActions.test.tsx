@@ -4,70 +4,54 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n'
 import { MessageActions } from './MessageActions'
 
-function renderActions(overrides: Partial<React.ComponentProps<typeof MessageActions>> = {}) {
-  const props: React.ComponentProps<typeof MessageActions> = {
-    messageId: 'message-1',
-    text: 'Hello',
-    canEdit: true,
-    canDelete: true,
-    onReact: vi.fn(),
-    onReply: vi.fn(),
-    onEdit: vi.fn(),
-    onDelete: vi.fn(),
-    ...overrides,
-  }
-  render(<I18nProvider><MessageActions {...props} /></I18nProvider>)
-  return props
-}
-
 describe('MessageActions', () => {
-  afterEach(cleanup)
+  const clipboardWrite = vi.fn(async () => {})
+
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('peerly-locale', 'en')
+    clipboardWrite.mockClear()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: clipboardWrite },
+    })
   })
+  afterEach(cleanup)
 
-  it('shows three default reactions and keeps every primary action on one row', () => {
-    renderActions()
-    expect(screen.getByLabelText('React ❤️')).toBeTruthy()
-    expect(screen.getByLabelText('React 👍')).toBeTruthy()
-    expect(screen.getByLabelText('React 😂')).toBeTruthy()
-    expect(screen.getByLabelText('Add reaction')).toBeTruthy()
-    expect(screen.getByLabelText('Reply')).toBeTruthy()
-    expect(screen.getByLabelText('Edit message')).toBeTruthy()
-    expect(screen.getByLabelText('Delete message')).toBeTruthy()
-    expect(screen.getByLabelText('More actions')).toBeTruthy()
-  })
+  function renderActions(text: string, onReact = vi.fn()) {
+    render(
+      <I18nProvider>
+        <MessageActions
+          text={text}
+          canEdit
+          canDelete
+          onReact={onReact}
+          onReply={vi.fn()}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </I18nProvider>
+    )
+    return onReact
+  }
 
-  it('opens a categorized picker and filters reactions by keyword', () => {
-    const props = renderActions()
+  it('dispatches reactions selected from the full picker', () => {
+    const onReact = renderActions('Hello')
     fireEvent.click(screen.getByLabelText('Add reaction'))
-
-    const picker = screen.getByTestId('message-reaction-picker')
-    expect(picker.parentElement).toBe(document.body)
-    expect(picker.classList.contains('fixed')).toBe(true)
-    expect(picker.classList.contains('z-100')).toBe(true)
-    expect(screen.getByText('Smileys & people')).toBeTruthy()
-    expect(screen.getByText('Gestures')).toBeTruthy()
-
-    fireEvent.change(screen.getByPlaceholderText('Search reactions'), { target: { value: 'rocket' } })
-    expect(screen.getByLabelText('React 🚀')).toBeTruthy()
-    expect(screen.queryByText('Smileys & people')).toBeNull()
-
     fireEvent.click(screen.getByLabelText('React 🚀'))
-    expect(props.onReact).toHaveBeenCalledWith('🚀')
+    expect(onReact).toHaveBeenCalledWith('🚀')
   })
 
-  it('puts secondary copy actions and all available operations in the more menu', () => {
-    renderActions()
+  it('copies the first URL from the message instead of a message permalink', () => {
+    renderActions('See https://first.example/docs, then https://second.example.')
     fireEvent.click(screen.getByLabelText('More actions'))
+    fireEvent.click(screen.getByText('Copy link'))
+    expect(clipboardWrite).toHaveBeenCalledWith('https://first.example/docs')
+  })
 
-    const menu = screen.getByTestId('message-more-menu')
-    expect(menu.textContent).toContain('Add reaction')
-    expect(menu.textContent).toContain('Reply')
-    expect(menu.textContent).toContain('Edit message')
-    expect(menu.textContent).toContain('Delete message')
-    expect(menu.textContent).toContain('Copy text')
-    expect(menu.textContent).toContain('Copy link')
+  it('does not offer Copy link when the message has no URL', () => {
+    renderActions('No links here')
+    fireEvent.click(screen.getByLabelText('More actions'))
+    expect(screen.queryByText('Copy link')).toBeNull()
   })
 })

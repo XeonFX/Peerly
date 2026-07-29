@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { Peer, UserProfile } from '../types'
 import { Avatar } from './Avatar'
 import { Icon } from './Icon'
@@ -41,17 +41,24 @@ export function WorkspaceMemberPopover({
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  const memberKey = member
+    ? member.kind === 'self'
+      ? 'self'
+      : `peer:${member.contact?.userId ?? member.peer.userId ?? member.peer.id}`
+    : ''
 
   useEffect(() => {
-    if (!member) return
+    if (!memberKey) return
     setDraft('')
     setError(null)
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [member, onClose])
+  }, [memberKey])
 
   if (!member) return null
 

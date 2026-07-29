@@ -20,6 +20,7 @@ import { signedMessageBytes, type SignedFields } from './messageSigning'
 import { signedReactionBytes, type SignedReactionFields } from './reactionSigning'
 import { createIdentityHandshake } from './identityHandshake'
 import { generateWorkspaceId, type WorkspaceAccess, type WorkspaceInvite } from './inviteLink'
+import { generateWorkspaceRouteId } from './workspaceRouteId'
 
 export type WorkspaceAuthConfig = {
   workspaceId: string
@@ -237,6 +238,7 @@ export class WorkspaceAuthManager {
     const invite: WorkspaceInvite = {
       v: 1,
       workspaceId,
+      workspaceRouteId: generateWorkspaceRouteId(),
       workspaceName: workspaceName.trim() || 'Workspace',
       creatorKeyId,
       allowList,

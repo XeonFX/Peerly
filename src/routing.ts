@@ -17,8 +17,8 @@ export type AccountRoute = { screen: 'account' }
 export type StorageRoute = { screen: 'storage' }
 
 export type WorkspaceRoute =
-  | { screen: 'workspace'; workspaceSlug?: string; view: 'channel'; channelId: string; showFiles: boolean }
-  | { screen: 'workspace'; workspaceSlug?: string; view: 'settings' }
+  | { screen: 'workspace'; workspaceRouteId?: string; view: 'channel'; channelId: string; showFiles: boolean }
+  | { screen: 'workspace'; workspaceRouteId?: string; view: 'settings' }
 
 /** Public legal pages, reachable regardless of session/workspace state. */
 export type LegalRoute = { screen: 'legal'; doc: 'privacy' | 'terms' }
@@ -38,20 +38,10 @@ export type AppRoute =
 
 const PARSE_BASE = 'http://peerly.local'
 
-/** Public, descriptive URL segment. Never use the secret workspace id here. */
-export function workspaceSlug(workspaceName: string): string {
-  return workspaceName
-    .normalize('NFKC')
-    .trim()
-    .replace(/[^\p{L}\p{N}_-]+/gu, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '') || 'workspace'
-}
-
-export function defaultWorkspaceRoute(workspaceName?: string): WorkspaceRoute {
+export function defaultWorkspaceRoute(workspaceRouteId?: string): WorkspaceRoute {
   return {
     screen: 'workspace',
-    workspaceSlug: workspaceName ? workspaceSlug(workspaceName) : undefined,
+    workspaceRouteId,
     view: 'channel',
     channelId: GENERAL_CHANNEL.id,
     showFiles: false,
@@ -76,13 +66,13 @@ export function pathForRoute(route: AppRoute): string {
 
   switch (route.view) {
     case 'channel': {
-      const workspace = route.workspaceSlug ? `/${encodeURIComponent(route.workspaceSlug)}` : ''
+      const workspace = route.workspaceRouteId ? `/${encodeURIComponent(route.workspaceRouteId)}` : ''
       const base = `/workspace${workspace}/channel/${encodeURIComponent(route.channelId)}`
       return route.showFiles ? `${base}?files=1` : base
     }
     case 'settings':
-      return route.workspaceSlug
-        ? `/workspace/${encodeURIComponent(route.workspaceSlug)}/settings`
+      return route.workspaceRouteId
+        ? `/workspace/${encodeURIComponent(route.workspaceRouteId)}/settings`
         : '/workspace/settings'
   }
 }
@@ -136,7 +126,7 @@ function parsePathRoute(pathname: string, search: string, hash = ''): AppRoute |
     const params = new URLSearchParams(search)
     return {
       screen: 'workspace',
-      workspaceSlug: workspaceSlug(decodeURIComponent(namedChannelMatch[1])),
+      workspaceRouteId: decodeURIComponent(namedChannelMatch[1]),
       view: 'channel',
       channelId: decodeURIComponent(namedChannelMatch[2]),
       showFiles: params.get('files') === '1',
@@ -154,7 +144,7 @@ function parsePathRoute(pathname: string, search: string, hash = ''): AppRoute |
   if (namedSettingsMatch) {
     return {
       screen: 'workspace',
-      workspaceSlug: workspaceSlug(decodeURIComponent(namedSettingsMatch[1])),
+      workspaceRouteId: decodeURIComponent(namedSettingsMatch[1]),
       view: 'settings',
     }
   }

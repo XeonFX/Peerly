@@ -36,7 +36,7 @@ export type WorkspaceNavigationDeps = {
   /** Bumped on sign-out so components reading identity storage re-render. */
   onIdentityChanged(): void
   navigate(route: AppRoute, options?: { replace?: boolean }): void
-  enterWorkspace(workspaceName?: string): void
+  enterWorkspace(workspaceRouteId?: string): void
   leaveToPicker(): void
 }
 
@@ -62,7 +62,7 @@ export function useWorkspaceNavigation(deps: WorkspaceNavigationDeps): Workspace
 
   const switchWorkspace = useCallback(async (workspace: StoredWorkspace) => {
     if (workspace.workspaceId === currentWorkspaceId) {
-      enterWorkspace(workspace.workspaceName)
+      enterWorkspace(workspace.workspaceRouteId)
       return
     }
     // Token expired (ReauthBanner territory) — send them home to
@@ -75,7 +75,7 @@ export function useWorkspaceNavigation(deps: WorkspaceNavigationDeps): Workspace
     }
     try {
       setSession(await hydrateSessionAvatar(await enterStoredWorkspace(workspace, identity)))
-      enterWorkspace(workspace.workspaceName)
+      enterWorkspace(workspace.workspaceRouteId)
     } catch {
       // Invalid signature, or no longer on the allow-list — bounce home to
       // re-pick rather than sit on a workspace this identity cannot open.

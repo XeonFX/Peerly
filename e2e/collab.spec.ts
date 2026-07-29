@@ -22,6 +22,7 @@ import {
   withTwoGlobalUsers,
   withTwoUsers,
   e2eWorkspaceId,
+  e2eWorkspaceRouteId,
 } from './helpers'
 import path from 'path'
 import fs from 'fs'
@@ -93,7 +94,9 @@ test.describe('Peerly P2P collaboration', () => {
   test('remembered workspaces let you switch without the invite link', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await expect(page.locator('.workspace-name')).toContainText('test-ws')
-    await expect(page).toHaveURL(/\/workspace\/test-ws\/channel\/general$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/workspace/${e2eWorkspaceRouteId()}/channel/general$`)
+    )
     await expect(page.getByTestId('app-version')).toBeVisible()
 
     // Leaving must NOT sign you out — you land on the picker still signed in.
@@ -105,7 +108,38 @@ test.describe('Peerly P2P collaboration', () => {
     await page.getByRole('button', { name: 'test-ws', exact: true }).click()
     await waitForWorkspace(page)
     await expect(page.locator('.workspace-name')).toContainText('test-ws')
-    await expect(page).toHaveURL(/\/workspace\/test-ws\/channel\/general$/)
+    await expect(page).toHaveURL(
+      new RegExp(`/workspace/${e2eWorkspaceRouteId()}/channel/general$`)
+    )
+  })
+
+  test('same-named workspaces keep distinct stable URLs when switching', async ({ page }) => {
+    await createWorkspace(page, {
+      name: 'Alice',
+      email: 'alice@e2e.test',
+      workspaceName: 'Twin Team',
+    })
+    const firstUrl = page.url()
+
+    await page.getByTestId('rail-create-workspace').click()
+    await page.getByTestId('workspace-name').fill('Twin Team')
+    await page.getByTestId('join-submit').click()
+    await waitForWorkspace(page)
+    const secondUrl = page.url()
+
+    expect(firstUrl).not.toBe(secondUrl)
+    expect(new URL(firstUrl).pathname).toMatch(/^\/workspace\/[a-f0-9]{32}\/channel\/general$/)
+    expect(new URL(secondUrl).pathname).toMatch(/^\/workspace\/[a-f0-9]{32}\/channel\/general$/)
+
+    const twins = page.getByTestId('workspace-rail').getByRole('button', {
+      name: 'Twin Team',
+      exact: true,
+    })
+    await expect(twins).toHaveCount(2)
+    await twins.first().click()
+    await expect(page).toHaveURL(firstUrl)
+    await twins.nth(1).click()
+    await expect(page).toHaveURL(secondUrl)
   })
 
   test('a remembered workspace survives a reload and can be reopened', async ({ page }) => {
@@ -416,13 +450,15 @@ test.describe('Peerly P2P collaboration', () => {
   // shoulder. It must not appear in the rendered page at all.
   test('workspace name can be changed in settings', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
+    const routeId = new URL(page.url()).pathname.split('/')[2]
+    expect(routeId).toMatch(/^[a-f0-9]{32}$/)
     await page.getByTestId('workspace-settings-open').click()
     await expect(page.getByTestId('workspace-settings-page')).toBeVisible()
     await page.getByTestId('workspace-name').fill('Dream Team')
-    await expect(page).toHaveURL(/\/workspace\/Dream-Team\/settings$/)
+    await expect(page).toHaveURL(new RegExp(`/workspace/${routeId}/settings$`))
     await page.getByTestId('workspace-settings-back').click()
     await expect(page.locator('.workspace-name')).toContainText('Dream Team')
-    await expect(page).toHaveURL(/\/workspace\/Dream-Team\/channel\/general$/)
+    await expect(page).toHaveURL(new RegExp(`/workspace/${routeId}/channel/general$`))
   })
 
   test('the workspace secret is never displayed in the UI', async ({ page }) => {
@@ -593,7 +629,8 @@ test.describe('Peerly P2P collaboration', () => {
       expect((pickerBox?.y ?? 0) + (pickerBox?.height ?? 0)).toBeLessThanOrEqual(
         await bob.evaluate(() => window.innerHeight)
       )
-      await bob.keyboard.press('Escape')
+      await picker.getByLabel('React 🚀').click()
+      await expect(alice.getByLabel('🚀 reaction, 1')).toBeVisible({ timeout: 15_000 })
 
       alice.once('dialog', dialog => void dialog.accept())
       await alice.getByTestId('chat-message').last().hover()

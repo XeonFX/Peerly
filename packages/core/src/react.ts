@@ -1,4 +1,4 @@
-import type { PeerHandshake } from '@trystero-p2p/core'
+import { selfId, type PeerHandshake } from '@trystero-p2p/core'
 import {
   createContext,
   createElement,
@@ -438,6 +438,33 @@ export type RoomErrorKind =
   | 'supabase-config'
   | 'generic'
 
+export type SafeJoinErrorLog = {
+  error: string
+  appId: string
+  peerId?: string
+  kind: ReturnType<typeof classifyJoinError>
+}
+
+/**
+ * Keep room capabilities/passwords out of browser logs.
+ *
+ * Trystero includes `roomId` in its diagnostic object. In Peerly workspaces
+ * that value is also the room password, so forwarding the object verbatim
+ * leaks access material into screenshots and copied support logs.
+ */
+export function safeJoinErrorLog(
+  details: { error?: unknown; appId?: string; peerId?: string },
+  fallbackAppId: string
+): SafeJoinErrorLog {
+  const error = String(details.error ?? 'Connection failed')
+  return {
+    error,
+    appId: details.appId ?? fallbackAppId,
+    ...(details.peerId ? { peerId: details.peerId } : {}),
+    kind: classifyJoinError(error),
+  }
+}
+
 const DEFAULT_ERROR_TEXT: Record<RoomErrorKind, (raw: string) => string> = {
   'password-mismatch': () =>
     'A peer tried to join with a different room code. If you cannot connect, check that your code matches exactly.',
@@ -471,7 +498,26 @@ const MAX_RECOVERY_ATTEMPTS = 3
 /** Ignore duplicate failure reports within this window (refresh thrash). */
 const RECOVERY_DEBOUNCE_MS = 2_000
 /** Backoff schedule for recovery attempts (ms). */
-const RECOVERY_BACKOFF_MS = [3_000, 8_000, 15_000] as const
+const RECOVERY_BACKOFF_MS = [1_000, 3_000, 8_000] as const
+/**
+ * Give the lexicographically elected follower enough time to observe the
+ * leader's leave/rejoin before it rebuilds its own room. If that succeeds, the
+ * follower cancels its timer when the new data channel appears.
+ */
+const RECOVERY_FOLLOWER_DELAY_MS = 4_000
+
+export function privateRoomRecoveryDelayMs(
+  attemptIndex: number,
+  localPeerId: string,
+  remotePeerId?: string
+): number {
+  const base =
+    RECOVERY_BACKOFF_MS[
+      Math.min(Math.max(0, attemptIndex), RECOVERY_BACKOFF_MS.length - 1)
+    ] ?? 15_000
+  if (!remotePeerId || localPeerId < remotePeerId) return base
+  return base + RECOVERY_FOLLOWER_DELAY_MS
+}
 
 export type UseRoomOptions = {
   appId: string
@@ -483,6 +529,16 @@ export type UseRoomOptions = {
   env: Env
   onError?: (message: string) => void
   onPeerHandshake?: PeerHandshake
+  /**
+   * Time to wait for a newly signaled data channel before treating a private
+   * connection as stalled. Leave undefined for the conservative core default.
+   */
+  handshakeTimeoutMs?: number
+  /**
+   * Rebuild a private room after post-SDP ICE failure. Keep false for public
+   * lobbies: one unreachable stranger must not restart everybody's room.
+   */
+  recoverIceFailures?: boolean
   /** Override user-facing error wording per kind; falls back to English defaults. */
   errorText?: Partial<Record<RoomErrorKind, (raw: string) => string>>
 }
@@ -496,7 +552,17 @@ export type UseRoomOptions = {
  * remount hits this: StrictMode in dev, and switching rooms in production.
  */
 export function useRoom(options: UseRoomOptions): { room: Room | null } {
-  const { appId, roomId, password = '', env, onError, onPeerHandshake, errorText } = options
+  const {
+    appId,
+    roomId,
+    password = '',
+    env,
+    onError,
+    onPeerHandshake,
+    handshakeTimeoutMs,
+    recoverIceFailures = false,
+    errorText,
+  } = options
   const strategy = resolveSignalingStrategy(env)
   const [room, setRoom] = useState<Room | null>(null)
   const [relayUrls, setRelayUrls] = useState<string[] | null>(() =>
@@ -523,19 +589,18 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
    * Self-healing rejoin for wedged PeerConnections (handshake timeout, Chrome
    * RTP extmap collision, post-SDP ICE that never completes after a refresh).
    *
-   * Important: do NOT rejoin on every single failure — that races the other
-   * peer's ICE and produces "User-Initiated Abort / Close called" storms.
-   * Debounce, require a second failure (except sdp-collision which is fatal to
-   * the current PC), cap attempts, and backoff.
+   * Important: recovery is private-room opt-in for ICE failures, is skipped
+   * while any healthy peer exists, is debounced, capped and backed off. Those
+   * guards prevent one unreachable participant from restarting a healthy room.
    */
   const [rejoinNonce, setRejoinNonce] = useState(0)
   const recoveryRef = useRef({
-    failures: 0,
     attempts: 0,
     timer: 0,
     lastFailureAt: 0,
   })
   const loggedJoinErrorsRef = useRef(new Map<string, number>())
+  const turnDiagnosticRoomRef = useRef('')
 
   useEffect(() => {
     if (strategy !== 'ws-relay') return
@@ -568,7 +633,7 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
 
     let cancelled = false
 
-    const scheduleRecovery = (kind: string) => {
+    const scheduleRecovery = (remotePeerId?: string) => {
       const recovery = recoveryRef.current
       const now = Date.now()
       if (now - recovery.lastFailureAt < RECOVERY_DEBOUNCE_MS) return
@@ -582,19 +647,19 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
       // the room rebuilding PeerConnections and TURN allocations indefinitely.
       if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS) return
 
-      // sdp-collision: PC is already broken — rejoin after one report.
-      // handshake-timeout: wait for a second signal (blip filter).
-      recovery.failures++
-      const need = kind === 'sdp-collision' ? 1 : 2
-      if (recovery.failures < need) return
-
-      recovery.failures = 0
       const attemptIndex = recovery.attempts
       recovery.attempts++
-      const delay =
-        RECOVERY_BACKOFF_MS[Math.min(attemptIndex, RECOVERY_BACKOFF_MS.length - 1)] ?? 15_000
+      const delay = privateRoomRecoveryDelayMs(attemptIndex, selfId, remotePeerId)
       recovery.timer = window.setTimeout(() => {
         recovery.timer = 0
+        // The elected leader may already have repaired the connection while
+        // this follower was waiting. Rejoining now would tear down the healthy
+        // replacement and recreate the simultaneous-refresh race.
+        if (Object.keys(instanceRef.current?.getPeers() ?? {}).length > 0) {
+          recovery.attempts = 0
+          recovery.lastFailureAt = 0
+          return
+        }
         setRejoinNonce(nonce => nonce + 1)
       }, delay)
     }
@@ -611,27 +676,48 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
         password,
         env: envRef.current,
         relayUrls: resolvedRelayUrls ?? undefined,
+        handshakeTimeoutMs,
         onPeerHandshake,
-        onJoinError: (details: { error?: unknown; peerId?: string }) => {
+        onJoinError: (details: { error?: unknown; appId?: string; peerId?: string }) => {
           const msg = String(details.error ?? 'Connection failed')
           const kind = classifyJoinError(msg)
           const logKey = `${appId}\n${roomId}\n${details.peerId ?? ''}\n${kind}`
           const lastLogged = loggedJoinErrorsRef.current.get(logKey) ?? 0
           if (Date.now() - lastLogged >= 60_000) {
             loggedJoinErrorsRef.current.set(logKey, Date.now())
-            if (kind === 'unknown') console.error('[Trystero] Connection issue:', details)
-            else console.warn('[Trystero] Connection issue:', details)
+            const safeDetails = safeJoinErrorLog(details, appId)
+            if (kind === 'unknown') console.error('[Trystero] Connection issue:', safeDetails)
+            else console.warn('[Trystero] Connection issue:', safeDetails)
           }
           if (kind === 'password-mismatch') {
             const connectedPeers = Object.keys(instanceRef.current?.getPeers() ?? {}).length
             if (connectedPeers === 0) reportRef.current('password-mismatch', msg)
             return
           }
-          if (isRecoverableJoinError(kind)) {
-            scheduleRecovery(kind)
-            return
+          if (isRecoverableJoinError(kind) || (kind === 'ice-failed' && recoverIceFailures)) {
+            scheduleRecovery(details.peerId)
+            if (kind !== 'ice-failed') return
           }
           if (kind === 'ice-failed') {
+            // Recovery is scheduled above for private rooms. Still report and
+            // probe the first failure so the UI and support logs explain why.
+            // Public rooms only take this reporting path.
+            // One local relay-only allocation separates "our network cannot
+            // reach TURN" from "TURN works here; inspect candidate delivery or
+            // the remote peer". It runs out of band and once per room, so it
+            // neither delays reconnection nor creates an allocation storm.
+            if (turnDiagnosticRoomRef.current !== `${appId}\n${roomId}`) {
+              turnDiagnosticRoomRef.current = `${appId}\n${roomId}`
+              void probeTurnCapability(envRef.current).then(result => {
+                console.warn('[Trystero] TURN diagnostic:', {
+                  appId,
+                  ...(details.peerId ? { peerId: details.peerId } : {}),
+                  status: result.status,
+                  transports: result.transports,
+                  detail: result.detail,
+                })
+              })
+            }
             reportRef.current(
               roomErrorKindForJoinError(kind, Boolean(getIceServers(envRef.current))),
               msg
@@ -653,7 +739,6 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
 
       instanceRef.current = joined
       // A successful join clears blip counters but keeps attempt budget for the room.
-      recoveryRef.current.failures = 0
       setRoom(joined)
     }
 
@@ -669,14 +754,24 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
       }
       setRoom(null)
     }
-  }, [appId, roomId, password, strategy, resolvedRelayUrls, onPeerHandshake, rejoinNonce])
+  }, [
+    appId,
+    roomId,
+    password,
+    strategy,
+    resolvedRelayUrls,
+    onPeerHandshake,
+    handshakeTimeoutMs,
+    recoverIceFailures,
+    rejoinNonce,
+  ])
 
   // A new room is a fresh start for recovery accounting; a pending rejoin
   // timer must not fire into a room it no longer belongs to.
   useEffect(() => {
     const recovery = recoveryRef.current
     loggedJoinErrorsRef.current.clear()
-    recovery.failures = 0
+    turnDiagnosticRoomRef.current = ''
     recovery.attempts = 0
     recovery.lastFailureAt = 0
     return () => {
@@ -698,7 +793,6 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
         window.clearTimeout(recoveryRef.current.timer)
         recoveryRef.current.timer = 0
       }
-      recoveryRef.current.failures = 0
       recoveryRef.current.attempts = 0
       recoveryRef.current.lastFailureAt = 0
     }

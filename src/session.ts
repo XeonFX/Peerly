@@ -6,10 +6,16 @@ import type { SignedAllowList } from './collab/allowList'
 import type { DeviceKeyId } from './collab/deviceIdentity'
 import type { IdentityProviderId } from './collab/identityProviders'
 import type { UserProfile } from './types'
+import {
+  ensureWorkspaceRouteId,
+  isWorkspaceRouteId,
+} from './collab/workspaceRouteId'
 
 export type PersistedSession = {
   /** High-entropy secret — doubles as the Trystero room password. */
   workspaceId: string
+  /** Public, non-secret identity used by `/workspace/:id` routes. */
+  workspaceRouteId?: string
   /** Human-readable label shown in the UI. */
   workspaceName: string
   /** Local workspace icon id in IndexedDB. */
@@ -96,6 +102,8 @@ export function loadPersistedSession(): PersistedSession | null {
     }
     return {
       workspaceId: data.workspaceId,
+      workspaceRouteId:
+        isWorkspaceRouteId(data.workspaceRouteId) ? data.workspaceRouteId : undefined,
       workspaceName: data.workspaceName,
       workspaceAvatarId:
         typeof data.workspaceAvatarId === 'string' ? data.workspaceAvatarId : undefined,
@@ -258,6 +266,16 @@ export function saveSession(session: Session): void {
   localStorage.setItem(PERSIST_KEY, JSON.stringify(persisted))
 }
 
+/** Add the public route identity to an active session from an older release. */
+export async function migrateSessionWorkspaceRouteId(): Promise<void> {
+  const loaded = loadPersistedSession()
+  if (!loaded || loaded.workspaceRouteId) return
+  saveSession({
+    ...loaded,
+    workspaceRouteId: await ensureWorkspaceRouteId(loaded),
+  })
+}
+
 /**
  * Full logout: drop identity and the open workspace. (Display profile and the
  * remembered-workspaces picker live in their own stores and survive.) Entry is
@@ -278,6 +296,7 @@ export function clearSession(): void {
 export function createSessionFromInvite(
   invite: {
     workspaceId: string
+    workspaceRouteId: string
     workspaceName: string
     creatorKeyId: DeviceKeyId
     allowList: SignedAllowList
@@ -292,6 +311,7 @@ export function createSessionFromInvite(
   const storedProfile = loadStoredProfile()
   return {
     workspaceId: invite.workspaceId,
+    workspaceRouteId: invite.workspaceRouteId,
     workspaceName: invite.workspaceName,
     workspaceAvatarId: invite.workspaceAvatarId,
     creatorKeyId: invite.creatorKeyId,

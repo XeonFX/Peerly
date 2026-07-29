@@ -30,3 +30,8 @@ export function splitSafeLinks(text: string): TextPart[] {
   if (cursor < text.length) parts.push({ kind: 'text', value: text.slice(cursor) })
   return parts.length > 0 ? parts : [{ kind: 'text', value: text }]
 }
+
+/** The first URL the user can see in a message, suitable for clipboard actions. */
+export function firstSafeLink(text: string): string | null {
+  return splitSafeLinks(text).find(part => part.kind === 'link')?.value ?? null
+}

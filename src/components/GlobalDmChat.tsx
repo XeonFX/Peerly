@@ -341,7 +341,6 @@ export function GlobalDmChat({
                 </div>
                 {!msg.deletedAt && (
                   <MessageActions
-                    messageId={msg.id}
                     text={msg.text}
                     canEdit={mine && !attachment}
                     canDelete={mine}

@@ -11,10 +11,12 @@ import {
   loadIdToken,
   loadSession,
   migrateLegacySession,
+  migrateSessionWorkspaceRouteId,
   saveIdCredentials,
   saveSession,
   type Session,
 } from '../session'
+import { migrateWorkspaceRouteIds } from '../collab/workspaceStore'
 
 /**
  * Everything that has to be true before the first render decides anything.
@@ -74,6 +76,8 @@ export function useSessionBootstrap(): SessionBootstrap {
   useEffect(() => {
     void (async () => {
       await migrateLegacySession()
+      await migrateSessionWorkspaceRouteId()
+      await migrateWorkspaceRouteIds()
 
       // A session without a live token is still a session: the user lands back
       // in their workspace and the ReauthBanner ('expired' phase) handles

@@ -7,7 +7,6 @@ import {
   pathWithHash,
   resolveInitialRoute,
   routeFromLocation,
-  workspaceSlug,
   type AppRoute,
   type PickerRoute,
   type WorkspaceRoute,
@@ -19,9 +18,8 @@ function urlForRoute(route: AppRoute, preserveHash = false): string {
   return preserveHash ? pathWithHash(pathForRoute(route)) : pathForRoute(route)
 }
 
-export function useAppRouting(workspaceName: string | undefined, signedIn: boolean, ready: boolean) {
-  const inWorkspace = Boolean(workspaceName)
-  const activeWorkspaceSlug = workspaceName ? workspaceSlug(workspaceName) : undefined
+export function useAppRouting(workspaceRouteId: string | undefined, signedIn: boolean, ready: boolean) {
+  const inWorkspace = Boolean(workspaceRouteId)
   const [route, setRoute] = useState<AppRoute>(() => resolveInitialRoute(inWorkspace, signedIn))
 
   const addressBar = useBrowserHistory({
@@ -36,7 +34,7 @@ export function useAppRouting(workspaceName: string | undefined, signedIn: boole
       const parsed = routeFromLocation(window.location)
       const signedInHome: AppRoute = signedIn ? { screen: 'home' } : { screen: 'login' }
       if (!parsed) {
-        setRoute(inWorkspace ? defaultWorkspaceRoute(workspaceName) : signedInHome)
+        setRoute(inWorkspace ? defaultWorkspaceRoute(workspaceRouteId) : signedInHome)
         return
       }
       // A workspace URL is only reachable once one is actually open; going
@@ -62,15 +60,14 @@ export function useAppRouting(workspaceName: string | undefined, signedIn: boole
 
   useEffect(() => {
     if (!ready) return
-    // Old bookmarks intentionally remain valid, but once the active workspace
-    // is known, upgrade them to the descriptive (non-secret) workspace URL.
-    // This also keeps the address bar accurate after a workspace rename.
-    if (inWorkspace && route.screen === 'workspace' && route.workspaceSlug !== activeWorkspaceSlug) {
-      navigate({ ...route, workspaceSlug: activeWorkspaceSlug }, { replace: true })
+    // Old name-based bookmarks remain valid, but once the active workspace is
+    // known, replace them with its stable, non-secret public route identity.
+    if (inWorkspace && route.screen === 'workspace' && route.workspaceRouteId !== workspaceRouteId) {
+      navigate({ ...route, workspaceRouteId }, { replace: true })
       return
     }
     if (inWorkspace && route.screen === 'picker') {
-      navigate(defaultWorkspaceRoute(workspaceName), { replace: true })
+      navigate(defaultWorkspaceRoute(workspaceRouteId), { replace: true })
       return
     }
     if (!inWorkspace && route.screen === 'workspace') {
@@ -88,11 +85,11 @@ export function useAppRouting(workspaceName: string | undefined, signedIn: boole
     if (!signedIn && route.screen === 'picker' && route.tab === 'create') {
       navigate({ screen: 'login' }, { replace: true })
     }
-  }, [ready, inWorkspace, workspaceName, activeWorkspaceSlug, signedIn, route, navigate])
+  }, [ready, inWorkspace, workspaceRouteId, signedIn, route, navigate])
 
-  const enterWorkspace = useCallback((nextWorkspaceName = workspaceName) => {
-    navigate(defaultWorkspaceRoute(nextWorkspaceName), { replace: true })
-  }, [navigate, workspaceName])
+  const enterWorkspace = useCallback((nextWorkspaceRouteId = workspaceRouteId) => {
+    navigate(defaultWorkspaceRoute(nextWorkspaceRouteId), { replace: true })
+  }, [navigate, workspaceRouteId])
 
   const leaveToPicker = useCallback(() => {
     navigate({ screen: 'home' }, { replace: true })
@@ -107,13 +104,13 @@ export function useAppRouting(workspaceName: string | undefined, signedIn: boole
 
   const setWorkspaceRoute = useCallback(
     (next: WorkspaceRoute) => {
-      navigate({ ...next, workspaceSlug: next.workspaceSlug ?? activeWorkspaceSlug })
+      navigate({ ...next, workspaceRouteId: next.workspaceRouteId ?? workspaceRouteId })
     },
-    [navigate, activeWorkspaceSlug]
+    [navigate, workspaceRouteId]
   )
 
   const pickerTab = route.screen === 'picker' ? route.tab : 'create'
-  const workspaceRoute = route.screen === 'workspace' ? route : defaultWorkspaceRoute(workspaceName)
+  const workspaceRoute = route.screen === 'workspace' ? route : defaultWorkspaceRoute(workspaceRouteId)
 
   return {
     route,

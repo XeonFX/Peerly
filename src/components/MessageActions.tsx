@@ -6,10 +6,9 @@ import {
 } from '@peerly/core'
 import { useI18n } from '../i18n'
 import { Icon, type IconName } from './Icon'
-import { buildMessageLink } from '../utils/messageLink'
+import { firstSafeLink } from '../utils/safeLinks'
 
 type Props = {
-  messageId: string
   text: string
   canEdit: boolean
   canDelete: boolean
@@ -38,7 +37,6 @@ async function copyText(value: string): Promise<void> {
 }
 
 export function MessageActions({
-  messageId,
   text,
   canEdit,
   canDelete,
@@ -56,6 +54,7 @@ export function MessageActions({
   const [position, setPosition] = useState<PanelPosition>({ left: 0, top: 0, visible: false })
   const [search, setSearch] = useState('')
   const categories = useMemo(() => searchReactionCategories(search), [search])
+  const firstUrl = useMemo(() => firstSafeLink(text), [text])
 
   useEffect(() => {
     onOpenChange?.(panel !== null)
@@ -154,14 +153,16 @@ export function MessageActions({
         setPanel(null)
       },
     },
-    {
-      label: tr('Copy link'),
-      icon: 'link',
-      run: () => {
-        void copyText(buildMessageLink(messageId))
-        setPanel(null)
-      },
-    },
+    ...(firstUrl
+      ? [{
+          label: tr('Copy link'),
+          icon: 'link' as const,
+          run: () => {
+            void copyText(firstUrl)
+            setPanel(null)
+          },
+        }]
+      : []),
   ]
 
   const floatingPanel = panel === 'reactions' ? (

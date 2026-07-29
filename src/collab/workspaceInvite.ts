@@ -2,6 +2,7 @@ import { encodeCanonicalLines, type DeviceSigner } from '@peerly/core'
 import { isEmailAllowed, verifyAllowList } from './allowList'
 import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity'
 import type { WorkspaceInvite } from './inviteLink'
+import { isWorkspaceRouteId } from './workspaceRouteId'
 
 export const WORKSPACE_INVITE_SCHEME = 'peerly-workspace-invite-v1'
 export const WORKSPACE_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -35,7 +36,7 @@ export type WorkspaceInvitePayload = {
 export function workspaceInviteBytes(
   payload: Omit<WorkspaceInvitePayload, 'sig'>
 ): Uint8Array {
-  return encodeCanonicalLines([
+  const fields = [
     WORKSPACE_INVITE_SCHEME,
     String(payload.v),
     payload.inviteId,
@@ -51,7 +52,11 @@ export function workspaceInviteBytes(
     JSON.stringify(payload.invite.allowList.emails),
     String(payload.invite.allowList.signedAt),
     payload.invite.allowList.signature,
-  ])
+  ]
+  // Preserve verification of v1 invitations created before route IDs existed:
+  // the old canonical payload ended at the allow-list signature.
+  if (payload.invite.workspaceRouteId) fields.push(payload.invite.workspaceRouteId)
+  return encodeCanonicalLines(fields)
 }
 
 export async function createWorkspaceInvite(
@@ -109,6 +114,7 @@ function payloadShapeOk(value: Partial<WorkspaceInvitePayload>): value is Worksp
     typeof invite.workspaceId === 'string' &&
     invite.workspaceId.length >= 16 &&
     invite.workspaceId.length <= 128 &&
+    (invite.workspaceRouteId === undefined || isWorkspaceRouteId(invite.workspaceRouteId)) &&
     typeof invite.workspaceName === 'string' &&
     invite.workspaceName.length > 0 &&
     invite.workspaceName.length <= MAX_WORKSPACE_NAME_LENGTH &&

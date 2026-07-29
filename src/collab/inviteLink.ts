@@ -2,6 +2,7 @@ import { generateRoomCode } from '@peerly/core'
 import { base64UrlToUtf8, utf8ToBase64Url } from '../utils/base64url'
 import type { DeviceKeyId } from './deviceIdentity'
 import type { SignedAllowList } from './allowList'
+import { isWorkspaceRouteId } from './workspaceRouteId'
 
 const INVITE_PARAM = 'invite'
 
@@ -16,6 +17,8 @@ const INVITE_PARAM = 'invite'
 export type WorkspaceAccess = {
   /** Random, high-entropy — this doubles as the Trystero room password. */
   workspaceId: string
+  /** Public, non-secret identity used only for navigation URLs. */
+  workspaceRouteId?: string
   workspaceName: string
   creatorKeyId: DeviceKeyId
   allowList: SignedAllowList
@@ -67,6 +70,7 @@ export function decodeInviteFromHash(hash: string): WorkspaceInvite | null {
       parsed.v !== 1 ||
       typeof parsed.workspaceId !== 'string' ||
       !parsed.workspaceId ||
+      (parsed.workspaceRouteId !== undefined && !isWorkspaceRouteId(parsed.workspaceRouteId)) ||
       typeof parsed.workspaceName !== 'string' ||
       typeof parsed.creatorKeyId !== 'string' ||
       !parsed.allowList ||

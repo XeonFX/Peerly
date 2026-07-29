@@ -194,7 +194,7 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
       throw new Error(tr('{email} is not on this workspace\'s invite list', { email: identity.email }))
     }
 
-    const session = persistWorkspaceSession(
+    const session = await persistWorkspaceSession(
       { ...nextInvite, workspaceAvatarId },
       identity,
       name ?? identity.name

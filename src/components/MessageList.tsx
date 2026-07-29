@@ -390,7 +390,6 @@ export function MessageList({
                 </div>
                 {!msg.deletedAt && (
                   <MessageActions
-                    messageId={msg.id}
                     text={msg.text}
                     canEdit={ownMessage && msg.type === 'text'}
                     canDelete={ownMessage}

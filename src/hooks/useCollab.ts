@@ -7,7 +7,7 @@ import { routeDmChannel } from '../collab/dmStore'
 import { FileCache } from '../collab/fileCache'
 import type { ChatPayload, ReactionPayload } from '../protocol/types'
 import type { Message, SharedFile, UserProfile } from '../types'
-import { recordSyncActivity, syncPayloadBytes } from '@peerly/core'
+import { ALLOWED_REACTIONS, recordSyncActivity, syncPayloadBytes } from '@peerly/core'
 import { estimateBrowserStorageCached, hasRoomForWrite } from '../utils/browserStorage'
 import { sanitizeHistoryEntries, verifyHistoryEntry, type SignedFields } from '../collab/messageSigning'
 import { findDeviceGrant } from '../collab/deviceAuthorization'
@@ -32,6 +32,7 @@ import { wireRoomProtocol } from './collab/wireRoomProtocol'
 import { useRoom } from './useRoom'
 import { useAttention } from './useAttention'
 import { messageFromFileMeta, toHistoryEntry } from '../protocol/mappers'
+import { aggregatePeersByUserId } from '../utils/peerPresence'
 
 export type UseCollabOptions = {
   workspaceId: string
@@ -627,7 +628,7 @@ export function useCollab({
 
   const toggleReaction = useCallback(
     (messageId: string, emoji: string) => {
-      if (!['👍', '❤️', '😂', '🎉'].includes(emoji)) return
+      if (!ALLOWED_REACTIONS.has(emoji)) return
       const message = channelStore.messages.find(entry => entry.id === messageId)
       const signer = identityRef.current?.signReaction
       if (!message || message.deletedAt || !signer) return
@@ -727,13 +728,11 @@ export function useCollab({
   )
 
   const visiblePeers = useMemo(() => {
-    const direct = peers.peers
-    const connectedUsers = new Set(direct.map(peer => peer.userId).filter(Boolean))
-    return [
-      ...direct,
-      ...relayPresencePeers.filter(peer => !peer.userId || !connectedUsers.has(peer.userId)),
-    ]
-  }, [peers.peers, relayPresencePeers])
+    return aggregatePeersByUserId(
+      [...peers.peers, ...relayPresencePeers],
+      identity?.selfUserId
+    )
+  }, [peers.peers, relayPresencePeers, identity?.selfUserId])
 
   return {
     selfId,

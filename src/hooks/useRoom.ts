@@ -4,6 +4,13 @@ import { useRoom as useCodeRoom } from '@peerly/core/react'
 import { IDENTITY_DENIED_PREFIX } from '../collab/identityHandshake'
 import { PUBLIC_NETWORK_ENV } from '../config'
 
+/**
+ * Private rooms recover promptly from a wedged initial WebRTC attempt. TURN
+ * allocation should finish well inside this window; longer waits turn one
+ * failed offer into the user-visible minute-long connection delay.
+ */
+const PRIVATE_HANDSHAKE_TIMEOUT_MS = 12_000
+
 // The join/teardown machinery moved to @peerly/core (react.ts) — including the
 // leave/rejoin race handling and Trystero error classification. This wrapper
 // binds it to this app's env and keeps Peerly's workspace-specific wording:
@@ -48,6 +55,8 @@ export function useRoom(
     env: PUBLIC_NETWORK_ENV,
     onError,
     onPeerHandshake,
+    handshakeTimeoutMs: PRIVATE_HANDSHAKE_TIMEOUT_MS,
+    recoverIceFailures: true,
     errorText: ERROR_TEXT,
   })
 }

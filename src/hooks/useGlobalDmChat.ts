@@ -35,6 +35,7 @@ import { safeThumbnailUrl } from '../utils/avatarUrl'
 
 const CHAT_SCHEME = 'peerly-gdm-v2'
 const MAX_TEXT = 4000
+const PRIVATE_HANDSHAKE_TIMEOUT_MS = 12_000
 
 export type GlobalDmTransfer = {
   id: string
@@ -161,6 +162,8 @@ export function useGlobalDmChat({
     roomId: roomCode ?? '',
     password: roomCode ?? '',
     env: PUBLIC_NETWORK_ENV,
+    handshakeTimeoutMs: PRIVATE_HANDSHAKE_TIMEOUT_MS,
+    recoverIceFailures: true,
     onError: message => setError(message),
   })
 

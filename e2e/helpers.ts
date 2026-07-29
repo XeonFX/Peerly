@@ -25,10 +25,15 @@ export function e2eWorkspaceId(workerIndex = test.info().workerIndex): string {
   return `e2e${String(workerIndex + 1).padStart(29, '0')}`
 }
 
+export function e2eWorkspaceRouteId(workerIndex = test.info().workerIndex): string {
+  return (workerIndex + 1).toString(16).padStart(32, '0')
+}
+
 export function e2eInviteHash(workerIndex = test.info().workerIndex): string {
   const invite = {
     v: 1,
     workspaceId: e2eWorkspaceId(workerIndex),
+    workspaceRouteId: e2eWorkspaceRouteId(workerIndex),
     workspaceName: E2E_WORKSPACE_NAME,
     creatorKeyId: E2E_CREATOR_KEY_ID,
     allowList: E2E_ALLOW_LIST,

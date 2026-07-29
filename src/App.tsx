@@ -62,7 +62,7 @@ function AppContent() {
   const hasRememberedIdentity = Boolean(loadIdentityEmail() && loadIdentityProvider())
   const signedIn = Boolean(loadSignedInIdentity()) || hasRememberedIdentity
   const { route, navigate, pickerTab, workspaceRoute, enterWorkspace, leaveToPicker, setPickerTab, setWorkspaceRoute } =
-    useAppRouting(session?.workspaceName, signedIn, ready)
+    useAppRouting(session?.workspaceRouteId, signedIn, ready)
   const [legalAccepted, setLegalAccepted] = useState(() => hasAcceptedCurrentLegal())
   const acceptLegal = () => {
     acceptCurrentLegal()
@@ -269,7 +269,7 @@ function AppContent() {
     return (
       <LegalPage
         doc={route.doc}
-        onBack={() => navigate(session ? defaultWorkspaceRoute(session.workspaceName) : signedIn ? { screen: 'home' } : { screen: 'login' })}
+        onBack={() => navigate(session ? defaultWorkspaceRoute(session.workspaceRouteId) : signedIn ? { screen: 'home' } : { screen: 'login' })}
       />
     )
   }
@@ -340,7 +340,7 @@ function AppContent() {
           avatarId={session?.avatarId ?? storedProfile.avatarId}
           onProfileChange={updateGlobalProfile}
           onBack={() => {
-            if (session) enterWorkspace(session.workspaceName)
+            if (session) enterWorkspace(session.workspaceRouteId)
             else navigate({ screen: 'home' })
           }}
           onSignOut={signOut}
@@ -385,7 +385,7 @@ function AppContent() {
       onPickerTabChange={setPickerTab}
       onJoined={async next => {
         setSession(await hydrateSessionAvatar(next))
-        if (route.screen !== 'devices') enterWorkspace(next.workspaceName)
+        if (route.screen !== 'devices') enterWorkspace(next.workspaceRouteId)
       }}
       onIdentityChange={nextSignedIn => {
         setIdentityVersion(version => version + 1)

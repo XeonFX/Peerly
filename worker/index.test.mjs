@@ -98,7 +98,7 @@ describe('Peerly preview network configuration', () => {
     expect(previewConfig.build?.command).toContain('VITE_APP_ID=peerly')
     expect(previewConfig.build?.command).toContain('VITE_SIGNALING=durable-objects')
     expect(previewConfig.build?.command).toContain(
-      'VITE_TURN_URLS=turn:turn.peerly.cc:3478,turns:turn.peerly.cc:5349'
+      'VITE_TURN_URLS=turn:turn.peerly.cc:3478?transport=udp,turn:turn.peerly.cc:3478?transport=tcp,turns:turn.peerly.cc:5349?transport=tcp'
     )
     expect(previewConfig.build?.command).not.toContain('VITE_RELAY_HOST')
     expect(previewConfig.build?.command).not.toContain('relay.peerly.cc')
@@ -108,7 +108,7 @@ describe('Peerly preview network configuration', () => {
   it('configures credential and rendezvous services without storing secrets in source', () => {
     expect(previewConfig.vars.APP_ID).toBe('peerly')
     expect(previewConfig.vars.TURN_URLS).toBe(
-      'turn:turn.peerly.cc:3478,turns:turn.peerly.cc:5349'
+      'turn:turn.peerly.cc:3478?transport=udp,turn:turn.peerly.cc:3478?transport=tcp,turns:turn.peerly.cc:5349?transport=tcp'
     )
     expect(previewConfig.secrets?.required).toEqual([
       'TURN_AUTH_SECRET',
