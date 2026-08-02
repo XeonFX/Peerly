@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS idempotency (
 CREATE INDEX IF NOT EXISTS idem_exp ON idempotency(expires_at);
 CREATE TABLE IF NOT EXISTS events (
   seq INTEGER PRIMARY KEY, kind TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS events_created ON events(created_at);
 CREATE TABLE IF NOT EXISTS mailbox (
   invite_id TEXT PRIMARY KEY, body TEXT NOT NULL, created_at INTEGER NOT NULL);
 `
@@ -164,10 +165,22 @@ export function createSqlGatewayStorage(sql: SqlExecutor): GatewayStorage {
       oldestSeq: () =>
         sql.exec<{ s: number | null }>('SELECT MIN(seq) AS s FROM events').toArray()[0]?.s ?? null,
       latestSeq: () => Number(meta('stream_seq') ?? '0'),
+      /**
+       * Runs on every alarm, so it is written to read rows in the hundreds
+       * rather than the millions.
+       *
+       * `seq NOT IN (SELECT seq ... LIMIT ?)` tested each candidate against a
+       * `keepNewest`-row list and had no index to find the candidates with, so
+       * one prune cost roughly `rows × keepNewest` reads. The floor below is a
+       * single non-correlated lookup down the `seq` primary key — the seq of
+       * the first row outside the retained window — and `events_created`
+       * bounds the rows the delete has to visit at all.
+       */
       prune(olderThanMs, keepNewest) {
         sql.exec(
           `DELETE FROM events WHERE created_at <= ?
-           AND seq NOT IN (SELECT seq FROM events ORDER BY seq DESC LIMIT ?)`,
+           AND seq <= COALESCE(
+             (SELECT seq FROM events ORDER BY seq DESC LIMIT 1 OFFSET ?), -1)`,
           olderThanMs, keepNewest
         )
       },
