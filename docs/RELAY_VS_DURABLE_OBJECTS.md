@@ -255,7 +255,7 @@ flowchart LR
 - **New topology to get right.** Object keying, sharding constants, alarm
   scheduling, and cross-DO reservation/compensation logic are new surface
   area that a single in-memory `Map` simply didn't have. The
-  [audit doc](./DURABLE_OBJECTS_AUDIT.md) already found and fixed several
+  [audit doc](./CONTROL_PLANE_AUDIT_2026-08-02.md) already found and fixed several
   issues in this new code, and a [client-side capability-caching bug](../packages/core/src/realtime/client.ts)
   (an empty-string "cleared" marker being resent forever instead of
   triggering re-enrollment) was found and fixed after this document's

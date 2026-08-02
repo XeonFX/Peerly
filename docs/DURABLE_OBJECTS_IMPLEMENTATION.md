@@ -46,8 +46,7 @@ of guessing.
 >   (`worker/realtime/`), not in `packages/core`. Each has exactly one
 >   consumer (HeyHubs), so keeping them in `@peerly/core` would mean Peerly
 >   source carrying HeyHubs-only product code (matching, presence stats, room
->   directory) with no shared-code benefit — see
->   [DURABLE_OBJECTS_AUDIT.md](./DURABLE_OBJECTS_AUDIT.md) finding A1. They
+>   directory) with no shared-code benefit, so they live in HeyHubs. They
 >   import `LIMITS` and `deriveScopeRouteId` from `@peerly/core/worker/realtime`
 >   like any other consumer of the package, so route-id derivation stays
 >   identical across the two RPC call sites (`UserGatewayDO.handleScopeRequest`

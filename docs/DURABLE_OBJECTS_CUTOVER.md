@@ -2,7 +2,8 @@
 
 Status: not started. Production runs `COORDINATION_BACKEND: "legacy-relay"`.
 Applies to: Peerly, HeyHubs
-Companion to: `REWRITE_ARCHITECTURE.md` (what was built), `DURABLE_OBJECTS_AUDIT.md` (what was found)
+Companion to: `REWRITE_ARCHITECTURE.md` (what was built),
+`CONTROL_PLANE_AUDIT_2026-08-02.md` (what was found)
 
 Everything the control plane needs is built and verified on preview. This is
 the sequence that puts it in front of users, and the sequence matters more

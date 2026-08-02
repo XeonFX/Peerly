@@ -15,9 +15,10 @@ Three goals, in priority order:
    shared `UserGatewayDO` hardcodes `seek.*` and `directory.*` command
    handlers, which only HeyHubs uses, and six comments in core name HeyHubs.
    Comments are cosmetic; the hardcoded handlers are the actual coupling.
-2. **The audit findings designed out, not patched.** Every finding in
-   `DURABLE_OBJECTS_AUDIT.md` is either fixed by construction here or listed
-   below with the invariant that makes it unrepresentable.
+2. **The audit findings designed out, not patched.** Every finding in the
+   2026-07-24 structural audit is either fixed by construction here or listed
+   below with the invariant that makes it unrepresentable. Later findings live
+   in `CONTROL_PLANE_AUDIT_2026-08-02.md`.
 3. **Clean architecture in the sense that pays**: pure domain logic with no
    platform imports, explicit ports, thin adapters. Not layering for its own
    sake — the test is whether a rule can be unit-tested without a Durable
