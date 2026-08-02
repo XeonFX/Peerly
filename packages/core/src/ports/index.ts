@@ -19,6 +19,18 @@ export interface Random {
 }
 
 /**
+ * Delayed work, as one pending promise.
+ *
+ * A port rather than a bare `setTimeout` for the same reason everything else
+ * here is one: delta batching is decided by wall-clock windows, and a test
+ * that had to wait them out in real time would be both slow and flaky. The
+ * Durable Object supplies the real implementation.
+ */
+export interface Scheduler {
+  after(ms: number): Promise<void>
+}
+
+/**
  * Which account this object serves.
  *
  * Deliberately a port with no constructor from an object id: a Durable Object

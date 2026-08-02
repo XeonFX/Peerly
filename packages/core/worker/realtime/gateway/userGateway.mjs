@@ -10,6 +10,15 @@ import { deriveScopeRouteId } from '../crypto.mjs'
 const PING = 'ping'
 const PONG = 'pong'
 
+/** Core's own never-batch set. The architecture forbids delaying a revoke;
+ *  an app adds its own (a match commit, say) through `app.urgentKinds`. */
+const CORE_URGENT_KINDS = ['device.revoked']
+
+/** Real delayed work for the batching window. `setTimeout` rather than an
+ *  alarm on purpose: an alarm is a billed request, and one per 75 ms batch
+ *  would cost far more than the sends it saves. */
+const scheduler = { after: ms => new Promise(resolve => setTimeout(resolve, ms)) }
+
 /**
  * Builds the `UserGatewayDO` class for one app.
  *
@@ -21,8 +30,11 @@ const PONG = 'pong'
  *
  * @param app.commands   extra command specs registered beside the core set
  * @param app.schema     extra DDL applied alongside the shared tables
+ * @param app.migrate    idempotent schema catch-up for objects that already
+ *                       exist, run after `app.schema` on every construction
  * @param app.handlers   built per request from the object's own collaborators
  * @param app.alarmCandidates  extra expiries for the single shared alarm
+ * @param app.urgentKinds  event kinds this app refuses to have batched
  * @param app.rpc        extra RPC methods, built from the object's own state.
  *                       Named separately in `app.rpcNames` because Durable
  *                       Object RPC dispatches on the prototype, so the methods
@@ -35,6 +47,10 @@ export function defineUserGateway(app = {}) {
       ctx.blockConcurrencyWhile(async () => {
         ctx.storage.sql.exec(GATEWAY_SCHEMA)
         if (app.schema) ctx.storage.sql.exec(app.schema)
+        // `CREATE TABLE IF NOT EXISTS` does nothing for an object whose table
+        // already exists, so a new column needs a step that can inspect what
+        // is actually there. Must be idempotent: it runs on every wake.
+        app.migrate?.(ctx.storage.sql)
       })
       // Answered by the runtime without waking the object, which is why the
       // client's keepalive costs nothing.
@@ -84,6 +100,8 @@ export function defineUserGateway(app = {}) {
           }) ?? {}),
         },
         presence: this.presencePublisher(),
+        scheduler,
+        urgentKinds: new Set([...CORE_URGENT_KINDS, ...(app.urgentKinds ?? [])]),
         snapshot: () => app.snapshot?.(sql) ?? {},
         alarmCandidates: () => app.alarmCandidates?.(sql) ?? [],
         onAlarm: nowMs => app.onAlarm?.(sql, nowMs),

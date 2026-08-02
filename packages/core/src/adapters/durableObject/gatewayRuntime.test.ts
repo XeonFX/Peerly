@@ -37,6 +37,16 @@ describe('GatewayRuntime', () => {
   let alarms: number[]
   let nowMs: number
   let uuidCounter: number
+  /** The batching window, driven by hand rather than waited out. */
+  let pendingFlushes: (() => void)[]
+
+  const runFlushes = async () => {
+    const due = pendingFlushes
+    pendingFlushes = []
+    for (const resolve of due) resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+  }
 
   const ctx = {
     getWebSockets: () => sockets,
@@ -69,6 +79,8 @@ describe('GatewayRuntime', () => {
         emit: async events => runtime.emit(events),
       }),
       presence,
+      scheduler: { after: () => new Promise<void>(resolve => { pendingFlushes.push(resolve) }) },
+      urgentKinds: new Set(['device.revoked']),
       snapshot: () => ({}),
     })
     return runtime
@@ -80,6 +92,7 @@ describe('GatewayRuntime', () => {
     alarms = []
     nowMs = 1_000
     uuidCounter = 0
+    pendingFlushes = []
   })
 
   describe('session registration', () => {
@@ -183,10 +196,71 @@ describe('GatewayRuntime', () => {
       await runtime.accept(socket, { uid: ACCOUNT, deviceKeyId: DEVICE_A, sid })
 
       await runtime.emit([{ kind: 'ring', body: { from: 'someone' } }])
+      // Persisted at once; the send waits out the batching window.
+      expect(storage.events.latestSeq()).toBe(1)
+      await runFlushes()
       const delta = JSON.parse(socket.sent[socket.sent.length - 1])
       expect(delta.type).toBe('delta')
       expect(delta.payload.events[0].kind).toBe('ring')
-      expect(storage.events.latestSeq()).toBe(1)
+    })
+
+    it('coalesces separate emits into one delta frame', async () => {
+      const runtime = build()
+      const { sid } = runtime.registerSession({
+        deviceKeyId: DEVICE_A, nowMs, ttlMs: 60_000,
+      }) as { sid: string }
+      const socket = fakeSocket()
+      await runtime.accept(socket, { uid: ACCOUNT, deviceKeyId: DEVICE_A, sid })
+      const before = socket.sent.length
+
+      await runtime.emit([{ kind: 'ring', body: { from: 'a' } }])
+      await runtime.emit([{ kind: 'ring', body: { from: 'b' } }])
+      expect(socket.sent.length).toBe(before)
+
+      await runFlushes()
+      expect(socket.sent.length).toBe(before + 1)
+      const delta = JSON.parse(socket.sent[socket.sent.length - 1])
+      expect(delta.payload.events.map((event: { body: { from: string } }) => event.body.from))
+        .toEqual(['a', 'b'])
+      expect(delta.payload.seq).toBe(2)
+    })
+
+    it('flushes without waiting once the item cap is reached', async () => {
+      const runtime = build()
+      const { sid } = runtime.registerSession({
+        deviceKeyId: DEVICE_A, nowMs, ttlMs: 60_000,
+      }) as { sid: string }
+      const socket = fakeSocket()
+      await runtime.accept(socket, { uid: ACCOUNT, deviceKeyId: DEVICE_A, sid })
+      const before = socket.sent.length
+
+      await runtime.emit(
+        Array.from({ length: LIMITS.batchMaxEvents }, (_, index) => ({
+          kind: 'ring', body: { from: String(index) },
+        }))
+      )
+      expect(socket.sent.length).toBe(before + 1)
+    })
+
+    /** The architecture forbids delaying a revoke behind a batching window. */
+    it('sends an urgent kind immediately, after anything already pending', async () => {
+      const runtime = build()
+      const { sid } = runtime.registerSession({
+        deviceKeyId: DEVICE_A, nowMs, ttlMs: 60_000,
+      }) as { sid: string }
+      const socket = fakeSocket()
+      await runtime.accept(socket, { uid: ACCOUNT, deviceKeyId: DEVICE_A, sid })
+      const before = socket.sent.length
+
+      await runtime.emit([{ kind: 'ring', body: { from: 'a' } }])
+      await runtime.emit([{ kind: 'device.revoked', body: { deviceKeyId: DEVICE_A } }])
+
+      // Two frames, pending batch first: a client applies deltas by sequence,
+      // so the urgent one must not overtake what it follows.
+      expect(socket.sent.length).toBe(before + 2)
+      const [queued, urgent] = socket.sent.slice(-2).map(frame => JSON.parse(frame))
+      expect(queued.payload.events[0].kind).toBe('ring')
+      expect(urgent.payload.events[0].kind).toBe('device.revoked')
     })
 
     it('stores a mailbox copy without needing an open socket', async () => {

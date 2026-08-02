@@ -36,6 +36,21 @@ async function connect(stub, { uid = ACCOUNT, dk = DEVICE } = {}) {
   return { ws, frames, closed, sid }
 }
 
+/** Deltas are coalesced for `batchWindowMs` before they go out, so a frame
+ *  cannot be read straight off the array the way an ack can. */
+function waitForFrame(frames, match) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('no matching frame')), 5_000)
+    const poll = setInterval(() => {
+      const frame = frames.find(match)
+      if (!frame) return
+      clearInterval(poll)
+      clearTimeout(timer)
+      resolve(frame)
+    }, 5)
+  })
+}
+
 function send(ws, frames, type, payload, id = crypto.randomUUID()) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`no answer for ${type}`)), 5_000)
@@ -120,7 +135,7 @@ describe('UserGatewayDO', () => {
     const stub = gateway('rw-deliver')
     const { frames } = await connect(stub)
     await stub.deliver({ uid: ACCOUNT, events: [{ kind: 'ring', body: { from: 'someone' } }] })
-    const delta = frames.find(frame => frame.type === 'delta')
+    const delta = await waitForFrame(frames, frame => frame.type === 'delta')
     expect(delta.payload.events[0].kind).toBe('ring')
   })
 

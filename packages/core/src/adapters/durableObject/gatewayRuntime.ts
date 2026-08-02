@@ -12,10 +12,12 @@ import type { CommandRegistry } from '../../protocol/commands.js'
 import { asDeviceKeyId, asOpaqueUserId, type DeviceKeyId, type OpaqueUserId } from '../../protocol/ids.js'
 import { decideEnrollment, isSessionValid } from '../../domain/deviceRegistry.js'
 import { expiredLease, isLastSocket, leaseFor, renewAtMs } from '../../domain/presence.js'
-import { retentionCutoff } from '../../domain/eventStream.js'
-import type { StreamEvent } from '../../domain/eventStream.js'
+import {
+  addToBatch, EMPTY_BATCH, retentionCutoff, shouldFlush, type BatchState,
+} from '../../domain/eventStream.js'
+import type { StoredEvent, StreamEvent } from '../../domain/eventStream.js'
 import type {
-  Clock, ControlSocket, GatewayStorage, PresencePublisher, Random,
+  Clock, ControlSocket, GatewayStorage, PresencePublisher, Random, Scheduler,
 } from '../../ports/index.js'
 import { GatewayService, type CommandHandler } from '../../app/gatewayService.js'
 import { deliverToAccount, socketSetOf } from '../../app/coreHandlers.js'
@@ -57,6 +59,16 @@ export type GatewayRuntimeOptions = {
    *  command, which the registry already refuses at construction. */
   readonly handlers: Record<string, CommandHandler>
   readonly presence: PresencePublisher | null
+  readonly scheduler: Scheduler
+  /**
+   * Event kinds that must go out on their own, immediately.
+   *
+   * The architecture names them: authentication, matching commit, revoke and
+   * leave/close acknowledgements are never batched. Only `device.revoked` is
+   * core's own — an app adds its kinds here rather than core learning about
+   * them, which is the same boundary the command registry draws.
+   */
+  readonly urgentKinds?: ReadonlySet<string>
   readonly snapshot: () => unknown
   /** Extra expiries the app wants the shared alarm to respect. */
   readonly alarmCandidates?: () => readonly number[]
@@ -66,6 +78,8 @@ export type GatewayRuntimeOptions = {
 export class GatewayRuntime {
   private readonly options: GatewayRuntimeOptions
   private readonly service: GatewayService
+  private batch: BatchState = EMPTY_BATCH
+  private flushArmed = false
 
   constructor(options: GatewayRuntimeOptions) {
     this.options = options
@@ -136,6 +150,10 @@ export class GatewayRuntime {
     }
 
     this.options.storage.identity.remember(uid)
+    // Drain to the sockets that were already here. The arriving one catches up
+    // from its own resume cursor, so letting it also receive a batch opened
+    // before it existed would deliver those events to it twice.
+    this.flushBatch()
     this.options.ctx.acceptWebSocket(raw)
     raw.serializeAttachment({
       cid: this.options.random.uuid(),
@@ -221,7 +239,15 @@ export class GatewayRuntime {
     return this.options.storage.nonces.consume(hash, expiresAtMs)
   }
 
-  /** Append events, push them to connected sockets, and store any mailbox copy. */
+  /**
+   * Append events, push them to connected sockets, and store any mailbox copy.
+   *
+   * The append is always immediate — the stream is the durable record a
+   * resuming client is owed, and nothing about batching may delay it. Only the
+   * *send* is coalesced, into one `delta` frame per `batchWindowMs` under the
+   * item and byte caps, which is what the cost model asks for and what the
+   * declared batching constants were doing nothing about.
+   */
   async emit(
     events: readonly StreamEvent[],
     mailbox?: { inviteId: string; body: string },
@@ -232,13 +258,47 @@ export class GatewayRuntime {
     deliverToAccount(this.options.storage, this.options.clock, mailbox)
     if (events.length === 0) return
 
-    const appended = this.options.storage.events.append(events, this.options.clock.nowMs())
+    const nowMs = this.options.clock.nowMs()
+    const appended = this.options.storage.events.append(events, nowMs)
+
+    if (appended.some(event => this.options.urgentKinds?.has(event.kind))) {
+      // Anything already waiting goes first: a client applies deltas by
+      // sequence, so overtaking a pending batch would deliver them backwards.
+      this.flushBatch()
+      this.sendDelta(appended)
+      return
+    }
+
+    for (const event of appended) this.batch = addToBatch(this.batch, event, nowMs)
+    if (shouldFlush(this.batch, nowMs)) this.flushBatch()
+    else this.armFlush()
+  }
+
+  private sendDelta(events: readonly StoredEvent[]): void {
+    if (events.length === 0) return
     const frame = encodeDelta(
       this.options.random.uuid(),
-      appended,
-      appended[appended.length - 1].seq
+      events,
+      events[events.length - 1].seq
     )
     for (const socket of this.sockets()) socket.send(frame)
+  }
+
+  private flushBatch(): void {
+    const pending = this.batch
+    this.batch = EMPTY_BATCH
+    this.sendDelta(pending.events)
+  }
+
+  /** One pending flush at a time — never an interval, which would keep the
+   *  object awake and bill for every tick whether or not anything was due. */
+  private armFlush(): void {
+    if (this.flushArmed) return
+    this.flushArmed = true
+    void this.options.scheduler.after(LIMITS.batchWindowMs).then(() => {
+      this.flushArmed = false
+      this.flushBatch()
+    })
   }
 
   // ---- alarms and presence -------------------------------------------------
