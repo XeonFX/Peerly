@@ -8,6 +8,7 @@
 import { LIMITS } from '../protocol/limits.js'
 import { FrameError } from '../protocol/frames.js'
 import { nextEpoch } from '../domain/deviceRegistry.js'
+import { createBucket, take, type Bucket } from '../domain/rateLimit.js'
 import type {
   DeviceRevokePayload, InviteAckPayload, InviteSendPayload,
   RingSendPayload, ScopeLeavePayload, ScopeRequestPayload,
@@ -37,7 +38,42 @@ const required = <T>(value: T | null, what: string): T => {
   return value
 }
 
+const DELIVERY_POLICY = {
+  burst: LIMITS.deliveriesBurstPerRecipient,
+  sustainedPerSecond: LIMITS.deliveriesSustainedPerRecipient,
+}
+
+/**
+ * A per-recipient ceiling on `invite.send` and `ring.send`.
+ *
+ * Both commands name their target, and the command budget alone is a
+ * per-socket allowance — so without this, an account could spend all of it on
+ * one person: enough to fill a mailbox in seconds and to bill this account for
+ * every write. The bucket map is bounded and in-memory, which only ever refills
+ * tokens early, and the durable half of the protection is the mailbox refusing
+ * to evict (see `deliverToAccount`).
+ */
+function createDeliveryLimiter(clock: Clock) {
+  const buckets = new Map<string, Bucket>()
+  return (recipient: string): void => {
+    const nowMs = clock.nowMs()
+    const decision = take(buckets.get(recipient) ?? createBucket(DELIVERY_POLICY, nowMs), DELIVERY_POLICY, nowMs)
+    // Re-insert last so the map is ordered oldest-first for eviction.
+    buckets.delete(recipient)
+    buckets.set(recipient, decision.bucket)
+    if (buckets.size > LIMITS.deliveryRecipientsTracked) {
+      const oldest = buckets.keys().next()
+      if (!oldest.done) buckets.delete(oldest.value)
+    }
+    if (!decision.allowed) {
+      throw new FrameError('too many deliveries to this recipient', { code: 'rate-limited' })
+    }
+  }
+}
+
 export function createCoreHandlers(deps: CoreHandlerDeps): Record<string, CommandHandler> {
+  const limitDeliveryTo = createDeliveryLimiter(deps.clock)
+
   return {
     'scope.request': (async (payload: ScopeRequestPayload, context: CommandContext) => {
       const scopes = required(deps.scopes, 'signalling')
@@ -57,13 +93,22 @@ export function createCoreHandlers(deps: CoreHandlerDeps): Record<string, Comman
 
     'invite.send': (async (payload: InviteSendPayload, context: CommandContext) => {
       const peers = required(deps.peers, 'invites')
+      limitDeliveryTo(payload.to)
       const inviteId = deps.random.uuid()
       const body = { inviteId, from: context.identity, kind: payload.kind, body: payload.body }
-      await peers.deliver(
+      const result = await peers.deliver(
         payload.to,
         [{ kind: 'invite', body }],
         { inviteId, body: JSON.stringify(body) }
       )
+      // The recipient refuses rather than evicting an unread invite, so this
+      // has to reach the sender instead of being reported as delivered.
+      // `cap-exceeded` is the existing code for it — a retry cannot help until
+      // the recipient acknowledges something, which is what the client needs
+      // to know.
+      if (result && result.ok === false) {
+        throw new FrameError('recipient mailbox is full', { code: 'cap-exceeded' })
+      }
       return { inviteId }
     }) as CommandHandler,
 
@@ -77,6 +122,7 @@ export function createCoreHandlers(deps: CoreHandlerDeps): Record<string, Comman
 
     'ring.send': (async (payload: RingSendPayload, context: CommandContext) => {
       const peers = required(deps.peers, 'ringing')
+      limitDeliveryTo(payload.to)
       await peers.deliver(payload.to, [{
         kind: 'ring',
         body: { from: context.identity, roomRoute: payload.roomRoute },
@@ -113,20 +159,27 @@ export function createCoreHandlers(deps: CoreHandlerDeps): Record<string, Comman
 }
 
 /**
- * Store an inbound event stream and mailbox entry for this account, evicting
- * the oldest mailbox row when full.
+ * Store an inbound mailbox entry for this account.
+ *
+ * A full mailbox refuses the new entry rather than evicting the oldest. Every
+ * row present is unread by construction — `invite.ack` drops an entry the
+ * moment the client confirms it — so eviction destroyed unread invites, and
+ * because any account may address any other, that was a way to clear somebody's
+ * mailbox on demand at roughly five entries a second. Refusing is visible to
+ * the sender and costs the recipient nothing.
  */
 export function deliverToAccount(
   storage: GatewayStorage,
   clock: Clock,
   mailbox: { inviteId: string; body: string } | undefined
-): void {
-  if (!mailbox) return
-  if (storage.mailbox.count() >= LIMITS.mailboxEntries) {
-    const oldest = storage.mailbox.oldestId()
-    if (oldest) storage.mailbox.drop(oldest)
+): { ok: true } | { ok: false; code: 'mailbox-full' } {
+  if (!mailbox) return { ok: true }
+  // A repeat of an entry already held is a retry, not a new occupant.
+  if (storage.mailbox.count() >= LIMITS.mailboxEntries && !storage.mailbox.has(mailbox.inviteId)) {
+    return { ok: false, code: 'mailbox-full' }
   }
   storage.mailbox.put(mailbox.inviteId, mailbox.body, clock.nowMs())
+  return { ok: true }
 }
 
 /** Sockets belonging to one account, as the handlers see them. */

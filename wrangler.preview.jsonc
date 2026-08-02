@@ -43,6 +43,15 @@
       "name": "RENDEZVOUS_RATE_LIMITER",
       "namespace_id": "1002",
       "simple": { "limit": 60, "period": 60 }
+    },
+    {
+      // Caps /api/network/enroll and /api/network/session. These are the only
+      // way to make the control plane spend Durable Object requests without
+      // already holding a socket, and nothing capped them until a runaway
+      // client spent a whole daily quota through them.
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "1003",
+      "simple": { "limit": 10, "period": 60 }
     }
   ],
   "durable_objects": {
@@ -56,8 +65,7 @@
   // Append-only. `realtime-v1` stays exactly as it was applied — editing an
   // applied tag is how a namespace ends up disagreeing with its config — so
   // dropping WorkspaceDO takes a second tag rather than a smaller first one.
-  // It was never reachable and is now deleted from the source; see
-  // docs/DURABLE_OBJECTS_AUDIT.md.
+  // It was never reachable and is now deleted from the source.
   "migrations": [
     {
       "tag": "realtime-v1",

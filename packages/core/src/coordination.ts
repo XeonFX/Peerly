@@ -3,6 +3,7 @@ import type { Env } from './env.js'
 import { requireAppId } from './env.js'
 import { resolveRelayUrls } from './relays.js'
 import { getDurableObjectsTransport } from './realtime/runtime.js'
+import { LIMITS } from './protocol/index.js'
 
 const COORDINATION_TOPIC = '__relay_coord_v1__'
 const REFRESH_MS = 10_000
@@ -29,6 +30,8 @@ const SOCKET_POLL_MS = 1_000
  */
 const DO_STATS_REFRESH_MS = 10_000
 const DO_ROOMS_REFRESH_MS = 30_000
+/** Renew at half the lease, so one missed renewal does not drop the watch. */
+const DO_WATCH_RENEW_MS = Math.floor(LIMITS.directoryWatchTtlMs / 2)
 
 type Command = { v: 1; type: 'coord'; action: string; [key: string]: unknown }
 
@@ -427,6 +430,7 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
   let hostedRoom: { directory: string; roomId: string; revision: number } | null = null
   let statsTimer: ReturnType<typeof globalThis.setInterval> | undefined
   let roomsTimer: ReturnType<typeof globalThis.setInterval> | undefined
+  let watchTimer: ReturnType<typeof globalThis.setInterval> | undefined
   let onVisibility: (() => void) | null = null
   // Strictly-increasing revision for directory writes. Date.now() alone can
   // repeat (two re-announces in the same millisecond) or invert under async
@@ -488,13 +492,35 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
 
   const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible'
 
+  /**
+   * Hold a directory watch, so changes are pushed instead of polled.
+   *
+   * Falls back to the old timer when the deployment cannot push — an older
+   * worker that does not know the command, or a shard already at its watcher
+   * cap. Renewing at half the lease keeps one outstanding renewal rather than
+   * a poll every thirty seconds, which was the largest per-tab cost here.
+   */
+  const startDirectoryWatch = () => {
+    if (watchTimer || roomsTimer) return
+    const renew = () => {
+      transport.watchDirectory().then(() => {
+        watchTimer ??= globalThis.setInterval(renew, DO_WATCH_RENEW_MS)
+      }).catch(() => {
+        if (watchTimer) globalThis.clearInterval(watchTimer)
+        watchTimer = undefined
+        roomsTimer ??= globalThis.setInterval(() => {
+          if (visible()) void refreshRooms()
+        }, DO_ROOMS_REFRESH_MS)
+      })
+    }
+    renew()
+  }
+
   const startRefreshTimer = () => {
     statsTimer ??= globalThis.setInterval(() => {
       if (visible()) void refreshStats()
     }, DO_STATS_REFRESH_MS)
-    roomsTimer ??= globalThis.setInterval(() => {
-      if (visible()) void refreshRooms()
-    }, DO_ROOMS_REFRESH_MS)
+    startDirectoryWatch()
     if (onVisibility || typeof document === 'undefined') return
     // Coming back to the tab should show current state immediately, not up to
     // a full poll interval of staleness — that catch-up is what makes it
@@ -510,8 +536,15 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
   const stopRefreshTimers = () => {
     if (statsTimer) globalThis.clearInterval(statsTimer)
     if (roomsTimer) globalThis.clearInterval(roomsTimer)
+    if (watchTimer) {
+      globalThis.clearInterval(watchTimer)
+      // Give the lease up rather than letting it run out: the shard would keep
+      // pushing to an account that stopped looking for the rest of the TTL.
+      void transport.unwatchDirectory().catch(() => {})
+    }
     statsTimer = undefined
     roomsTimer = undefined
+    watchTimer = undefined
     if (onVisibility && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibility)
     }
@@ -521,6 +554,11 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
   transport.events.addEventListener('state', event => {
     available = (event as CustomEvent<string>).detail === 'ready'
     emit({ type: 'status', available })
+  })
+  // The shard pushes "your view is stale" and the client reads once, which is
+  // what replaces the thirty-second poll.
+  transport.events.addEventListener('directory.change', () => {
+    if (watchedDirectory) void refreshRooms()
   })
   transport.events.addEventListener('match.commit', event => {
     const pool = activeSeek?.pool || watchedPool
@@ -547,10 +585,11 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
     })
   })
 
-  void transport.connect().then(() => {
-    available = true
-    emit({ type: 'status', available: true })
-  }).catch(() => emit({ type: 'status', available: false }))
+  // Start connecting, but let the `state` listener above own `available`.
+  // `connect()` resolves as soon as one cycle finishes — including a cycle that
+  // failed and only scheduled a retry — so treating its resolution as success
+  // reported an available coordinator on a transport that had never connected.
+  void transport.connect().catch(() => {})
 
   return {
     setPresence() {},
@@ -614,6 +653,13 @@ function createDurableObjectsCoordinator(env: Env): RelayCoordinator {
       listener({ type: 'status', available })
       return () => listeners.delete(listener)
     },
+    /**
+     * Deliberately does not close the transport. `getDurableObjectsTransport`
+     * returns one instance per app, shared with signalling and with every
+     * `sendRealtimeCommand` caller, so closing it here would tear down a
+     * connection those still depend on. This coordinator owns its timers and
+     * its outstanding seek, and nothing else.
+     */
     close() {
       closed = true
       stopRefreshTimers()

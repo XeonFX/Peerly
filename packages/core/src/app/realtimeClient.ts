@@ -51,6 +51,9 @@ export class RealtimeClient extends EventTarget {
   private pingTimer: number | null = null
   private resumeTimer: number | null = null
   private stabilityTimer: number | null = null
+  /** What the server's last `Retry-After` asked for, consumed by the next
+   *  reconnect. Set on a failed cycle, cleared once it has been applied. */
+  private retryAfterMs: number | null = null
   private lastAckSeq = 0
   private resumeLoaded = false
   private readonly pending = new Map<string, Pending>()
@@ -156,7 +159,10 @@ export class RealtimeClient extends EventTarget {
         await this.options.store.set(CAPABILITY_KEY, '')
         throw new Error('session-rejected')
       }
-      if (session.kind === 'failed') throw new Error('session-failed')
+      if (session.kind === 'failed') {
+        this.retryAfterMs = session.retryAfterMs ?? null
+        throw new Error('session-failed')
+      }
 
       this.setState('connecting')
       await this.loadResumeCursor()
@@ -182,7 +188,10 @@ export class RealtimeClient extends EventTarget {
 
     this.setState('enrolling')
     const result = await this.options.api.enroll()
-    if (result.kind !== 'capability') throw new Error(`enroll-${result.kind}`)
+    if (result.kind !== 'capability') {
+      if (result.kind === 'failed') this.retryAfterMs = result.retryAfterMs ?? null
+      throw new Error(`enroll-${result.kind}`)
+    }
     await this.options.store.set(CAPABILITY_KEY, result.capability)
     return result.capability
   }
@@ -244,7 +253,12 @@ export class RealtimeClient extends EventTarget {
     // Equal jitter: half the cap fixed, half spread. Full jitter (`random() *
     // cap`) has no floor, so a client that kept losing its socket could retry
     // again in ~0ms however far the backoff had escalated.
-    const delay = cap / 2 + random() * (cap / 2)
+    const jittered = cap / 2 + random() * (cap / 2)
+    // A server that said how long to wait outranks our own guess. Jitter still
+    // applies on top, so a fleet told the same number does not return in lockstep.
+    const asked = this.retryAfterMs
+    this.retryAfterMs = null
+    const delay = asked === null ? jittered : asked + random() * (cap / 2)
     this.reconnectTimer = this.options.timers.setTimeout(() => {
       this.reconnectTimer = null
       void this.beginCycle()

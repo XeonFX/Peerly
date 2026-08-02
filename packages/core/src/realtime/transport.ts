@@ -21,6 +21,10 @@ export interface CoordinationTransport {
   publishRoom(roomId: string, revision: number, entry: RoomEntry): Promise<void>
   deleteRoom(roomId: string, revision: number): Promise<void>
   listRooms(cursor?: string): Promise<RoomPage>
+  /** Take (or renew) a lease on directory changes, so the listing is pushed
+   *  instead of polled. Rejects when the deployment cannot push. */
+  watchDirectory(): Promise<{ expiresAt: number }>
+  unwatchDirectory(): Promise<void>
   sendInvite(to: string, kind: string, body: object): Promise<void>
   /** Revoke one of this account's own devices server-side (sessions + sockets). */
   revokeDevice(deviceKeyId: string): Promise<void>
@@ -97,6 +101,14 @@ class DurableObjectTransport implements CoordinationTransport {
 
   async listRooms(cursor?: string): Promise<RoomPage> {
     return this.client.send<RoomPage>('directory.list', cursor ? { cursor } : undefined)
+  }
+
+  async watchDirectory(): Promise<{ expiresAt: number }> {
+    return this.client.send<{ expiresAt: number }>('directory.watch')
+  }
+
+  async unwatchDirectory(): Promise<void> {
+    await this.client.send('directory.unwatch')
   }
 
   async sendInvite(to: string, kind: string, body: object): Promise<void> {

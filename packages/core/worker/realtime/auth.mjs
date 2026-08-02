@@ -19,6 +19,61 @@ const conflict = code => json({ code }, { status: 409 })
 const notConfigured = () => new Response('Realtime backend is not configured', { status: 503 })
 const forbiddenOrigin = () => new Response('Forbidden origin', { status: 403 })
 
+/**
+ * A Durable Object call failed — overloaded, over quota, or faulting.
+ *
+ * `503` with `Retry-After`, never an uncaught throw. An uncaught throw is a
+ * `500`, every client reads a `500` as retryable, and the symptom of an
+ * overloaded control plane becomes a stampede against it: on 2026-08-02 that
+ * was 195,185 requests and zero successes in one hour.
+ */
+const RETRY_AFTER_SECONDS = 30
+const backendUnavailable = () =>
+  json({ code: 'service-unavailable' }, {
+    status: 503,
+    headers: { 'retry-after': String(RETRY_AFTER_SECONDS) },
+  })
+
+/** Runs a gateway call, converting a failure into 503 rather than letting it
+ *  reach the client as an unhandled 500. */
+async function callGateway(operation) {
+  try {
+    return { value: await operation() }
+  } catch {
+    return { error: backendUnavailable() }
+  }
+}
+
+/**
+ * Caps the enrol/session endpoints, which are the only unauthenticated-ish way
+ * to make the control plane spend Durable Object requests.
+ *
+ * Keyed by device key where there is one, falling back to the connecting IP,
+ * so a single broken client cannot spend an account-wide daily quota — which
+ * is exactly what happened before this existed. Absent binding means no
+ * limiter is configured, and the endpoint stays open rather than failing shut:
+ * this is a cost control, not an authorization one.
+ */
+async function withinAuthRateLimit(request, env) {
+  const limiter = env.AUTH_RATE_LIMITER
+  if (!limiter) return true
+  const key = request.headers.get('x-peerly-device-key')
+    || request.headers.get('cf-connecting-ip')
+    || 'anonymous'
+  try {
+    const { success } = await limiter.limit({ key })
+    return success
+  } catch {
+    return true
+  }
+}
+
+const rateLimited = () =>
+  json({ code: 'rate-limited' }, {
+    status: 429,
+    headers: { 'retry-after': String(RETRY_AFTER_SECONDS) },
+  })
+
 /** All endpoints reject a non-allowlisted Origin with 403 — see plan section 5. */
 function originAllowed(request, config) {
   return config.allowedOrigin(request.headers.get('origin') ?? '')
@@ -33,6 +88,7 @@ export async function handleEnroll(request, env, config) {
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { allow: 'POST' } })
   if (!originAllowed(request, config)) return forbiddenOrigin()
   if (!env.NETWORK_SESSION_SECRET || !env.OPAQUE_USER_ID_SECRET) return notConfigured()
+  if (!await withinAuthRateLimit(request, env)) return rateLimited()
 
   const contentLength = Number(request.headers.get('content-length') ?? '0')
   if (contentLength > LIMITS.maxRequestBodyBytes) return new Response('Request too large', { status: 413 })
@@ -85,13 +141,15 @@ export async function handleEnroll(request, env, config) {
   const gateway = gatewayFor(env, config.app, uid)
 
   const nonceHash = await sha256Hex(`enroll\n${deviceKeyId}\n${nonce}`)
-  // The uid rides along on every gateway call: a Durable Object cannot read
+  // One call, not two. The uid rides along on it: a Durable Object cannot read
   // back the name it was addressed by (`ctx.id.name` is undefined inside the
   // object), so the caller is the only source of "which account is this".
-  const fresh = await gateway.consumeNonce(nonceHash, now + LIMITS.nonceTtlMs, uid)
-  if (!fresh) return conflict('replay')
-
-  const registered = await gateway.registerSession({ dk: deviceKeyId, now, ttlMs: LIMITS.capabilityTtlMs, uid })
+  const enrolled = await callGateway(() => gateway.enrollDevice({
+    nonceHash, nonceExpiresAt: now + LIMITS.nonceTtlMs,
+    dk: deviceKeyId, now, ttlMs: LIMITS.capabilityTtlMs, uid,
+  }))
+  if (enrolled.error) return enrolled.error
+  const registered = enrolled.value
   if (registered.code) return conflict(registered.code)
 
   const capability = await mintCapability(env.NETWORK_SESSION_SECRET, {
@@ -107,6 +165,7 @@ export async function handleSession(request, env, config) {
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { allow: 'POST' } })
   if (!originAllowed(request, config)) return forbiddenOrigin()
   if (!env.NETWORK_SESSION_SECRET || !env.OPAQUE_USER_ID_SECRET) return notConfigured()
+  if (!await withinAuthRateLimit(request, env)) return rateLimited()
 
   const contentLength = Number(request.headers.get('content-length') ?? '0')
   if (contentLength > LIMITS.maxRequestBodyBytes) return new Response('Request too large', { status: 413 })
@@ -150,13 +209,13 @@ export async function handleSession(request, env, config) {
 
   const gateway = gatewayFor(env, config.app, claims.uid)
   const nonceHash = await sha256Hex(`session\n${deviceKeyId}\n${nonce}`)
-  const fresh = await gateway.consumeNonce(nonceHash, now + LIMITS.nonceTtlMs, claims.uid)
-  if (!fresh) return conflict('replay')
-
-  const validation = await gateway.validateSession({
+  const opened = await callGateway(() => gateway.openSession({
+    nonceHash, nonceExpiresAt: now + LIMITS.nonceTtlMs,
     sid: claims.sid, dk: deviceKeyId, epoch: claims.epoch, uid: claims.uid,
-  })
-  if (!validation.ok) return unauthorized()
+  }))
+  if (opened.error) return opened.error
+  if (opened.value.code === 'replay') return conflict('replay')
+  if (!opened.value.ok) return unauthorized()
 
   const cookie = await mintCookie(env.NETWORK_SESSION_SECRET, {
     app: config.app, uid: claims.uid, publicUserId: claims.user,

@@ -183,6 +183,32 @@ export function defineUserGateway(app = {}) {
 
     // ---- RPC, called by Worker routes and sibling objects ----
 
+    /**
+     * Replay check and enrolment in one round trip.
+     *
+     * Both halves address the same object, so issuing them as two RPCs billed
+     * two Durable Object requests for one logical operation — on the hottest
+     * path in the system — and left a window where the nonce was spent but no
+     * session existed.
+     */
+    async enrollDevice({ nonceHash, nonceExpiresAt, dk, now, ttlMs, uid }) {
+      if (!this.runtime.consumeNonce(nonceHash, nonceExpiresAt, uid)) return { code: 'replay' }
+      const result = this.runtime.registerSession({
+        deviceKeyId: dk, nowMs: now ?? Date.now(), ttlMs, uid,
+      })
+      if ('error' in result) return { code: 'invalid-device' }
+      await this.runtime.scheduleAlarm()
+      return result
+    }
+
+    /** The session counterpart: replay check and validation in one call. */
+    async openSession({ nonceHash, nonceExpiresAt, sid, dk, epoch, uid }) {
+      if (!this.runtime.consumeNonce(nonceHash, nonceExpiresAt, uid)) return { code: 'replay' }
+      const ok = this.runtime.validateSession({ sid, deviceKeyId: dk, epoch, uid })
+      await this.runtime.scheduleAlarm()
+      return { ok }
+    }
+
     async registerSession({ dk, now, ttlMs, uid }) {
       const result = this.runtime.registerSession({
         deviceKeyId: dk, nowMs: now ?? Date.now(), ttlMs, uid,
@@ -203,11 +229,13 @@ export function defineUserGateway(app = {}) {
     }
 
     async deliver({ events = [], mailbox, uid }) {
-      await this.runtime.emit(events, mailbox && {
+      // The runtime's answer is the recipient's: a full mailbox refuses, and
+      // the sending gateway turns that into an error for its own client
+      // instead of reporting a delivery that did not happen.
+      return this.runtime.emit(events, mailbox && {
         inviteId: mailbox.inviteId ?? mailbox.invite_id,
         body: mailbox.body,
       }, uid)
-      return { ok: true }
     }
 
     appRpc() {

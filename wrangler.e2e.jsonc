@@ -49,6 +49,15 @@
       "name": "RENDEZVOUS_RATE_LIMITER",
       "namespace_id": "1099",
       "simple": { "limit": 60, "period": 60 }
+    },
+    {
+      // Caps /api/network/enroll and /api/network/session. These are the only
+      // way to make the control plane spend Durable Object requests without
+      // already holding a socket, and nothing capped them until a runaway
+      // client spent a whole daily quota through them.
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "1098",
+      "simple": { "limit": 10, "period": 60 }
     }
   ],
   "durable_objects": {

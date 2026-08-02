@@ -118,6 +118,40 @@ describe('core command handlers', () => {
     })
   })
 
+  /**
+   * Both delivering commands name their target, and the command budget is a
+   * per-socket allowance — so all of it could be aimed at one person. That was
+   * enough to fill a stranger's mailbox in seconds and to bill this account for
+   * every write, from any account that had ever learned the opaque id.
+   */
+  describe('per-recipient delivery limit', () => {
+    it('stops one socket aiming its whole budget at a single recipient', async () => {
+      const handlers = build()
+      const ring = () => handlers['ring.send']({ to: 'victim', roomRoute: 'r' } as never, context())
+
+      for (let sent = 0; sent < LIMITS.deliveriesBurstPerRecipient; sent += 1) await ring()
+      await expect(ring()).rejects.toThrow(/deliveries/)
+      expect(peers.deliver).toHaveBeenCalledTimes(LIMITS.deliveriesBurstPerRecipient)
+    })
+
+    it('counts each recipient separately, so one target cannot mute the rest', async () => {
+      const handlers = build()
+      for (let sent = 0; sent < LIMITS.deliveriesBurstPerRecipient; sent += 1) {
+        await handlers['ring.send']({ to: 'victim', roomRoute: 'r' } as never, context())
+      }
+      await expect(
+        handlers['ring.send']({ to: 'someone-else', roomRoute: 'r' } as never, context())
+      ).resolves.toEqual({})
+    })
+
+    it('reports a refused mailbox to the sender instead of acknowledging it', async () => {
+      peers.deliver = vi.fn(async () => ({ ok: false, code: 'mailbox-full' }))
+      await expect(
+        build({ peers })['invite.send']({ to: 'full', kind: 'k', body: {} } as never, context())
+      ).rejects.toThrow(/mailbox/)
+    })
+  })
+
   describe('device.revoke', () => {
     beforeEach(() => {
       storage.sessions.insert({
@@ -160,13 +194,31 @@ describe('core command handlers', () => {
       expect(storage.mailbox.count()).toBe(1)
     })
 
-    it('evicts the oldest entry once full', () => {
+    /**
+     * Every entry present is unread — `invite.ack` drops one the moment the
+     * client confirms it — so evicting to make room destroyed an unread invite.
+     * Any account may address any other, which made that a way to clear
+     * somebody's mailbox on demand.
+     */
+    it('refuses a new entry once full rather than evicting an unread one', () => {
       for (let index = 0; index < LIMITS.mailboxEntries; index += 1) {
         storage.mailbox.put(`i${index}`, '{}', index)
       }
-      deliverToAccount(storage, clock, { inviteId: 'newest', body: '{}' })
+      const result = deliverToAccount(storage, clock, { inviteId: 'newest', body: '{}' })
+
+      expect(result).toEqual({ ok: false, code: 'mailbox-full' })
       expect(storage.mailbox.count()).toBe(LIMITS.mailboxEntries)
-      expect(storage.mailbox.oldestId()).not.toBe('i0')
+      expect(storage.mailbox.oldestId()).toBe('i0')
+    })
+
+    it('still accepts a redelivery of an entry it already holds', () => {
+      for (let index = 0; index < LIMITS.mailboxEntries; index += 1) {
+        storage.mailbox.put(`i${index}`, '{}', index)
+      }
+      // A retried delivery is not a new occupant, so the cap must not reject it.
+      expect(deliverToAccount(storage, clock, { inviteId: 'i0', body: '{"v":2}' }))
+        .toEqual({ ok: true })
+      expect(storage.mailbox.count()).toBe(LIMITS.mailboxEntries)
     })
 
     it('does nothing when there is no mailbox copy to store', () => {

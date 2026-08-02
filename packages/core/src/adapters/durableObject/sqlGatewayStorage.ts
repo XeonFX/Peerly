@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_created ON events(created_at);
 CREATE TABLE IF NOT EXISTS mailbox (
   invite_id TEXT PRIMARY KEY, body TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS mailbox_created ON mailbox(created_at);
 `
 
 type SessionRow = {
@@ -198,6 +199,10 @@ export function createSqlGatewayStorage(sql: SqlExecutor): GatewayStorage {
       },
       count: () =>
         sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM mailbox').toArray()[0].n,
+      has: inviteId =>
+        sql.exec<{ invite_id: string }>(
+          'SELECT invite_id FROM mailbox WHERE invite_id = ?', inviteId
+        ).toArray().length > 0,
       oldestId: () =>
         sql.exec<{ invite_id: string }>(
           'SELECT invite_id FROM mailbox ORDER BY created_at ASC, invite_id ASC LIMIT 1'

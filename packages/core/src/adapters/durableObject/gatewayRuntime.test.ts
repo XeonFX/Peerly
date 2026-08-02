@@ -112,8 +112,9 @@ describe('GatewayRuntime', () => {
 
     it('evicts the oldest device at the cap and closes its socket', () => {
       const runtime = build()
+      // The device ceiling, which is deliberately not the socket ceiling.
       const devices = Array.from(
-        { length: LIMITS.controlSocketsPerAccount },
+        { length: LIMITS.devicesPerAccount },
         (_, index) => `P-256:${String(index).repeat(43)}:${String(index).repeat(43)}`
       )
       devices.forEach((device, index) => {
@@ -183,6 +184,28 @@ describe('GatewayRuntime', () => {
         await runtime.accept(socket, { uid: ACCOUNT, deviceKeyId: DEVICE_A, sid })
       }
       expect(opened[0].closed[0].code).toBe(CLOSE.SLOW_CONSUMER)
+    })
+
+    /**
+     * Closing only the first socket let the count drift upward whenever
+     * sockets arrived faster than they closed — and hibernated sockets from
+     * tabs that are already gone are listed here until the runtime reaps them,
+     * so the list is routinely longer than the number of live tabs.
+     */
+    it('closes every socket over the ceiling, not just the oldest', async () => {
+      const runtime = build()
+      const { sid } = runtime.registerSession({
+        deviceKeyId: DEVICE_A, nowMs, ttlMs: 60_000,
+      }) as { sid: string }
+      // A backlog the runtime has not reaped yet.
+      const stale = Array.from({ length: LIMITS.controlSocketsPerAccount + 2 }, () => fakeSocket())
+      sockets.push(...stale)
+
+      await runtime.accept(fakeSocket(), { uid: ACCOUNT, deviceKeyId: DEVICE_A, sid })
+
+      const survivors = stale.filter(socket => socket.closed.length === 0)
+      expect(survivors).toHaveLength(LIMITS.controlSocketsPerAccount - 1)
+      expect(stale[0].closed[0].code).toBe(CLOSE.SLOW_CONSUMER)
     })
   })
 

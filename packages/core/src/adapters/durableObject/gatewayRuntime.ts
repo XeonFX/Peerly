@@ -17,7 +17,7 @@ import {
 } from '../../domain/eventStream.js'
 import type { StoredEvent, StreamEvent } from '../../domain/eventStream.js'
 import type {
-  Clock, ControlSocket, GatewayStorage, PresencePublisher, Random, Scheduler,
+  Clock, ControlSocket, DeliveryResult, GatewayStorage, PresencePublisher, Random, Scheduler,
 } from '../../ports/index.js'
 import { GatewayService, type CommandHandler } from '../../app/gatewayService.js'
 import { deliverToAccount, socketSetOf } from '../../app/coreHandlers.js'
@@ -144,9 +144,15 @@ export class GatewayRuntime {
       return { ok: false, status: 401 }
     }
 
+    // Close *every* socket over the ceiling, not just the first. Closing one
+    // let the count drift upward whenever sockets arrived faster than they
+    // closed — and hibernated sockets from tabs that are already gone count
+    // here until the runtime reaps them, so the list is routinely longer than
+    // the number of live tabs.
     const open = this.options.ctx.getWebSockets()
-    if (open.length >= LIMITS.controlSocketsPerAccount) {
-      open[0].close(CLOSE.SLOW_CONSUMER, 'connection limit')
+    const excess = open.length - (LIMITS.controlSocketsPerAccount - 1)
+    for (let index = 0; index < excess; index += 1) {
+      open[index].close(CLOSE.SLOW_CONSUMER, 'connection limit')
     }
 
     this.options.storage.identity.remember(uid)
@@ -202,7 +208,7 @@ export class GatewayRuntime {
     }
 
     const decision = decideEnrollment(
-      sessions.all(), deviceKeyId, epochs, LIMITS.controlSocketsPerAccount, input.nowMs
+      sessions.all(), deviceKeyId, epochs, LIMITS.devicesPerAccount, input.nowMs
     )
     if (decision.evict) {
       sessions.deleteForDevice(decision.evict)
@@ -252,11 +258,14 @@ export class GatewayRuntime {
     events: readonly StreamEvent[],
     mailbox?: { inviteId: string; body: string },
     uid?: string
-  ): Promise<void> {
+  ): Promise<DeliveryResult> {
     const parsed = uid ? asOpaqueUserId(uid) : null
     if (parsed) this.options.storage.identity.remember(parsed)
-    deliverToAccount(this.options.storage, this.options.clock, mailbox)
-    if (events.length === 0) return
+    const stored = deliverToAccount(this.options.storage, this.options.clock, mailbox)
+    // A refused mailbox entry stops here: appending the `invite` event anyway
+    // would tell the recipient about an invite they cannot later acknowledge.
+    if (!stored.ok) return stored
+    if (events.length === 0) return stored
 
     const nowMs = this.options.clock.nowMs()
     const appended = this.options.storage.events.append(events, nowMs)
@@ -266,12 +275,13 @@ export class GatewayRuntime {
       // sequence, so overtaking a pending batch would deliver them backwards.
       this.flushBatch()
       this.sendDelta(appended)
-      return
+      return stored
     }
 
     for (const event of appended) this.batch = addToBatch(this.batch, event, nowMs)
     if (shouldFlush(this.batch, nowMs)) this.flushBatch()
     else this.armFlush()
+    return stored
   }
 
   private sendDelta(events: readonly StoredEvent[]): void {

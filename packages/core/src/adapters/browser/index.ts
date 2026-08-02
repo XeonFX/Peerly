@@ -49,6 +49,16 @@ export type BrowserSessionOptions = {
 export function createBrowserSessionApi(options: BrowserSessionOptions): SessionApi {
   const request = options.fetchImpl ?? fetch
 
+  /** `Retry-After` in seconds, when the server sent a usable one. A control
+   *  plane that is over quota answers 503/429 with it, and pacing to what it
+   *  asked for beats every client picking its own delay. */
+  const retryAfterMs = (response: Response): { retryAfterMs?: number } => {
+    const header = response.headers.get('retry-after')
+    if (!header) return {}
+    const seconds = Number(header)
+    return Number.isFinite(seconds) && seconds > 0 ? { retryAfterMs: seconds * 1000 } : {}
+  }
+
   return {
     async enroll(): Promise<EnrollResult> {
       const auth = await options.credentials()
@@ -62,7 +72,7 @@ export function createBrowserSessionApi(options: BrowserSessionOptions): Session
         body: JSON.stringify({ provider: auth.providerId, token: auth.token }),
       })
       if (response.status === 409) return { kind: 'conflict' }
-      if (!response.ok) return { kind: 'failed' }
+      if (!response.ok) return { kind: 'failed', ...retryAfterMs(response) }
       const body = await response.json() as { capability?: unknown }
       return typeof body.capability === 'string'
         ? { kind: 'capability', capability: body.capability }
@@ -83,7 +93,7 @@ export function createBrowserSessionApi(options: BrowserSessionOptions): Session
       // 401 means this capability will never work again; anything else that
       // failed is worth retrying with the same one.
       if (response.status === 401) return { kind: 'rejected' }
-      if (!response.ok) return { kind: 'failed' }
+      if (!response.ok) return { kind: 'failed', ...retryAfterMs(response) }
       const body = await response.json() as { turn?: unknown }
       return { kind: 'established', turn: body.turn }
     },

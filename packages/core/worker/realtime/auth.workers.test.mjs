@@ -142,6 +142,81 @@ describe('handleSession origin and size checks', () => {
   })
 })
 
+/**
+ * These two endpoints are the only way to make the control plane spend Durable
+ * Object requests without already holding a socket, and until this existed
+ * nothing capped them: on 2026-08-02 one broken client spent an account's
+ * entire daily quota through them in about an hour.
+ */
+describe('auth endpoint rate limiting', () => {
+  const denyingLimiter = { limit: async () => ({ success: false }) }
+
+  it('answers 429 with Retry-After before doing any work', async () => {
+    const response = await handleEnroll(
+      requestWithOrigin('https://x/api/network/enroll', {
+        origin: 'https://peerly.cc', body: { provider: 'google', token: 't' },
+      }),
+      { ...env, AUTH_RATE_LIMITER: denyingLimiter }, config
+    )
+    expect(response.status).toBe(429)
+    expect(response.headers.get('retry-after')).toBe('30')
+  })
+
+  it('caps the session endpoint too, not just enrolment', async () => {
+    const response = await handleSession(
+      requestWithOrigin('https://x/api/network/session', {
+        origin: 'https://peerly.cc', body: { capability: 'c' },
+      }),
+      { ...env, AUTH_RATE_LIMITER: denyingLimiter }, config
+    )
+    expect(response.status).toBe(429)
+  })
+
+  /** A cost control, not an authorization one: a deployment that binds no
+   *  limiter must keep working rather than failing shut. */
+  it('stays open when no limiter is bound', async () => {
+    const response = await handleSession(
+      requestWithOrigin('https://x/api/network/session', { origin: 'https://peerly.cc', body: {} }),
+      env, config
+    )
+    expect(response.status).toBe(400)
+  })
+})
+
+describe('backend failure handling', () => {
+  /**
+   * An uncaught throw here is a 500, every client reads a 500 as retryable,
+   * and the symptom of an overloaded control plane becomes a stampede against
+   * it — 195,185 requests and zero successes in one hour on 2026-08-02.
+   */
+  it('answers 503 with Retry-After when the gateway call fails', async () => {
+    const now = Date.now()
+    const uid = `u-${crypto.randomUUID()}`
+    const { keyPair, deviceKeyId } = await makeDeviceKey()
+    const capability = await mintCapability(env.NETWORK_SESSION_SECRET, {
+      app: 'peerly', uid, deviceKeyId, sid: 'any-sid', epoch: 0, now, ttlMs: 600_000,
+    })
+    const headers = await signedDeviceHeaders('realtime-session-v1', 'peerly', keyPair, deviceKeyId, now)
+    const failing = {
+      ...env,
+      USER_GATEWAYS: {
+        getByName: () => ({
+          openSession: async () => { throw new Error('over quota') },
+        }),
+      },
+    }
+
+    const response = await handleSession(
+      requestWithOrigin('https://x/api/network/session', {
+        origin: 'https://peerly.cc', body: { capability }, headers,
+      }),
+      failing, config
+    )
+    expect(response.status).toBe(503)
+    expect(response.headers.get('retry-after')).toBe('30')
+  })
+})
+
 describe('authenticateUpgrade', () => {
   function upgradeRequest({ origin = 'https://peerly.cc', cookie } = {}) {
     const headers = { upgrade: 'websocket', origin }

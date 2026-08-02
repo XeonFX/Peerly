@@ -387,6 +387,25 @@ describe('RealtimeClient', () => {
       await vi.waitFor(() => expect(api.establish).toHaveBeenCalledTimes(2))
     })
 
+    /**
+     * A control plane that is over quota answers 503 with `Retry-After`.
+     * Honouring it is what paces a whole fleet off one signal instead of each
+     * client picking its own delay into the same wall.
+     */
+    it('waits at least as long as the server asked before retrying', async () => {
+      api.establish.mockResolvedValue({ kind: 'failed', retryAfterMs: 30_000 })
+      const client = build()
+      await client.connect()
+      expect(client.currentState).toBe('backoff')
+
+      // The unaided backoff at attempt 0 would have fired inside a second.
+      clock.advance(CLIENT_TIMINGS.reconnectBaseMs * 4)
+      expect(api.establish).toHaveBeenCalledTimes(1)
+
+      clock.advance(30_000 + CLIENT_TIMINGS.reconnectCapMs)
+      await vi.waitFor(() => expect(api.establish).toHaveBeenCalledTimes(2))
+    })
+
     it('does not reconnect after an explicit close', async () => {
       const client = build()
       await connect(client)

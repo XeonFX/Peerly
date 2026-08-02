@@ -7,16 +7,21 @@
  * ports the whole state machine runs against fakes.
  */
 
+/** Seconds the server asked us to wait, when it said so. A control plane that
+ *  is over quota or overloaded answers 503/429 with `Retry-After`; honouring it
+ *  is what stops every client retrying into the same wall at its own pace. */
+type Backoff = { readonly retryAfterMs?: number }
+
 export type EnrollResult =
   | { readonly kind: 'capability'; readonly capability: string }
   | { readonly kind: 'conflict' }
-  | { readonly kind: 'failed' }
+  | ({ readonly kind: 'failed' } & Backoff)
 
 export type SessionResult =
   | { readonly kind: 'established'; readonly turn?: unknown }
   /** The capability is no longer good; it must be discarded, not retried. */
   | { readonly kind: 'rejected' }
-  | { readonly kind: 'failed' }
+  | ({ readonly kind: 'failed' } & Backoff)
 
 export interface SessionApi {
   enroll(): Promise<EnrollResult>

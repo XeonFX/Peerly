@@ -81,6 +81,9 @@ export interface MailboxStore {
   put(inviteId: string, body: string, nowMs: number): void
   drop(inviteId: string): void
   count(): number
+  /** Whether this id is already held, so a redelivery of an entry the mailbox
+   *  has is not counted as a new occupant against the cap. */
+  has(inviteId: string): boolean
   oldestId(): string | undefined
 }
 
@@ -132,8 +135,16 @@ export interface ScopeAuthorizer {
   release(routeId: string, uid: OpaqueUserId, deviceKeyId: DeviceKeyId): Promise<void>
 }
 
+/** The recipient's answer: a full mailbox refuses rather than evicting, and
+ *  the sender is told so instead of being told the invite was delivered. */
+export type DeliveryResult = { ok: true } | { ok: false; code: 'mailbox-full' }
+
 export interface GatewayPeers {
-  deliver(uid: string, events: readonly StreamEvent[], mailbox?: { inviteId: string; body: string }): Promise<void>
+  deliver(
+    uid: string,
+    events: readonly StreamEvent[],
+    mailbox?: { inviteId: string; body: string }
+  ): Promise<DeliveryResult | void>
 }
 
 export interface AlarmScheduler {

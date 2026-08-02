@@ -112,6 +112,7 @@ export function createMemoryGatewayStorage(): GatewayStorage {
         mailbox.delete(inviteId)
       },
       count: () => mailbox.size,
+      has: inviteId => mailbox.has(inviteId),
       oldestId() {
         let oldest: { id: string; createdAtMs: number } | null = null
         for (const [id, entry] of mailbox) {
