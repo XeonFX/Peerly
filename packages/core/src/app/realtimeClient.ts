@@ -50,6 +50,7 @@ export class RealtimeClient extends EventTarget {
   private sessionTimer: number | null = null
   private pingTimer: number | null = null
   private resumeTimer: number | null = null
+  private stabilityTimer: number | null = null
   private lastAckSeq = 0
   private resumeLoaded = false
   private readonly pending = new Map<string, Pending>()
@@ -67,12 +68,35 @@ export class RealtimeClient extends EventTarget {
     return this.state
   }
 
+  /**
+   * Idempotent while a retry is outstanding.
+   *
+   * Callers reach this before *every* command (`sendRealtimeCommand`), so it
+   * is called many times a second by an app with polling timers. The guards
+   * below are what keep that from turning one failure into a request storm:
+   * a cycle that fails schedules its own retry and then resolves, so without
+   * the `reconnectTimer` check every queued command would start another
+   * enrol/session cycle beside the one already pending — each of which
+   * scheduled another. One transient 500 became hundreds of thousands of
+   * requests that way, which is how a preview deployment nobody was using
+   * exhausted a daily Durable Objects quota in an hour.
+   */
   async connect(): Promise<void> {
-    if (this.state === 'ready') return
-    if (this.connecting) return this.connecting
+    if (this.state === 'ready' || this.state === 'upgrade-required') return
+    // A retry is already armed: that timer *is* the reconnect. Commands sent
+    // meanwhile queue against their own deadlines rather than dialling again.
+    if (this.reconnectTimer !== null) return
     this.stopped = false
+    await this.beginCycle()
+  }
+
+  /** The one place a connection cycle starts, so concurrent callers — the
+   *  reconnect timer and any number of `connect()` calls — share a single
+   *  in-flight attempt instead of racing several. */
+  private beginCycle(): Promise<void> {
+    if (this.connecting) return this.connecting
     this.connecting = this.runCycle().finally(() => { this.connecting = null })
-    await this.connecting
+    return this.connecting
   }
 
   close(): void {
@@ -137,7 +161,6 @@ export class RealtimeClient extends EventTarget {
       this.setState('connecting')
       await this.loadResumeCursor()
       await this.openChannel()
-      this.attempt = 0
       this.setState('ready')
       this.dispatchEvent(new CustomEvent('turn', { detail: session.turn }))
       this.startTimers()
@@ -208,12 +231,24 @@ export class RealtimeClient extends EventTarget {
   private scheduleReconnect(): void {
     if (this.stopped) return
     this.stopTimers()
+    // Replace any armed retry rather than adding one. Two paths reach here —
+    // a cycle that threw, and a socket that closed after opening — and an
+    // overwritten handle is a timer that still fires, so every extra chain
+    // survived for the life of the page.
+    if (this.reconnectTimer !== null) this.options.timers.clearTimeout(this.reconnectTimer)
     this.setState('backoff')
     const attempt = this.attempt
     this.attempt += 1
     const cap = Math.min(CLIENT_TIMINGS.reconnectCapMs, CLIENT_TIMINGS.reconnectBaseMs * 2 ** attempt)
     const random = this.options.random ?? Math.random
-    this.reconnectTimer = this.options.timers.setTimeout(() => { void this.runCycle() }, random() * cap)
+    // Equal jitter: half the cap fixed, half spread. Full jitter (`random() *
+    // cap`) has no floor, so a client that kept losing its socket could retry
+    // again in ~0ms however far the backoff had escalated.
+    const delay = cap / 2 + random() * (cap / 2)
+    this.reconnectTimer = this.options.timers.setTimeout(() => {
+      this.reconnectTimer = null
+      void this.beginCycle()
+    }, delay)
   }
 
   // ---- periodic work -------------------------------------------------------
@@ -226,6 +261,16 @@ export class RealtimeClient extends EventTarget {
    */
   private startTimers(): void {
     this.stopTimers()
+    // Backoff resets on a connection that *lasted*, not on one that merely
+    // opened. Resetting at the open handshake meant a socket the server
+    // accepted and immediately closed — a device-limit eviction, say — put
+    // the next attempt back at the 250ms base every time, so the escalation
+    // that exists to protect the server could never take hold.
+    this.stabilityTimer = this.options.timers.setTimeout(() => {
+      this.stabilityTimer = null
+      this.attempt = 0
+    }, CLIENT_TIMINGS.reconnectCapMs)
+
     this.sessionTimer = this.options.timers.setInterval(() => {
       if (this.stopped || !this.channel?.open) return
       void (async () => {
@@ -252,8 +297,10 @@ export class RealtimeClient extends EventTarget {
     const { timers } = this.options
     if (this.sessionTimer !== null) timers.clearInterval(this.sessionTimer)
     if (this.pingTimer !== null) timers.clearInterval(this.pingTimer)
+    if (this.stabilityTimer !== null) timers.clearTimeout(this.stabilityTimer)
     this.sessionTimer = null
     this.pingTimer = null
+    this.stabilityTimer = null
     if (this.resumeTimer !== null) {
       timers.clearTimeout(this.resumeTimer)
       this.resumeTimer = null

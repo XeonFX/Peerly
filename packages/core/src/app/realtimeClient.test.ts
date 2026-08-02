@@ -325,6 +325,68 @@ describe('RealtimeClient', () => {
       await vi.waitFor(() => expect(api.establish).toHaveBeenCalledTimes(2))
     })
 
+    /**
+     * Callers await `connect()` before every command, so an app with polling
+     * timers calls it constantly. A failed cycle schedules its own retry and
+     * then resolves; if that also left `connect()` free to start another
+     * cycle, each queued command dialled again and scheduled another retry.
+     * One transient 500 grew into ~400k enrol/session requests in three hours
+     * and exhausted the account's daily Durable Objects quota.
+     */
+    it('does not start a second cycle while a retry is already armed', async () => {
+      api.establish.mockResolvedValue({ kind: 'failed' })
+      const client = build()
+      await client.connect()
+      expect(client.currentState).toBe('backoff')
+      const afterFirst = api.establish.mock.calls.length
+
+      for (let call = 0; call < 25; call += 1) await client.connect()
+
+      expect(api.establish.mock.calls.length).toBe(afterFirst)
+    })
+
+    it('arms exactly one retry per failed cycle', async () => {
+      api.establish.mockResolvedValue({ kind: 'failed' })
+      const client = build()
+      await client.connect()
+
+      // Drive the retry chain forward; a chain that forked would multiply the
+      // call count instead of adding one attempt per elapsed backoff.
+      for (let round = 0; round < 6; round += 1) {
+        await client.connect()
+        clock.advance(CLIENT_TIMINGS.reconnectCapMs)
+        await vi.waitFor(() => expect(client.currentState).toBe('backoff'))
+      }
+
+      // One attempt per elapsed backoff. The bug this pins was multiplicative:
+      // every cycle armed a retry without clearing the last, so six rounds
+      // produced chains in the dozens rather than six attempts.
+      expect(api.establish.mock.calls.length).toBeGreaterThanOrEqual(4)
+      expect(api.establish.mock.calls.length).toBeLessThanOrEqual(7)
+    })
+
+    it('keeps escalating backoff when the socket never stays up', async () => {
+      const client = build()
+      await connect(client)
+      // Opened, then dropped before the stability window: the next attempt
+      // must not start again from the 250ms base.
+      channels.drop()
+      clock.advance(CLIENT_TIMINGS.reconnectBaseMs)
+      expect(api.establish).toHaveBeenCalledTimes(1)
+      clock.advance(CLIENT_TIMINGS.reconnectCapMs)
+      await vi.waitFor(() => expect(api.establish).toHaveBeenCalledTimes(2))
+    })
+
+    it('resets backoff once a connection outlives the stability window', async () => {
+      const client = build()
+      await connect(client)
+      clock.advance(CLIENT_TIMINGS.reconnectCapMs)
+      channels.drop()
+      // Backoff is back at the base, so the retry lands within it.
+      clock.advance(CLIENT_TIMINGS.reconnectBaseMs)
+      await vi.waitFor(() => expect(api.establish).toHaveBeenCalledTimes(2))
+    })
+
     it('does not reconnect after an explicit close', async () => {
       const client = build()
       await connect(client)
