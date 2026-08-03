@@ -1,0 +1,44 @@
+{
+  // The account budget watcher. Deployed on its own:
+  //   npx wrangler deploy -c wrangler.usage-watch.jsonc
+  //
+  // Separate from both app Workers on purpose. The free-tier budgets it reads
+  // are account-wide, so one watcher covers Peerly and HeyHubs together, and
+  // keeping it off either app's request path means a fault here cannot take a
+  // user-facing route down with it.
+  //
+  // Needs two secrets before it can do anything:
+  //   npx wrangler secret put CF_ANALYTICS_TOKEN -c wrangler.usage-watch.jsonc
+  //   npx wrangler secret put CF_ACCOUNT_ID      -c wrangler.usage-watch.jsonc
+  //
+  // CF_ANALYTICS_TOKEN is a Cloudflare API token with `Account Analytics:
+  // Read` — nothing else. It is read-only and account-scoped; it cannot deploy,
+  // read storage, or touch a zone.
+  //
+  // Optionally, somewhere to shout:
+  //   npx wrangler secret put USAGE_ALERT_WEBHOOK -c wrangler.usage-watch.jsonc
+  // Any endpoint taking `{"text": "..."}` (Slack and Discord both do). Without
+  // it the watcher still logs, which Workers observability keeps queryable.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "usage-watch",
+  "main": "worker/usageWatch.mjs",
+  "compatibility_date": "2026-07-22",
+  "observability": { "enabled": true },
+  // Every fifteen minutes. The failure mode is a runaway loop that covers a
+  // whole daily budget inside an hour, so an hourly check would routinely
+  // report a budget that was already gone. Ninety-six invocations a day is
+  // noise against a 100,000 allowance.
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+  // Deliberately no KV binding. `USAGE_STATE` is optional — it remembers the
+  // level each metric last alerted at, so a budget parked at 60% alerts once
+  // instead of every quarter hour. Without it the watcher repeats itself rather
+  // than going quiet, which is the right way round for an alerting path, and it
+  // means this config deploys with no setup beyond the two secrets.
+  //
+  // To add it:
+  //   npx wrangler kv namespace create USAGE_STATE
+  // then paste the id here:
+  //   "kv_namespaces": [{ "binding": "USAGE_STATE", "id": "<id>" }]
+}
