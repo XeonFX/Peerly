@@ -52,6 +52,15 @@
       "name": "AUTH_RATE_LIMITER",
       "namespace_id": "1003",
       "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      // Applied alongside AUTH_RATE_LIMITER, both must allow. A device key is
+      // a keypair the client generates, so limiting on it alone hands a fresh
+      // allowance to anyone willing to rotate; the address is what a rotating
+      // client cannot shed.
+      "name": "AUTH_IP_RATE_LIMITER",
+      "namespace_id": "1004",
+      "simple": { "limit": 60, "period": 60 }
     }
   ],
   "durable_objects": {

@@ -7,10 +7,13 @@
  * — put security-relevant constants in two places and relied on a drift test
  * to notice. That was a build-configuration workaround, not a design.
  *
- * Adding a limit here is not enough: `limits.enforcement.test.ts` fails for
- * any key with no test proving it is enforced somewhere. Four caps in the
- * previous implementation (`signalSocketsPerDevice`, `attachmentBytes`, and
- * the delta-batching trio) were declared and never read by any code.
+ * Adding a limit here is not enough: `limits.enforcement.test.ts` names the
+ * file that enforces every key and fails when that file stops reading it, so a
+ * cap cannot quietly become decoration. That test did not exist until
+ * 2026-08-03, and writing it immediately found two more caps declared and read
+ * by nothing — `signalSocketsPerDevice` and `maxTokenStringBytes` — on top of
+ * the four the previous audit had found. Both are gone; a per-device signal
+ * socket cap is a feature to build, not a number to declare.
  */
 export const LIMITS = {
   protocolVersion: 1,
@@ -30,7 +33,6 @@ export const LIMITS = {
   /** Devices that may hold a live session. Four is the ordinary shape of one
    *  person's hardware — phone, laptop, desktop, work laptop. */
   devicesPerAccount: 4,
-  signalSocketsPerDevice: 8,
   participantsPerScope: 16,
   /** Topics one signal participant may claim for routed delivery. */
   topicsPerParticipant: 8,
@@ -113,6 +115,15 @@ export const LIMITS = {
    *  A healthy client spends one per `sessionRefreshMs`; this is the ceiling
    *  that stops a broken one from spending an account's daily quota. */
   authRequestsPerMinute: 10,
+  /**
+   * The same ceiling per source address, applied *alongside* the device one.
+   *
+   * Device keys are a keypair the client generates, so they cost nothing to
+   * mint: limiting on device key alone hands a fresh allowance to anyone
+   * willing to rotate, which is no limit at all. Higher than the device
+   * ceiling because one address legitimately carries several devices.
+   */
+  authRequestsPerMinutePerIp: 60,
   capabilityTtlMs: 30 * 24 * 60 * 60_000,
   scopeAuthorizationTtlMs: 10 * 60_000,
 
@@ -122,7 +133,6 @@ export const LIMITS = {
   shardCount: 1,
 
   maxRequestBodyBytes: 16 * 1024,
-  maxTokenStringBytes: 16_000,
 } as const
 
 export type Limits = typeof LIMITS

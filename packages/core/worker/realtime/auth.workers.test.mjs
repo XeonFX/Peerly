@@ -155,6 +155,7 @@ describe('auth endpoint rate limiting', () => {
     const response = await handleEnroll(
       requestWithOrigin('https://x/api/network/enroll', {
         origin: 'https://peerly.cc', body: { provider: 'google', token: 't' },
+        headers: { 'x-peerly-device-key': 'dk-1' },
       }),
       { ...env, AUTH_RATE_LIMITER: denyingLimiter }, config
     )
@@ -166,6 +167,7 @@ describe('auth endpoint rate limiting', () => {
     const response = await handleSession(
       requestWithOrigin('https://x/api/network/session', {
         origin: 'https://peerly.cc', body: { capability: 'c' },
+        headers: { 'x-peerly-device-key': 'dk-1' },
       }),
       { ...env, AUTH_RATE_LIMITER: denyingLimiter }, config
     )
@@ -180,6 +182,73 @@ describe('auth endpoint rate limiting', () => {
       env, config
     )
     expect(response.status).toBe(400)
+  })
+
+  const allowing = () => ({ limit: async () => ({ success: true }) })
+
+  it('still counts a request carrying neither a device key nor an address', async () => {
+    const response = await handleEnroll(
+      requestWithOrigin('https://x/api/network/enroll', {
+        origin: 'https://peerly.cc', body: { provider: 'google', token: 't' },
+      }),
+      { ...env, AUTH_IP_RATE_LIMITER: denyingLimiter }, config
+    )
+    expect(response.status).toBe(429)
+  })
+
+  /**
+   * A device key is a keypair the client generates, so limiting on it alone
+   * hands a fresh allowance to anyone willing to rotate — which is no limit at
+   * all. The address bucket is what a rotating client cannot shed.
+   */
+  it('rejects on the address bucket even when the device bucket allows', async () => {
+    const response = await handleEnroll(
+      requestWithOrigin('https://x/api/network/enroll', {
+        origin: 'https://peerly.cc',
+        body: { provider: 'google', token: 't' },
+        headers: { 'cf-connecting-ip': '203.0.113.9' },
+      }),
+      { ...env, AUTH_RATE_LIMITER: allowing(), AUTH_IP_RATE_LIMITER: denyingLimiter }, config
+    )
+    expect(response.status).toBe(429)
+  })
+
+  it('rejects on the device bucket even when the address bucket allows', async () => {
+    const response = await handleEnroll(
+      requestWithOrigin('https://x/api/network/enroll', {
+        origin: 'https://peerly.cc',
+        body: { provider: 'google', token: 't' },
+        headers: { 'x-peerly-device-key': 'dk-1', 'cf-connecting-ip': '203.0.113.9' },
+      }),
+      { ...env, AUTH_RATE_LIMITER: denyingLimiter, AUTH_IP_RATE_LIMITER: allowing() }, config
+    )
+    expect(response.status).toBe(429)
+  })
+
+  /** A limiter that silently fails open is indistinguishable from one that is
+   *  working, which is how you learn it was broken from a quota email. */
+  it('allows but warns when a limiter throws', async () => {
+    const warnings = []
+    const original = console.warn
+    console.warn = (...args) => warnings.push(args.join(' '))
+    try {
+      const response = await handleSession(
+        requestWithOrigin('https://x/api/network/session', {
+          origin: 'https://peerly.cc', body: {},
+          headers: { 'x-peerly-device-key': 'dk-1' },
+        }),
+        {
+          ...env,
+          AUTH_RATE_LIMITER: { limit: async () => { throw new Error('binding down') } },
+          AUTH_IP_RATE_LIMITER: allowing(),
+        },
+        config
+      )
+      expect(response.status).toBe(400)
+    } finally {
+      console.warn = original
+    }
+    expect(warnings.join('\n')).toMatch(/limiter threw/)
   })
 })
 

@@ -48,24 +48,44 @@ async function callGateway(operation) {
  * Caps the enrol/session endpoints, which are the only unauthenticated-ish way
  * to make the control plane spend Durable Object requests.
  *
- * Keyed by device key where there is one, falling back to the connecting IP,
- * so a single broken client cannot spend an account-wide daily quota — which
- * is exactly what happened before this existed. Absent binding means no
- * limiter is configured, and the endpoint stays open rather than failing shut:
- * this is a cost control, not an authorization one.
+ * Two buckets, and both must allow. Keying on the device key alone is not a
+ * limit: a device key is a keypair the client generates, so rotating it buys a
+ * fresh allowance for the cost of a `generateKey` call. The address bucket is
+ * what a rotating client cannot shed, and the device bucket is what stops one
+ * device on a shared address spending everybody's budget.
+ *
+ * Stays open when a binding is absent — this is a cost control, not an
+ * authorization one, and a deployment that has not configured it must still
+ * work. But it says so: a limiter that silently fails open is indistinguishable
+ * from one that is working, which is how you discover it was broken from a
+ * quota email rather than from your own logs.
  */
 async function withinAuthRateLimit(request, env) {
-  const limiter = env.AUTH_RATE_LIMITER
-  if (!limiter) return true
-  const key = request.headers.get('x-peerly-device-key')
-    || request.headers.get('cf-connecting-ip')
-    || 'anonymous'
-  try {
-    const { success } = await limiter.limit({ key })
-    return success
-  } catch {
-    return true
+  const deviceKey = request.headers.get('x-peerly-device-key')
+  // Cloudflare always sets this at the edge, so a request without one did not
+  // arrive the usual way. Counting those together is deliberate: skipping the
+  // bucket when the key is missing means an unkeyed request is not limited at
+  // all, which is the one case that must not go uncounted.
+  const address = request.headers.get('cf-connecting-ip') || 'no-address'
+  const checks = [
+    [env.AUTH_RATE_LIMITER, deviceKey],
+    [env.AUTH_IP_RATE_LIMITER, address],
+  ]
+
+  for (const [limiter, key] of checks) {
+    if (!limiter) {
+      console.warn('auth rate limit: binding missing, request allowed unchecked')
+      continue
+    }
+    if (!key) continue
+    try {
+      const { success } = await limiter.limit({ key })
+      if (!success) return false
+    } catch (error) {
+      console.warn('auth rate limit: limiter threw, request allowed unchecked', String(error))
+    }
   }
+  return true
 }
 
 const rateLimited = () =>
