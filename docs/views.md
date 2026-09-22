@@ -47,9 +47,10 @@ flowchart TB
   Channel --> Files
 ```
 
-Signaling (Nostr by default, or `ws-relay` / Supabase) is used only so peers
-**discover** each other. Messages, files, and call media go peer-to-peer.
-There is no app server archive of chat or files.
+Preview uses Durable Objects for authenticated discovery and for bounded,
+client-encrypted message/reaction/channel history. File bodies and call media
+remain peer-to-peer. A complete P2P content adapter remains available as an
+explicit deployment rollback.
 
 ---
 
@@ -195,14 +196,14 @@ Route → panel mapping:
 | Invite | `InvitePeople` — footer popover: copy link; creator can add/remove emails on allow-list |
 | You | Profile entry; leave workspace; theme; build stamp |
 
-Channel mutations (local store + P2P announce):
+Channel mutations (local store + encrypted durable event, or P2P in rollback mode):
 
 | Action | Local store | Network |
 |--------|-------------|---------|
-| Add channel | `addWorkspaceChannel` | `announceChannel` |
-| Rename | `renameWorkspaceChannel` | `announceChannel` |
-| Reorder | `moveWorkspaceChannel` | `announceChannel` (each moved) |
-| Delete | `removeWorkspaceChannel` | `announceChannelDeletion` |
+| Add channel | `addWorkspaceChannel` | `channel-sync` event |
+| Rename | `renameWorkspaceChannel` | `channel-sync` event |
+| Reorder | `moveWorkspaceChannel` | `channel-sync` event (each moved) |
+| Delete | `removeWorkspaceChannel` | `channel-sync` deletion event |
 | Start DM | `ensureDmChannel` | `announceChannel` |
 | Close DM | `removeDmChannel` | local only (thread closed on this device) |
 

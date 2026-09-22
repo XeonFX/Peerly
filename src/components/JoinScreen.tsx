@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { isEmailAllowed } from '../collab/allowList'
-import { APP_NAME, appBuildLabel } from '../config'
+import { APP_NAME } from '../config'
 import {
   decodeInviteFromHash,
   encodeInviteLink,
@@ -194,7 +194,7 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
       throw new Error(tr('{email} is not on this workspace\'s invite list', { email: identity.email }))
     }
 
-    const session = persistWorkspaceSession(
+    const session = await persistWorkspaceSession(
       { ...nextInvite, workspaceAvatarId },
       identity,
       name ?? identity.name
@@ -314,11 +314,11 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
         <div className="fixed right-4 top-4 z-20"><ThemeToggle compact /></div>
         <div className="join-auth-layout w-full max-w-5xl overflow-hidden rounded-[2rem] border border-base-300/70 bg-base-100/80 shadow-2xl shadow-violet-950/10 backdrop-blur-xl">
           <section className="brand-showcase hidden lg:flex">
-            <img src={peerlyBrand} alt={tr('Serverless team collaboration — chat, video, and files, peer-to-peer.')} className="brand-showcase-image" />
+            <img src={peerlyBrand} alt={tr('Private hybrid collaboration — encrypted chat, peer-to-peer files and calls.')} className="brand-showcase-image" />
             <div className="brand-showcase-copy">
               <span className="brand-kicker">{tr('Private by design')}</span>
-              <p className="brand-showcase-heading">{tr('Your team space, directly between your devices.')}</p>
-              <p>{tr('No message or file server in the middle. Invite-only workspaces connect through verified identities.')}</p>
+              <p className="brand-showcase-heading">{tr('Your private team space, across all your devices.')}</p>
+              <p>{tr('Encrypted messages are delivered reliably; files and calls stay peer-to-peer. Invite-only workspaces use verified identities.')}</p>
             </div>
           </section>
 
@@ -329,7 +329,7 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
               <h1 className="brand-wordmark text-3xl font-semibold tracking-tight">{APP_NAME}</h1>
             </div>
             <p className="text-sm text-base-content/60">
-              {tr('Serverless team collaboration — chat, video, and files, peer-to-peer.')}
+              {tr('Private hybrid collaboration — encrypted chat, peer-to-peer files and calls.')}
             </p>
           </header>
 
@@ -366,12 +366,6 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
             {tr("Only invited accounts can connect. Peers verify each other's identity before any data flows. Sign in with the account you were invited with — a different provider or email counts as a different person.")}
           </p>
           <P2pCapabilityIndicator capability={p2pCapability} rtcPeerCount={0} compact />
-          <p
-            className="text-center font-mono text-[0.7rem] text-base-content/35"
-            data-testid="app-version"
-          >
-            {appBuildLabel()}
-          </p>
           <LegalLinks />
           </div>
         </div>
@@ -621,12 +615,6 @@ export function JoinScreen({ view, pickerTab, onPickerTabChange, onJoined, onIde
           </div>
         </div>
 
-        <p
-          className="text-center font-mono text-[0.7rem] text-base-content/35"
-          data-testid="app-version"
-        >
-          {appBuildLabel()}
-        </p>
         <LegalLinks />
       </div>
     </main>

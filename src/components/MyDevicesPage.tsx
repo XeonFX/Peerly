@@ -6,8 +6,10 @@ import {
   revokeDevice,
   type ApprovedDevice,
 } from '../collab/deviceAuthorization'
+import { revokeRealtimeDevice } from '@peerly/core'
 import { useDevicePairing } from '../hooks/useDevicePairing'
 import { useI18n } from '../i18n'
+import { PUBLIC_NETWORK_ENV } from '../config'
 import { Icon } from './Icon'
 
 function newSecret(): string {
@@ -31,6 +33,7 @@ export function MyDevicesPage({
   const [currentKey, setCurrentKey] = useState('')
   const [devices, setDevices] = useState<ApprovedDevice[]>([])
   const [copied, setCopied] = useState(false)
+  const [revokeError, setRevokeError] = useState<string | null>(null)
   const pairing = useDevicePairing({ identity, userId, secret, role })
   const link = secret ? `${location.origin}/devices#pair=${secret}` : ''
 
@@ -67,10 +70,17 @@ export function MyDevicesPage({
               <div className="font-medium">{tr('This device')}</div>
               <div className="mt-1 font-mono text-xs text-base-content/55">{currentKey ? deviceFingerprint(currentKey) : '…'}</div>
             </div>
+            {revokeError && (
+              <div className="alert alert-warning text-sm" role="status">{revokeError}</div>
+            )}
             {devices.length === 0 ? (
               <p className="text-sm text-base-content/55">{tr('No other devices are approved yet.')}</p>
             ) : devices.map(device => (
-              <div key={device.deviceKeyId} className="flex items-center justify-between gap-4 rounded-box border border-base-300 p-3">
+              <div
+                key={device.deviceKeyId}
+                className="flex items-center justify-between gap-4 rounded-box border border-base-300 p-3"
+                data-testid="approved-device"
+              >
                 <div className="min-w-0">
                   <div className="truncate font-medium">{device.label}</div>
                   <div className="mt-1 text-xs text-base-content/55">
@@ -78,15 +88,26 @@ export function MyDevicesPage({
                     {device.lastSeenAt ? ` · ${tr('Last seen')} ${new Date(device.lastSeenAt).toLocaleString()}` : ''}
                   </div>
                 </div>
-                <button className="btn btn-error btn-ghost btn-sm" type="button" onClick={() => {
+                <button className="btn btn-error btn-ghost btn-sm" type="button" data-testid="revoke-device" onClick={() => {
                   if (!confirm(tr('Revoke this device? It will stop syncing with this device.'))) return
+                  // Local first: dropping the peer-to-peer grant is the part
+                  // that works offline and must never be blocked on network.
                   revokeDevice(userId, currentKey, device.deviceKeyId)
+                  setRevokeError(null)
+                  // Then the control plane, so the revoked device also loses
+                  // its server session and capability instead of keeping them
+                  // for the rest of their 30-day life. Surfaced on failure:
+                  // a revocation that silently did nothing is worse than one
+                  // that says so.
+                  void revokeRealtimeDevice(PUBLIC_NETWORK_ENV, device.deviceKeyId).catch(() => {
+                    setRevokeError(tr('Removed on this device, but the server could not be reached. Retry while online to sign that device out everywhere.'))
+                  })
                 }}>{tr('Revoke')}</button>
               </div>
             ))}
 
             {!secret && (
-              <button className="btn btn-primary w-fit" type="button" onClick={() => {
+              <button className="btn btn-primary w-fit" type="button" data-testid="start-pairing" onClick={() => {
                 setSecret(newSecret()); setRole('source'); setCopied(false)
               }}>{tr('Approve another device')}</button>
             )}
@@ -94,22 +115,22 @@ export function MyDevicesPage({
               <div className="rounded-box border border-primary/30 bg-primary/5 p-4">
                 <p className="text-sm">{tr('Open this private link on your other device:')}</p>
                 <div className="mt-3 flex gap-2">
-                  <input className="input input-bordered min-w-0 flex-1 text-xs" readOnly value={link} />
+                  <input className="input input-bordered min-w-0 flex-1 text-xs" readOnly value={link} data-testid="pair-link" />
                   <button className="btn btn-outline" type="button" onClick={() => void navigator.clipboard.writeText(link).then(() => setCopied(true))}>
                     {copied ? tr('Copied') : tr('Copy')}
                   </button>
                 </div>
               </div>
             )}
-            {secret && !pairing.remote && <p className="text-sm text-warning">{tr('Waiting for the other device…')}</p>}
-            {pairing.remote && !pairing.sent && (
+            {secret && !pairing.remoteFingerprint && <p className="text-sm text-warning">{tr('Waiting for the other device…')}</p>}
+            {pairing.remoteFingerprint && !pairing.approved && (
               <div className="rounded-box border border-warning/40 bg-warning/10 p-4">
-                <p className="text-sm">{tr('Confirm that this fingerprint matches the other device:')} <span className="font-mono font-semibold">{deviceFingerprint(pairing.remote.deviceKeyId)}</span></p>
-                <button className="btn btn-primary btn-sm mt-3" type="button" onClick={() => void pairing.approve()}>{tr('Approve device')}</button>
+                <p className="text-sm">{tr('Confirm that this fingerprint matches the other device:')} <span className="font-mono font-semibold" data-testid="pair-fingerprint">{pairing.remoteFingerprint}</span></p>
+                <button className="btn btn-primary btn-sm mt-3" type="button" data-testid="approve-device" onClick={() => void pairing.approve()}>{tr('Approve device')}</button>
               </div>
             )}
-            {pairing.sent && !pairing.linked && <p className="text-sm text-warning">{tr('Approved here. Confirm on the other device too.')}</p>}
-            {pairing.linked && <div className="alert alert-success text-sm">{role === 'target' && pairing.synced === null ? tr('Approved. Syncing data…') : tr('Device approved and sync enabled.')}</div>}
+            {pairing.approved && !pairing.linked && <p className="text-sm text-warning">{tr('Approved here. Confirm on the other device too.')}</p>}
+            {pairing.linked && <div className="alert alert-success text-sm" data-testid="pair-linked">{role === 'target' && pairing.syncedKeys === null ? tr('Approved. Syncing data…') : tr('Device approved and sync enabled.')}</div>}
             <p className="text-xs text-base-content/50">{tr('Pair only devices you control. Approval is mutual and the pairing link is a one-time secret.')}</p>
           </div>
         </section>

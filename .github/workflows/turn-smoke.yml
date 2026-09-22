@@ -1,0 +1,57 @@
+name: TURN reachability
+
+# The only check that sees a failure arriving from *outside* this repository.
+#
+# TURN breaks when coturn's shared secret is rotated on the VPS and the Workers
+# are not updated, or when the box stops answering. Neither shows up in any
+# test here: the browser suites run two contexts on one host, which connect
+# over host candidates and never touch a relay. What users see is "cannot
+# connect", only if they happen to be behind a strict NAT — so it can be broken
+# for days without a single report.
+#
+# That happened on 2026-07-28. This job would have caught it the next morning.
+
+on:
+  schedule:
+    # Daily, early. A missed day is not a crisis; a missed week is.
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  turn:
+    runs-on: ubuntu-latest
+    # Absent secret means the repo has not opted in. Skip rather than fail, so
+    # a fork or an unconfigured clone does not show a permanently red job that
+    # everyone learns to ignore.
+    if: github.repository == 'XeonFX/Peerly'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - run: npm ci --ignore-scripts
+
+      # The probe imports the compiled protocol module.
+      - run: npm run build:core
+
+      - name: Allocate through TURN on every configured transport
+        env:
+          TURN_AUTH_SECRET: ${{ secrets.TURN_AUTH_SECRET }}
+        run: |
+          if [ -z "$TURN_AUTH_SECRET" ]; then
+            echo "TURN_AUTH_SECRET is not set for this repository — skipping."
+            echo "Add it under Settings → Secrets and variables → Actions to enable this check."
+            exit 0
+          fi
+          # Both apps share one coturn, so one run covers both hostnames. UDP
+          # and TLS are reported separately: a runner with UDP blocked is
+          # normal, every transport failing is not.
+          npm run turn:smoke -- \
+            turn:turn.peerly.cc:3478 turns:turn.peerly.cc:5349 \
+            turn:turn.heyhubs.app:3478 turns:turn.heyhubs.app:5349

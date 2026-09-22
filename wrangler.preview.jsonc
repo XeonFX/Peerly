@@ -1,0 +1,101 @@
+{
+  // The DO-enabled staging worker. A single, stable hostname for testing any
+  // branch with real Google sign-in — Google OAuth requires exact JavaScript
+  // origins (no wildcards), so per-branch preview URLs can never sign in;
+  // this fixed hostname is registered once in the OAuth client and reused
+  // for every branch:
+  //   npm run deploy:preview
+  //
+  // This is a separate config file (not an `env` inside wrangler.jsonc)
+  // because the Durable Object `migrations` block cannot appear anywhere in
+  // the default config: Workers Builds deploys non-production branches with
+  // `wrangler versions upload`, and Cloudflare rejects versions that carry a
+  // DO migration (API error 10211). Migrations move into wrangler.jsonc only
+  // in the production cutover PR, where merge-to-main applies them via a
+  // full deploy. See docs/DURABLE_OBJECTS_ARCHITECTURE.md Phase 5.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "peerly-preview",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-07-22",
+  // Vite replaces VITE_* values at build time; the runtime `vars` block below
+  // does not populate the browser bundle.
+  "build": {
+    "command": "VITE_APP_ID=peerly VITE_GOOGLE_CLIENT_ID=724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com VITE_SIGNALING=durable-objects VITE_CONTENT_BACKEND=durable-objects VITE_TURN_URLS=turn:turn.peerly.cc:3478?transport=udp,turn:turn.peerly.cc:3478?transport=tcp,turns:turn.peerly.cc:5349?transport=tcp npm run build:preview"
+  },
+  "routes": [
+    { "pattern": "preview.peerly.cc", "custom_domain": true }
+  ],
+  "vars": {
+    "APP_ID": "peerly",
+    "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com",
+    "TURN_URLS": "turn:turn.peerly.cc:3478?transport=udp,turn:turn.peerly.cc:3478?transport=tcp,turns:turn.peerly.cc:5349?transport=tcp",
+    "COORDINATION_BACKEND": "durable-objects",
+    "CONTENT_BACKEND": "durable-objects"
+  },
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist-preview",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "ratelimits": [
+    {
+      "name": "RENDEZVOUS_RATE_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 60, "period": 60 }
+    },
+    {
+      // Caps /api/network/enroll and /api/network/session. These are the only
+      // way to make the control plane spend Durable Object requests without
+      // already holding a socket, and nothing capped them until a runaway
+      // client spent a whole daily quota through them.
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "1003",
+      "simple": { "limit": 10, "period": 60 }
+    },
+    {
+      // Applied alongside AUTH_RATE_LIMITER, both must allow. A device key is
+      // a keypair the client generates, so limiting on it alone hands a fresh
+      // allowance to anyone willing to rotate; the address is what a rotating
+      // client cannot shed.
+      "name": "AUTH_IP_RATE_LIMITER",
+      "namespace_id": "1004",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "USER_GATEWAYS", "class_name": "UserGatewayDO" },
+      { "name": "SIGNAL_SCOPES", "class_name": "SignalScopeDO" },
+      { "name": "CONTENT_CHANNELS", "class_name": "ContentChannelDO" },
+      { "name": "LOBBY_CHANNELS", "class_name": "LobbyChannelDO" }
+    ]
+  },
+  // Append-only. `realtime-v1` stays exactly as it was applied — editing an
+  // applied tag is how a namespace ends up disagreeing with its config — so
+  // dropping WorkspaceDO takes a second tag rather than a smaller first one.
+  // It was never reachable and is now deleted from the source.
+  "migrations": [
+    {
+      "tag": "realtime-v1",
+      "new_sqlite_classes": ["UserGatewayDO", "SignalScopeDO", "WorkspaceDO"]
+    },
+    {
+      "tag": "realtime-v2",
+      "deleted_classes": ["WorkspaceDO"]
+    },
+    {
+      "tag": "realtime-v3",
+      "new_sqlite_classes": ["ContentChannelDO", "LobbyChannelDO"]
+    }
+  ],
+  "secrets": {
+    "required": [
+      "TURN_AUTH_SECRET",
+      "RENDEZVOUS_SECRET",
+      "NETWORK_SESSION_SECRET",
+      "OPAQUE_USER_ID_SECRET"
+    ]
+  },
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}

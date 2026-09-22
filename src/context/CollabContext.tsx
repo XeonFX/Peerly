@@ -4,6 +4,7 @@ import type { SignedReactionFields } from '../collab/reactionSigning'
 import { useMemo, type ReactNode } from 'react'
 import { useCollab } from '../hooks/useCollab'
 import type { UserProfile } from '../types'
+import type { SignedAllowList } from '../collab/allowList'
 import {
   ChatContext,
   ConnectionContext,
@@ -31,6 +32,8 @@ type CollabProviderProps = {
   profile: UserProfile
   avatarId?: string
   workspaceSecret?: string
+  creatorKeyId?: string
+  allowList?: SignedAllowList
   peerHandshake?: PeerHandshake
   /** True once the signed-in ID token is past exp — drops the P2P room. */
   identityExpired?: boolean
@@ -57,6 +60,8 @@ export function CollabProvider({
   profile,
   avatarId,
   workspaceSecret,
+  creatorKeyId,
+  allowList,
   peerHandshake,
   identityExpired,
   selfUserId,
@@ -74,6 +79,8 @@ export function CollabProvider({
     activeChannelId: channelId,
     profile,
     workspaceSecret,
+    creatorKeyId,
+    allowList,
     onProfileChange,
     avatarId,
     channelIds,

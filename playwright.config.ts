@@ -10,6 +10,10 @@ const nostr = process.env.E2E_SIGNALING === 'nostr'
 
 export default defineConfig({
   testDir: './e2e',
+  // The Durable Objects suite has its own config, its own target and its own
+  // port. Without this it also runs here, against the relay server, where it
+  // cannot pass — and it fails slowly enough to starve the rest of the run.
+  testIgnore: /durable-objects\.spec\.ts/,
   // Keep wall-clock failure budget tight: a blocked UI (e.g. consent banner
   // over Send) should fail in ~30–45s, not 90s × 2 retries × many tests.
   timeout: 45_000,

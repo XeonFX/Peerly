@@ -1,33 +1,29 @@
 /**
- * Peerly preferred media device ids + sink routing.
- * Prefs factory + pure I/O live in @peerly/core; keys stay app-owned.
+ * This app's preferred media devices and sink routing.
+ *
+ * The selection itself lives in @peerly/core; only the storage scope is
+ * app-owned, so the two products never share a preference.
  */
-
 import {
   audioOutputSelectionSupported,
-  createMediaDevicePrefs,
+  createDeviceSelection,
   inferJoinMode,
   listMediaDevices,
   type CallMediaMode,
   type MediaDeviceLists,
 } from '@peerly/core'
+import { APP_STORAGE_SCOPE } from '../config'
 
 export { audioOutputSelectionSupported, inferJoinMode, listMediaDevices }
 export type { CallMediaMode, MediaDeviceLists }
 
-export const AUDIO_OUTPUT_CHANGED_EVENT = 'peerly-audio-output-changed'
+const selection = createDeviceSelection(APP_STORAGE_SCOPE)
 
-const prefs = createMediaDevicePrefs({
-  audioInKey: 'peerly-audio-in',
-  videoInKey: 'peerly-video-in',
-  audioOutKey: 'peerly-audio-out',
-  outputChangedEvent: AUDIO_OUTPUT_CHANGED_EVENT,
-})
-
-export const loadPreferredAudioInput = prefs.loadPreferredAudioInput
-export const loadPreferredVideoInput = prefs.loadPreferredVideoInput
-export const loadPreferredAudioOutput = prefs.loadPreferredAudioOutput
-export const savePreferredAudioInput = prefs.savePreferredAudioInput
-export const savePreferredVideoInput = prefs.savePreferredVideoInput
-export const savePreferredAudioOutput = prefs.savePreferredAudioOutput
-export const applyAudioOutput = prefs.applyAudioOutput
+export const AUDIO_OUTPUT_CHANGED_EVENT = selection.outputChangedEvent
+export const loadPreferredAudioInput = selection.loadPreferredAudioInput
+export const loadPreferredVideoInput = selection.loadPreferredVideoInput
+export const loadPreferredAudioOutput = selection.loadPreferredAudioOutput
+export const savePreferredAudioInput = selection.savePreferredAudioInput
+export const savePreferredVideoInput = selection.savePreferredVideoInput
+export const savePreferredAudioOutput = selection.savePreferredAudioOutput
+export const applyAudioOutput = selection.applyAudioOutput

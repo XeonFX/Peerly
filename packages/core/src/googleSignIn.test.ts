@@ -34,4 +34,39 @@ describe('renderGoogleSignInButton', () => {
     expect(initialize).toHaveBeenCalledTimes(1)
     expect(renderButton).toHaveBeenCalledTimes(2)
   })
+
+  it('keeps a visible-button initialization eligible for later silent renewal', async () => {
+    let callback: ((response: { credential: string }) => void) | undefined
+    const initialize = vi.fn((config: {
+      auto_select?: boolean
+      callback: typeof callback
+    }) => {
+      callback = config.callback
+    })
+    const prompt = vi.fn()
+    Object.defineProperty(window, 'google', {
+      configurable: true,
+      value: { accounts: { id: { initialize, renderButton: vi.fn(), prompt } } },
+    })
+    const {
+      renderGoogleSignInButton,
+      requestGoogleCredentialSilently,
+    } = await import('./googleSignIn.js')
+    const visible = renderGoogleSignInButton(
+      document.createElement('div'),
+      'device-key',
+      'client-id'
+    )
+    await vi.waitFor(() => expect(callback).toBeTypeOf('function'))
+    callback?.({ credential: 'visible-token' })
+    await expect(visible).resolves.toBe('visible-token')
+
+    const renewal = requestGoogleCredentialSilently('client-id', 'device-key')
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
+    callback?.({ credential: 'renewed-token' })
+
+    await expect(renewal).resolves.toBe('renewed-token')
+    expect(initialize).toHaveBeenCalledTimes(1)
+    expect(initialize.mock.calls[0]?.[0].auto_select).toBe(true)
+  })
 })

@@ -1,6 +1,6 @@
 # Terms of Service
 
-_Last updated: 2026-07-20_
+_Last updated: 2026-07-29_
 
 > This is the English reference copy. The authoritative, localized text is the
 > in-app page at `/terms` (rendered from `src/legal/legalContent.ts`).
@@ -18,9 +18,10 @@ You must be at least **16**.
 
 ## 3. Nature of the service
 
-Peerly is a P2P app with no application server. We provide the software "as is".
-We do not store or centrally moderate workspace content and do not guarantee
-availability or connection quality.
+Peerly is a hybrid app: encrypted messages and events are delivered and
+temporarily retained by Durable Objects, while files and calls remain P2P. We
+provide the software "as is". We cannot read or centrally moderate encrypted
+content and do not guarantee availability or connection quality.
 
 ## 4. Your identity and workspaces
 
@@ -42,9 +43,9 @@ You agree not to use Peerly for:
 
 ## 6. Your content and responsibility
 
-You are responsible for the content you share in workspaces. Because content is
-sent directly between participants, once sent we have no technical means to
-remove it from recipients' devices.
+You are responsible for the content you share in workspaces. Removing an
+encrypted server-held copy does not remove copies already stored on recipients'
+devices.
 
 ## 7. Ownership and license
 
@@ -65,9 +66,9 @@ consumers).
 
 ## 10. Reporting abuse and illegal content
 
-Report illegal content or abuse to **abuse@peerly.cc**. Although we do not host
-content centrally, we act to the extent we can and cooperate with the competent
-authorities.
+Report illegal content or abuse to **abuse@peerly.cc**. Stored envelopes are
+encrypted and cannot be read or moderated by us, but we act to the extent we
+can and cooperate with the competent authorities.
 
 ## 11. Suspension of access
 

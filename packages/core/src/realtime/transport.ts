@@ -1,0 +1,144 @@
+import { RealtimeClient } from '../app/realtimeClient.js'
+import {
+  browserTimers, createBrowserChannelFactory, createBrowserSessionApi, createBrowserStore,
+} from '../adapters/browser/index.js'
+import { publishRealtimeTransportState } from './liveness.js'
+import type { OidcCredentialProvider } from './types.js'
+
+export type RealtimeClientConfig = {
+  app: string
+  credentialProvider: OidcCredentialProvider
+  fetchImpl?: typeof fetch
+}
+import type { RoomEntry, RoomPage, ScopeHandle, ScopeKind, SeekOptions, TransportDiagnostics } from './types.js'
+
+export interface CoordinationTransport {
+  connect(): Promise<void>
+  close(): void
+  requestScope(kind: ScopeKind, capability: string): Promise<ScopeHandle>
+  startSeek(opts: SeekOptions): Promise<void>
+  cancelSeek(seekId: string): Promise<void>
+  publishRoom(roomId: string, revision: number, entry: RoomEntry): Promise<void>
+  deleteRoom(roomId: string, revision: number): Promise<void>
+  listRooms(cursor?: string): Promise<RoomPage>
+  /** Take (or renew) a lease on directory changes, so the listing is pushed
+   *  instead of polled. Rejects when the deployment cannot push. */
+  watchDirectory(): Promise<{ expiresAt: number }>
+  unwatchDirectory(): Promise<void>
+  sendInvite(to: string, kind: string, body: object): Promise<void>
+  /** Revoke one of this account's own devices server-side (sessions + sockets). */
+  revokeDevice(deviceKeyId: string): Promise<void>
+  releaseScope(routeId: string): Promise<void>
+  /**
+   * App-owned control-plane command. Core owns delivery/retry/idempotency;
+   * the consumer owns the command schema and handler.
+   */
+  sendCommand<T = unknown>(type: string, payload?: unknown): Promise<T>
+  events: EventTarget
+  readonly diagnostics: TransportDiagnostics
+}
+
+class DurableObjectTransport implements CoordinationTransport {
+  private readonly client: RealtimeClient
+
+  constructor(config: RealtimeClientConfig) {
+    this.client = new RealtimeClient({
+      api: createBrowserSessionApi({
+        app: config.app,
+        credentials: config.credentialProvider,
+        ...(config.fetchImpl ? { fetchImpl: config.fetchImpl } : {}),
+      }),
+      channels: createBrowserChannelFactory('/api/realtime/control'),
+      store: createBrowserStore(config.app),
+      timers: browserTimers,
+    })
+  }
+
+  get events(): EventTarget {
+    return this.client
+  }
+
+  get diagnostics(): TransportDiagnostics {
+    const state = this.client.currentState
+    // Read here rather than pushed on every change: `currentState` is the one
+    // authority, and the indicator polls anyway.
+    publishRealtimeTransportState(state)
+    return { state, reconnectCount: 0, lastEventAt: null, degraded: state !== 'ready' }
+  }
+
+  async connect(): Promise<void> {
+    try {
+      await this.client.connect()
+    } finally {
+      publishRealtimeTransportState(this.client.currentState)
+    }
+  }
+
+  close(): void {
+    this.client.close()
+    publishRealtimeTransportState('offline')
+  }
+
+  async requestScope(kind: ScopeKind, capability: string): Promise<ScopeHandle> {
+    return this.client.send<ScopeHandle>('scope.request', { kind, capability })
+  }
+
+  async startSeek(opts: SeekOptions): Promise<void> {
+    await this.client.send('seek.start', opts)
+  }
+
+  async cancelSeek(seekId: string): Promise<void> {
+    await this.client.send('seek.cancel', { seekId })
+  }
+
+  async publishRoom(roomId: string, revision: number, entry: RoomEntry): Promise<void> {
+    await this.client.send('directory.publish', { roomId, revision, entry })
+  }
+
+  async deleteRoom(roomId: string, revision: number): Promise<void> {
+    await this.client.send('directory.delete', { roomId, revision })
+  }
+
+  async listRooms(cursor?: string): Promise<RoomPage> {
+    return this.client.send<RoomPage>('directory.list', cursor ? { cursor } : undefined)
+  }
+
+  async watchDirectory(): Promise<{ expiresAt: number }> {
+    return this.client.send<{ expiresAt: number }>('directory.watch')
+  }
+
+  async unwatchDirectory(): Promise<void> {
+    await this.client.send('directory.unwatch')
+  }
+
+  async sendInvite(to: string, kind: string, body: object): Promise<void> {
+    await this.client.send('invite.send', { to, kind, body })
+  }
+
+  async revokeDevice(deviceKeyId: string): Promise<void> {
+    await this.client.send('device.revoke', { deviceKeyId })
+  }
+
+  async releaseScope(routeId: string): Promise<void> {
+    await this.client.send('scope.leave', { routeId })
+  }
+
+  sendCommand<T = unknown>(type: string, payload?: unknown): Promise<T> {
+    return this.client.send<T>(type, payload)
+  }
+}
+
+/**
+ * Selects the Durable Objects transport when the deployment has flipped
+ * `COORDINATION_BACKEND=durable-objects` (surfaced to the client via the
+ * app's own runtime-config plumbing), otherwise `null` so the caller keeps
+ * using its existing legacy-relay code path unchanged. Nothing above this
+ * function should import `DurableObjectTransport` or `RealtimeClient`
+ * directly — see docs/DURABLE_OBJECTS_IMPLEMENTATION.md section 12.4.
+ */
+export function selectDurableObjectsTransport(
+  backend: string | undefined,
+  config: RealtimeClientConfig
+): CoordinationTransport | null {
+  return backend === 'durable-objects' ? new DurableObjectTransport(config) : null
+}

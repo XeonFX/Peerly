@@ -4,16 +4,14 @@ import {
   lookupRendezvousId,
   PRESENCE_INTERVAL_MS,
   signControl,
-  signDmRing,
   verifySignedControl,
   verifyOidcDeviceBinding,
   type OidcDeviceAttestation,
-  verifyDmRing,
   type PresencePayload,
   type SignedControl,
 } from '@peerly/core'
 import { useLatest, useRelayChannel } from '@peerly/core/react'
-import { PUBLIC_NETWORK_ENV } from '../config'
+import { NETWORK_APP_ID, PUBLIC_NETWORK_ENV } from '../config'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
 import { defaultJwksFetcher, getIdentityProvider } from '../collab/identityProviders'
 import {
@@ -41,19 +39,43 @@ import {
 import { isPlausibleEmail, normalizeEmail } from '../collab/emailHash'
 import {
   parseDmRingPayload,
+  ringAuthorizedBy,
+  signDmRing,
+  verifyDmRing,
   type DmRingPayload,
   type DmRingReason,
 } from '../collab/dmRing'
+import { findDeviceGrant } from '../collab/deviceAuthorization'
 import { LOBBY_ROOM_ID } from '../collab/mesh'
 import {
   addFriend,
   dmDeviceKeyForFriend,
   dmSecretForFriend,
   isFriend,
+  listFriends,
   loadFriends,
 } from '../collab/friendsStore'
+import {
+  createWorkspaceInvite,
+  parseWorkspaceInvitePayload,
+  verifyWorkspaceInvite,
+  workspaceInviteAllowsEmail,
+  type WorkspaceInvitePayload,
+} from '../collab/workspaceInvite'
+import {
+  loadIncomingWorkspaceInvites,
+  loadOutgoingWorkspaceInvites,
+  dismissIncomingWorkspaceInvite,
+  isWorkspaceInviteDismissed,
+  saveOutgoingWorkspaceInvites,
+  upsertIncomingWorkspaceInvite,
+  upsertOutgoingWorkspaceInvite,
+  type IncomingWorkspaceInvite,
+  type OutgoingWorkspaceInvite,
+} from '../collab/workspaceInviteStore'
+import type { WorkspaceInvite } from '../collab/inviteLink'
+import { createPrivateLobbyActions } from '../collab/privateLobbyActions'
 
-const DM_RING_SCHEME = 'peerly-dm-ring-v2'
 const PRESENCE_SCHEME = 'peerly-presence-v1'
 
 /** Re-send undelivered (or re-deliver) invites while the peer stays online. */
@@ -63,6 +85,8 @@ export type LobbyProfile = {
   userId: string
   name: string
   email: string
+  color?: string
+  avatar?: string
 }
 
 export type PresenceLobbyOptions = {
@@ -76,6 +100,8 @@ export type PresenceLobbyOptions = {
   onDmRing?: (ring: DmRingPayload) => void
   /** Called once when a previously unseen valid friend request is received. */
   onFriendInvite?: (invite: IncomingFriendInvite) => void
+  /** Called once when a previously unseen valid workspace invitation arrives. */
+  onWorkspaceInvite?: (invite: IncomingWorkspaceInvite) => void
 }
 
 /**
@@ -92,6 +118,7 @@ export function usePresenceLobby({
   onFriendsChanged,
   onDmRing,
   onFriendInvite,
+  onWorkspaceInvite,
 }: PresenceLobbyOptions) {
   const profileRef = useLatest(profile)
   const identityRef = useLatest(identity)
@@ -99,9 +126,16 @@ export function usePresenceLobby({
   const onFriendsChangedRef = useLatest(onFriendsChanged)
   const onDmRingRef = useLatest(onDmRing)
   const onFriendInviteRef = useLatest(onFriendInvite)
+  const onWorkspaceInviteRef = useLatest(onWorkspaceInvite)
 
   const [outgoing, setOutgoing] = useState<OutgoingFriendInvite[]>(() => loadOutgoingInvites())
   const [incoming, setIncoming] = useState<IncomingFriendInvite[]>(() => loadIncomingInvites())
+  const [outgoingWorkspace, setOutgoingWorkspace] = useState<OutgoingWorkspaceInvite[]>(
+    () => loadOutgoingWorkspaceInvites()
+  )
+  const [incomingWorkspace, setIncomingWorkspace] = useState<IncomingWorkspaceInvite[]>(
+    () => loadIncomingWorkspaceInvites()
+  )
   const [onlineCount, setOnlineCount] = useState(0)
   const [lobbyError, setLobbyError] = useState<string | null>(null)
   const [presenceVersion, setPresenceVersion] = useState(0)
@@ -114,13 +148,17 @@ export function usePresenceLobby({
     invite: (msg: FriendInvitePayload, to: string) => void
     inviteResp: (msg: FriendInviteResponsePayload, to: string) => void
     dmRing: (msg: DmRingPayload, to: string) => void
+    workspaceInvite: (msg: WorkspaceInvitePayload, to: string) => void
   } | null>(null)
 
   const roomEnabled = Boolean(profile?.userId && profile.email && identity && attestation)
   const { room } = useRelayChannel({
+    appId: `${NETWORK_APP_ID}-lobby-v1`,
     channel: roomEnabled ? `peerly:presence:${LOBBY_ROOM_ID}` : '',
     memberId: roomEnabled ? profile?.userId ?? '' : '',
     env: PUBLIC_NETWORK_ENV,
+    durableEndpointPrefix: '/api/realtime/lobby/',
+    durableRouteId: 'peerly-lobby-v1',
     onError: message => {
       if (connectedPeersRef.current === 0) setLobbyError(message)
     },
@@ -175,10 +213,12 @@ export function usePresenceLobby({
       return binding
     }
 
-    const presenceAction = room.makeAction<SignedControl<PresencePayload>>('pres')
-    const inviteAction = room.makeAction<FriendInvitePayload>('finv')
-    const inviteRespAction = room.makeAction<FriendInviteResponsePayload>('finvr')
-    const dmRingAction = room.makeAction<DmRingPayload>('dmring')
+    const privateActions = createPrivateLobbyActions(room)
+    const presenceAction = room.makeAction<SignedControl<PresencePayload & { invitationKey: string }>>('pres')
+    const inviteAction = privateActions.makeAction<FriendInvitePayload>('finv')
+    const inviteRespAction = privateActions.makeAction<FriendInviteResponsePayload>('finvr')
+    const dmRingAction = privateActions.makeAction<DmRingPayload>('dmring')
+    const workspaceInviteAction = privateActions.makeAction<WorkspaceInvitePayload>('winv')
 
     const announcePresence = (to?: string) => {
       const me = profileRef.current
@@ -191,9 +231,11 @@ export function usePresenceLobby({
         name: me.name,
         rendezvousId,
       }
-      void signControl(id, PRESENCE_SCHEME, 'presence', me.userId, payload, {
-        attestation: proof,
-      }).then(message => presenceAction.send(message, to ? { target: to } : undefined))
+      void privateActions.publicKey().then(invitationKey =>
+        signControl(id, PRESENCE_SCHEME, 'presence', me.userId, { ...payload, invitationKey }, {
+          attestation: proof,
+        })
+      ).then(message => presenceAction.send(message, to ? { target: to } : undefined)).catch(() => {})
     }
 
     const recordPresence = (peerId: string, parsed: PresencePayload) => {
@@ -211,6 +253,7 @@ export function usePresenceLobby({
     const dropPeer = (peerId: string) => {
       if (!presence.get(peerId)) return
       presence.drop(peerId)
+      privateActions.forgetPeer(peerId)
       setPresenceVersion(v => v + 1)
     }
 
@@ -235,12 +278,28 @@ export function usePresenceLobby({
         if (changed) saveOutgoingInvites(next)
         return changed ? next : prev
       })
+      setOutgoingWorkspace(prev => {
+        let changed = false
+        const next = prev.map(item => {
+          const peerIds = presence.peerIdsForRendezvousId(item.toRendezvousId)
+          if (peerIds.length === 0) return item
+          if (item.lastSentAt && now - item.lastSentAt < INVITE_RETRY_MS) return item
+          for (const peerId of peerIds) {
+            void workspaceInviteAction.send(item.payload, { target: peerId })
+          }
+          changed = true
+          return { ...item, lastSentAt: now }
+        })
+        if (changed) saveOutgoingWorkspaceInvites(next)
+        return changed ? next : prev
+      })
     }
 
     sendersRef.current = {
       invite: (msg, to) => void inviteAction.send(msg, { target: to }),
       inviteResp: (msg, to) => void inviteRespAction.send(msg, { target: to }),
       dmRing: (msg, to) => void dmRingAction.send(msg, { target: to }),
+      workspaceInvite: (msg, to) => void workspaceInviteAction.send(msg, { target: to }),
     }
 
     const refreshCounts = () => {
@@ -252,7 +311,7 @@ export function usePresenceLobby({
 
     presenceAction.onMessage = (raw, { peerId }) => {
       void (async () => {
-        const message = await verifySignedControl<PresencePayload>(
+        const message = await verifySignedControl<PresencePayload & { invitationKey?: string }>(
           raw,
           PRESENCE_SCHEME,
           'presence'
@@ -266,6 +325,7 @@ export function usePresenceLobby({
           fromUserId: message.userId,
         })
         if (!binding || await lookupRendezvousId(binding.claims.email) !== parsed.rendezvousId) return
+        if (!(await privateActions.rememberVerifiedPeer(peerId, message.deviceKeyId, message.payload.invitationKey))) return
         recordPresence(peerId, parsed)
         // New verified peer might match a pending invite.
         deliverPendingInvites()
@@ -282,10 +342,12 @@ export function usePresenceLobby({
       const friends = loadFriends()
       if (!isFriend(friends, parsed.fromUserId)) return
       if (presence.get(peerId)?.userId !== parsed.fromUserId) return
-      if (dmDeviceKeyForFriend(friends, parsed.fromUserId) !== parsed.deviceKeyId) return
+      // The recorded device, or one it granted — otherwise a friend's second
+      // device could never reach us.
+      if (!ringAuthorizedBy(parsed, dmDeviceKeyForFriend(friends, parsed.fromUserId))) return
       const secret = dmSecretForFriend(friends, parsed.fromUserId)
       if (!secret) return
-      void verifyDmRing(DM_RING_SCHEME, parsed).then(valid => {
+      void verifyDmRing(parsed).then(valid => {
         if (valid) onDmRingRef.current?.(parsed)
       })
     }
@@ -390,6 +452,33 @@ export function usePresenceLobby({
       })()
     }
 
+    workspaceInviteAction.onMessage = raw => {
+      void (async () => {
+        const parsed = parseWorkspaceInvitePayload(raw)
+        if (!parsed || !(await verifyWorkspaceInvite(parsed))) return
+        const me = profileRef.current
+        if (!me || parsed.toRendezvousId !== myRendezvousIdRef.current) return
+        if (parsed.fromUserId === me.userId) return
+        if (!workspaceInviteAllowsEmail(parsed, me.email)) return
+        if (isWorkspaceInviteDismissed(parsed.inviteId)) return
+
+        const entry: IncomingWorkspaceInvite = {
+          inviteId: parsed.inviteId,
+          fromUserId: parsed.fromUserId,
+          fromName: parsed.fromName,
+          payload: parsed,
+          receivedAt: Date.now(),
+        }
+        const previous = loadIncomingWorkspaceInvites().find(
+          invite => invite.payload.invite.workspaceId === parsed.invite.workspaceId
+        )
+        const isNew = !previous ||
+          previous.payload.invite.allowList.signedAt < parsed.invite.allowList.signedAt
+        setIncomingWorkspace(current => upsertIncomingWorkspaceInvite(current, entry))
+        if (isNew) onWorkspaceInviteRef.current?.(entry)
+      })()
+    }
+
     room.onPeerJoin = (peerId: string) => {
       refreshCounts()
       announcePresence(peerId)
@@ -418,6 +507,7 @@ export function usePresenceLobby({
       inviteAction.onMessage = null
       inviteRespAction.onMessage = null
       dmRingAction.onMessage = null
+      workspaceInviteAction.onMessage = null
       room.onPeerJoin = null
       room.onPeerLeave = null
       sendersRef.current = null
@@ -425,7 +515,7 @@ export function usePresenceLobby({
       connectedPeersRef.current = 0
       setOnlineCount(0)
     }
-  }, [room, roomEnabled, profileRef, identityRef, attestationRef, onFriendsChangedRef, onDmRingRef, onFriendInviteRef])
+  }, [room, roomEnabled, profileRef, identityRef, attestationRef, onFriendsChangedRef, onDmRingRef, onFriendInviteRef, onWorkspaceInviteRef])
 
   const inviteByEmail = useCallback(
     async (toEmail: string): Promise<{ ok: true } | { ok: false; error: string }> => {
@@ -576,6 +666,60 @@ export function usePresenceLobby({
     setOutgoing(prev => removeOutgoingInvite(prev, inviteId))
   }, [])
 
+  const inviteToWorkspace = useCallback(
+    async (emails: string[], invite: WorkspaceInvite): Promise<void> => {
+      const me = profileRef.current
+      const id = identityRef.current
+      if (!me || !id) throw new Error('Sign in again before inviting')
+
+      const targets = [...new Set(emails.map(normalizeEmail))].filter(
+        email => isPlausibleEmail(email) && email !== normalizeEmail(me.email)
+      )
+      for (const toEmail of targets) {
+        const toRendezvousId = await lookupRendezvousId(toEmail)
+        // The signed allow-list and copyable link remain authoritative. A
+        // missing rendezvous capability only means live notification delivery
+        // is unavailable for this address right now.
+        if (!toRendezvousId) continue
+        const inviteId = crypto.randomUUID()
+        const payload = await createWorkspaceInvite(id, {
+          inviteId,
+          fromUserId: me.userId,
+          fromName: me.name,
+          toRendezvousId,
+          invite,
+        })
+        const entry: OutgoingWorkspaceInvite = {
+          inviteId,
+          toEmail,
+          toRendezvousId,
+          payload,
+          createdAt: Date.now(),
+          lastSentAt: 0,
+        }
+        setOutgoingWorkspace(current => upsertOutgoingWorkspaceInvite(current, entry))
+
+        const peerIds = presenceIndexRef.current.peerIdsForRendezvousId(toRendezvousId)
+        const senders = sendersRef.current
+        if (senders && peerIds.length > 0) {
+          for (const peerId of peerIds) senders.workspaceInvite(payload, peerId)
+          setOutgoingWorkspace(current => {
+            const next = current.map(value =>
+              value.inviteId === inviteId ? { ...value, lastSentAt: Date.now() } : value
+            )
+            saveOutgoingWorkspaceInvites(next)
+            return next
+          })
+        }
+      }
+    },
+    [profileRef, identityRef]
+  )
+
+  const dismissWorkspaceInvite = useCallback((inviteId: string) => {
+    setIncomingWorkspace(current => dismissIncomingWorkspaceInvite(current, inviteId))
+  }, [])
+
   /** True when this durable userId announced presence on the lobby recently. */
   const isUserOnline = useCallback(
     (userId: string | undefined) => {
@@ -599,15 +743,27 @@ export function usePresenceLobby({
       if (peerIds.length === 0) return false
       const identity = identityRef.current
       if (!identity) return false
-      void signDmRing(identity, DM_RING_SCHEME, {
-        toUserId,
-        fromUserId: me.userId,
-        fromName: me.name,
-        reason,
-        preview: preview?.trim().slice(0, 120) || undefined,
-      }).then(payload => {
+      void (async () => {
+        // The recipient only trusts the device that recorded the friendship.
+        // Ringing from any other one needs the grant that authorises it.
+        const entry = listFriends(loadFriends()).find(f => f.subjectUserId === toUserId)
+        const currentDeviceKeyId = await identity.publicKeyId()
+        // Their record of us is the device that signed our own entry for them —
+        // both are written in the same exchange — so that is the grant issuer
+        // they will check against.
+        const deviceGrant = entry && entry.deviceKeyId !== currentDeviceKeyId
+          ? findDeviceGrant(me.userId, entry.deviceKeyId, currentDeviceKeyId)
+          : undefined
+        const payload = await signDmRing(identity, {
+          toUserId,
+          fromUserId: me.userId,
+          fromName: me.name,
+          reason,
+          preview: preview?.trim().slice(0, 120) || undefined,
+          ...(deviceGrant ? { deviceGrant } : {}),
+        })
         for (const peerId of peerIds) senders.dmRing(payload, peerId)
-      })
+      })()
       return true
     },
     [profileRef, identityRef]
@@ -618,10 +774,14 @@ export function usePresenceLobby({
     lobbyError,
     outgoing,
     incoming,
+    outgoingWorkspace,
+    incomingWorkspace,
     inviteByEmail,
+    inviteToWorkspace,
     acceptInvite,
     declineInvite,
     cancelOutgoing,
+    dismissWorkspaceInvite,
     isUserOnline,
     ringDm,
   }

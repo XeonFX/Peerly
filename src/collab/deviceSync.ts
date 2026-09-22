@@ -1,157 +1,113 @@
-const CONFIG_KEY = 'peerly-account-sync-v1'
-const MAX_BYTES = 2_000_000
-const MAX_KEYS = 500
+/**
+ * What this app copies onto a newly paired device.
+ *
+ * The engine lives in `@peerly/core`; what is app-owned is this list — which
+ * keys sync at all, and how each merges with what the receiving device already
+ * has.
+ *
+ * This used to be a deny-list: everything under the app's storage prefix
+ * except a handful of named exceptions. That meant every key any future
+ * feature invented synced by default, and per-device values like this
+ * browser's own peer ids were being copied between machines. The list below is
+ * the same set minus those, stated explicitly, and nothing new joins it by
+ * accident.
+ *
+ * Deliberately absent, and worth keeping absent: the session and its id-token
+ * claims, device grants and their labels, the sync secret itself, and the
+ * legal-consent record — consent is given on a device, by a person, and is not
+ * something another device gets to assert on their behalf.
+ */
+import { createDeviceSync, type ArrayMergeRule, type MergeRule } from '@peerly/core'
+import { APP_STORAGE_SCOPE } from '../config'
 
-export type DeviceSyncSnapshot = {
-  v: 1
-  createdAt: number
-  values: Record<string, string>
-  accountSyncSecret?: string
+export type { DeviceSyncSnapshot } from '@peerly/core'
+
+type Item = Record<string, unknown>
+
+const number = (item: Item, ...fields: string[]): number =>
+  Math.max(...fields.map(field => Number(item[field] ?? 0)))
+
+/** Anything the user can edit or delete carries one of these stamps. */
+const revisionOf = (item: Item): number =>
+  number(item, 'deletedAt', 'editedAt', 'timestamp', 'ts', 'lastOpenedAt', 'updatedAt')
+
+/** Bounded so a long-running account cannot grow a key without limit. */
+const LIST_CAP = 500
+
+const byId: ArrayMergeRule = {
+  merge: 'array',
+  idOf: item => String(item.id ?? ''),
+  revisionOf,
+  cap: LIST_CAP,
 }
 
-function allowed(key: string): boolean {
-  if (!key.startsWith('peerly-')) return false
-  return ![
-    'peerly-session',
-    'peerly-id-token',
-    'peerly-id-user-id',
-    'peerly-id-provider',
-    'peerly-id-email',
-    'peerly-device-grants-v1',
-    'peerly-device-meta-v1',
-    CONFIG_KEY,
-    'peerly-legal-consent-v1',
-  ].includes(key)
+const reactionsById: Omit<ArrayMergeRule, 'merge'> = {
+  idOf: item =>
+    `${String(item.messageId ?? '')}\0${String(item.actorUserId ?? item.actorId ?? '')}\0${String(item.emoji ?? '')}`,
+  revisionOf,
+  cap: LIST_CAP,
 }
 
-export function loadAccountSyncSecret(userId: string): string | null {
-  try {
-    const value = JSON.parse(localStorage.getItem(CONFIG_KEY) ?? '{}') as { userId?: unknown; secret?: unknown }
-    return value.userId === userId && typeof value.secret === 'string' && /^[0-9a-f]{32}$/i.test(value.secret)
-      ? value.secret.toLowerCase()
-      : null
-  } catch { return null }
-}
+/** Take the other device's copy only when this one has nothing. */
+const copy: MergeRule = { merge: 'copy' }
 
-export function ensureAccountSyncSecret(userId: string): string {
-  const current = loadAccountSyncSecret(userId)
-  if (current) return current
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  const secret = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
-  localStorage.setItem(CONFIG_KEY, JSON.stringify({ userId, secret }))
-  return secret
-}
+const sync = createDeviceSync({
+  secretKey: `${APP_STORAGE_SCOPE}-account-sync-v1`,
+  changedEvent: `${APP_STORAGE_SCOPE}-device-data-synced`,
 
-function saveSecret(userId: string, secret: string | undefined): void {
-  if (secret && /^[0-9a-f]{32}$/i.test(secret)) {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify({ userId, secret: secret.toLowerCase() }))
-  }
-}
+  keys: {
+    // Position in the rail is user-facing navigation state, so the local
+    // order stands and workspaces learned from the other device are appended.
+    // Sorting by last-opened would make the rail jump after every sync.
+    [`${APP_STORAGE_SCOPE}-workspaces`]: {
+      merge: 'array',
+      idOf: item => String(item.workspaceId ?? ''),
+      revisionOf,
+      cap: LIST_CAP,
+      preserveOrder: true,
+    },
+    [`${APP_STORAGE_SCOPE}-friends-v1`]: {
+      merge: 'array',
+      idOf: item => String(item.subjectUserId ?? ''),
+      revisionOf,
+      cap: LIST_CAP,
+    },
+    [`${APP_STORAGE_SCOPE}-friends-subs-v1`]: byId,
+    [`${APP_STORAGE_SCOPE}-dm-credentials-v1`]: { merge: 'object' },
+    [`${APP_STORAGE_SCOPE}-profile`]: { merge: 'object' },
 
-export function createDeviceSyncSnapshot(accountSyncSecret?: string): DeviceSyncSnapshot {
-  const values: Record<string, string> = {}
-  let bytes = 0
-  for (let index = 0; index < localStorage.length && Object.keys(values).length < MAX_KEYS; index++) {
-    const key = localStorage.key(index)
-    if (!key || !allowed(key)) continue
-    const value = localStorage.getItem(key)
-    if (value === null) continue
-    const size = new Blob([key, value]).size
-    if (bytes + size > MAX_BYTES) continue
-    values[key] = value
-    bytes += size
-  }
-  return { v: 1, createdAt: Date.now(), values, accountSyncSecret }
-}
+    // Preferences: whatever this device already chose stays chosen.
+    [`${APP_STORAGE_SCOPE}-theme`]: copy,
+    [`${APP_STORAGE_SCOPE}-locale`]: copy,
+    [`${APP_STORAGE_SCOPE}-dm-notifications`]: copy,
+    [`${APP_STORAGE_SCOPE}-attention-sounds`]: copy,
+    [`${APP_STORAGE_SCOPE}-file-sync`]: copy,
+    [`${APP_STORAGE_SCOPE}-home-sidebar-width-v1`]: copy,
 
-function mergeArrays(current: string, incoming: string, key: string): string {
-  try {
-    const left = JSON.parse(current) as unknown
-    const right = JSON.parse(incoming) as unknown
-    if (!Array.isArray(left) || !Array.isArray(right)) return current
-    const byId = new Map<string, Record<string, unknown>>()
-    const idOf = (item: Record<string, unknown>) => {
-      if (key === 'peerly-workspaces') return String(item.workspaceId ?? '')
-      if (key === 'peerly-friends-v1') return String(item.subjectUserId ?? '')
-      return String(item.id ?? `${item.messageId ?? ''}\0${item.actorUserId ?? item.actorId ?? ''}\0${item.emoji ?? ''}`)
-    }
-    const revision = (item: Record<string, unknown>) => Math.max(
-      Number(item.deletedAt ?? 0), Number(item.editedAt ?? 0),
-      Number(item.timestamp ?? 0), Number(item.ts ?? 0),
-      Number(item.lastOpenedAt ?? 0), Number(item.updatedAt ?? 0)
-    )
-    for (const value of [...left, ...right]) {
-      if (!value || typeof value !== 'object') continue
-      const item = value as Record<string, unknown>
-      const id = idOf(item)
-      if (!id) continue
-      const previous = byId.get(id)
-      if (!previous || revision(item) >= revision(previous)) byId.set(id, item)
-    }
-    const merged = [...byId.values()]
-    // Workspace position is user-facing navigation state. Map replacement
-    // preserves the local order and appends workspaces learned from a device;
-    // sorting by lastOpenedAt would make the rail jump after every sync.
-    if (key === 'peerly-workspaces') return JSON.stringify(merged.slice(-500))
-    return JSON.stringify(merged.sort((a, b) => revision(a) - revision(b)).slice(-500))
-  } catch { return current }
-}
+    // Pending invites are in flight; the sending device stays responsible.
+    [`${APP_STORAGE_SCOPE}-friend-invites-in-v2`]: copy,
+    [`${APP_STORAGE_SCOPE}-friend-invites-out-v2`]: copy,
+  },
 
-function mergeObjects(current: string, incoming: string): string {
-  try {
-    const left = JSON.parse(current) as Record<string, unknown>
-    const right = JSON.parse(incoming) as Record<string, unknown>
-    if (!left || !right || Array.isArray(left) || Array.isArray(right)) return current
-    return JSON.stringify({ ...left, ...right })
-  } catch { return current }
-}
+  prefixes: [
+    // Message history, per workspace channel.
+    [`${APP_STORAGE_SCOPE}-history-`, byId],
+    [`${APP_STORAGE_SCOPE}-channels-`, byId],
+    // Direct-message history: an envelope of messages and their reactions.
+    [`${APP_STORAGE_SCOPE}-gdm-hist-v1-`, {
+      merge: 'envelope',
+      version: 2,
+      maxFields: ['savedAt'],
+      lists: { wires: byId, reactions: reactionsById },
+    }],
+    [`${APP_STORAGE_SCOPE}-channel-tombstones-`, copy],
+    [`${APP_STORAGE_SCOPE}-dms-`, copy],
+    [`${APP_STORAGE_SCOPE}-read-`, copy],
+    [`${APP_STORAGE_SCOPE}-key-bindings:`, copy],
+  ],
+})
 
-function mergeDmHistory(current: string, incoming: string): string {
-  try {
-    const left = JSON.parse(current) as { wires?: unknown[]; reactions?: unknown[]; savedAt?: unknown }
-    const right = JSON.parse(incoming) as { wires?: unknown[]; reactions?: unknown[]; savedAt?: unknown }
-    if (!Array.isArray(left?.wires) || !Array.isArray(right?.wires)) return current
-    const wires = mergeArrays(JSON.stringify(left.wires), JSON.stringify(right.wires), 'peerly-history-dm')
-    const reactions = mergeArrays(
-      JSON.stringify(left.reactions ?? []), JSON.stringify(right.reactions ?? []), 'peerly-reactions-dm'
-    )
-    return JSON.stringify({
-      v: 2,
-      savedAt: Math.max(Number(left.savedAt ?? 0), Number(right.savedAt ?? 0)),
-      wires: JSON.parse(wires),
-      reactions: JSON.parse(reactions),
-    })
-  } catch { return current }
-}
-
-export function importDeviceSyncSnapshot(snapshot: DeviceSyncSnapshot, userId: string): number {
-  if (!snapshot || snapshot.v !== 1 || !snapshot.values || typeof snapshot.values !== 'object') return 0
-  saveSecret(userId, snapshot.accountSyncSecret)
-  let count = 0
-  let bytes = 0
-  const writeIfChanged = (key: string, current: string | null, next: string) => {
-    if (current === next) return
-    localStorage.setItem(key, next)
-    count++
-  }
-  for (const [key, incoming] of Object.entries(snapshot.values).slice(0, MAX_KEYS)) {
-    if (!allowed(key) || typeof incoming !== 'string') continue
-    bytes += new Blob([key, incoming]).size
-    if (bytes > MAX_BYTES) break
-    const current = localStorage.getItem(key)
-    if (current === null) writeIfChanged(key, current, incoming)
-    else if (key.startsWith('peerly-gdm-hist-v1-')) {
-      writeIfChanged(key, current, mergeDmHistory(current, incoming))
-    } else if (
-      key.startsWith('peerly-history-') ||
-      key.startsWith('peerly-channels-') || key === 'peerly-workspaces' ||
-      key === 'peerly-friends-v1' || key.endsWith('-subs-v1')
-    ) writeIfChanged(key, current, mergeArrays(current, incoming, key))
-    else if (key === 'peerly-dm-credentials-v1' || key === 'peerly-profile') {
-      writeIfChanged(key, current, mergeObjects(current, incoming))
-    } else continue
-  }
-  if (count && typeof window !== 'undefined') window.dispatchEvent(new Event('peerly-device-data-synced'))
-  return count
-}
+export const loadAccountSyncSecret = sync.loadSecret
+export const ensureAccountSyncSecret = sync.ensureSecret
+export const createDeviceSyncSnapshot = sync.snapshot
+export const importDeviceSyncSnapshot = sync.import

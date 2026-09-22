@@ -12,7 +12,7 @@ import { join } from 'path'
  * the guard through a function the bundler cannot fold. This asserts the
  * outcome rather than trusting the mechanism.
  */
-const DIST = 'dist'
+const DIST = process.argv[2] ?? 'dist'
 
 // Distinctive fragments of the E2E private key and its issuer material.
 const FORBIDDEN = [

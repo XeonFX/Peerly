@@ -6,14 +6,19 @@ export type PickerRoute = {
 }
 
 export type LoginRoute = { screen: 'login' }
-export type HomeRoute = { screen: 'home' }
+/**
+ * The friends list, optionally with a conversation open.
+ *
+ * The open DM belongs in the URL: it was component state before, so a refresh
+ * dropped the user back to the list and lost the conversation they were in.
+ */
+export type HomeRoute = { screen: 'home'; dmUserId?: string }
 export type AccountRoute = { screen: 'account' }
 export type StorageRoute = { screen: 'storage' }
 
 export type WorkspaceRoute =
-  | { screen: 'workspace'; view: 'channel'; channelId: string; showFiles: boolean }
-  | { screen: 'workspace'; view: 'profile' }
-  | { screen: 'workspace'; view: 'settings' }
+  | { screen: 'workspace'; workspaceRouteId?: string; view: 'channel'; channelId: string; showFiles: boolean }
+  | { screen: 'workspace'; workspaceRouteId?: string; view: 'settings' }
 
 /** Public legal pages, reachable regardless of session/workspace state. */
 export type LegalRoute = { screen: 'legal'; doc: 'privacy' | 'terms' }
@@ -33,9 +38,10 @@ export type AppRoute =
 
 const PARSE_BASE = 'http://peerly.local'
 
-export function defaultWorkspaceRoute(): WorkspaceRoute {
+export function defaultWorkspaceRoute(workspaceRouteId?: string): WorkspaceRoute {
   return {
     screen: 'workspace',
+    workspaceRouteId,
     view: 'channel',
     channelId: GENERAL_CHANNEL.id,
     showFiles: false,
@@ -47,7 +53,7 @@ export function pathForRoute(route: AppRoute): string {
     return `/${route.doc}`
   }
   if (route.screen === 'login') return '/login'
-  if (route.screen === 'home') return '/home'
+  if (route.screen === 'home') return route.dmUserId ? `/friends/${encodeURIComponent(route.dmUserId)}` : '/friends'
   if (route.screen === 'account') return '/profile'
   if (route.screen === 'storage') return '/storage'
   if (route.screen === 'picker') {
@@ -60,13 +66,14 @@ export function pathForRoute(route: AppRoute): string {
 
   switch (route.view) {
     case 'channel': {
-      const base = `/workspace/channel/${encodeURIComponent(route.channelId)}`
+      const workspace = route.workspaceRouteId ? `/${encodeURIComponent(route.workspaceRouteId)}` : ''
+      const base = `/workspace${workspace}/channel/${encodeURIComponent(route.channelId)}`
       return route.showFiles ? `${base}?files=1` : base
     }
-    case 'profile':
-      return '/workspace/profile'
     case 'settings':
-      return '/workspace/settings'
+      return route.workspaceRouteId
+        ? `/workspace/${encodeURIComponent(route.workspaceRouteId)}/settings`
+        : '/workspace/settings'
   }
 }
 
@@ -82,7 +89,10 @@ function parsePathRoute(pathname: string, search: string, hash = ''): AppRoute |
   if (path === '/' || path === '/login') {
     return { screen: 'login' }
   }
-  if (path === '/home') return { screen: 'home' }
+  // `/home` is the old spelling, kept so existing links and bookmarks work.
+  if (path === '/home' || path === '/friends') return { screen: 'home' }
+  const dm = /^\/friends\/([A-Za-z0-9_-]{1,128})$/.exec(path)
+  if (dm) return { screen: 'home', dmUserId: dm[1] }
   if (path === '/profile') return { screen: 'account' }
   if (path === '/storage') return { screen: 'storage' }
   if (path === '/create') {
@@ -111,11 +121,32 @@ function parsePathRoute(pathname: string, search: string, hash = ''): AppRoute |
     }
   }
 
+  const namedChannelMatch = /^\/workspace\/([^/]+)\/channel\/([^/]+)$/.exec(path)
+  if (namedChannelMatch) {
+    const params = new URLSearchParams(search)
+    return {
+      screen: 'workspace',
+      workspaceRouteId: decodeURIComponent(namedChannelMatch[1]),
+      view: 'channel',
+      channelId: decodeURIComponent(namedChannelMatch[2]),
+      showFiles: params.get('files') === '1',
+    }
+  }
+
   if (path === '/workspace/profile') {
-    return { screen: 'workspace', view: 'profile' }
+    // Legacy route: identity profile is global, never workspace-scoped.
+    return { screen: 'account' }
   }
   if (path === '/workspace/settings') {
     return { screen: 'workspace', view: 'settings' }
+  }
+  const namedSettingsMatch = /^\/workspace\/([^/]+)\/settings$/.exec(path)
+  if (namedSettingsMatch) {
+    return {
+      screen: 'workspace',
+      workspaceRouteId: decodeURIComponent(namedSettingsMatch[1]),
+      view: 'settings',
+    }
   }
 
   return null
@@ -154,6 +185,11 @@ export function resolveInitialRoute(hasWorkspaceSession: boolean, hasSignedInIde
     return fromUrl
   }
   if (fromUrl?.screen === 'devices' || fromUrl?.screen === 'sync') return fromUrl
+  // Global destinations remain global even when a workspace session is
+  // persisted. In particular, refreshing /profile must not reopen a workspace.
+  if (fromUrl?.screen === 'home' || fromUrl?.screen === 'account' || fromUrl?.screen === 'storage') {
+    return hasSignedInIdentity ? fromUrl : { screen: 'login' }
+  }
   if (hasWorkspaceSession) {
     return defaultWorkspaceRoute()
   }
@@ -162,9 +198,6 @@ export function resolveInitialRoute(hasWorkspaceSession: boolean, hasSignedInIde
   }
   if (fromUrl?.screen === 'login') {
     return hasSignedInIdentity ? { screen: 'home' } : fromUrl
-  }
-  if (fromUrl?.screen === 'home' || fromUrl?.screen === 'account' || fromUrl?.screen === 'storage') {
-    return hasSignedInIdentity ? fromUrl : { screen: 'login' }
   }
   if (fromUrl?.screen === 'picker') {
     return fromUrl.tab === 'join' || hasSignedInIdentity ? fromUrl : { screen: 'login' }

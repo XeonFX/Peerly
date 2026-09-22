@@ -220,7 +220,7 @@ export function getTurnConfig(env: Env): TurnServer[] | undefined {
  * answers STUN too, so this is really just a fallback for discovering the
  * reflexive address if our server is unreachable — one is plenty.
  */
-const FALLBACK_STUN_URL = 'stun:stun.l.google.com:19302'
+export const FALLBACK_STUN_URL = 'stun:stun.l.google.com:19302'
 
 /**
  * The full ICE server list to hand Trystero via `rtcConfig.iceServers`.

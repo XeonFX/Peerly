@@ -26,6 +26,44 @@ describe('device sync', () => {
     expect(snapshot.values.unrelated).toBeUndefined()
   })
 
+  it('excludes everything the allow-list does not name', () => {
+    // This list used to be a deny-list, so anything under the app's prefix
+    // synced unless someone remembered to exclude it. These are the values
+    // that were being copied between devices and should not have been.
+    for (const key of [
+      'peerly-self-ids:ws1',          // this browser's own peer ids
+      'peerly-google-jwks-v1',        // a cache of someone else's public keys
+      'peerly-id-token',
+      'peerly-id-email',
+      'peerly-device-grants-v1',
+      'peerly-device-meta-v1',
+      'peerly-account-sync-v1',
+      'peerly-legal-consent-v1',      // given on a device, by a person
+      'peerly-feature-invented-later',
+    ]) {
+      localStorage.setItem(key, 'private')
+    }
+    expect(Object.keys(createDeviceSyncSnapshot().values)).toEqual([])
+  })
+
+  it('refuses to write a key the sender should not have sent', () => {
+    importDeviceSyncSnapshot({
+      v: 1,
+      createdAt: 1,
+      values: { 'peerly-session': 'stolen', 'peerly-id-token': 'stolen' },
+    }, 'user-1')
+    expect(localStorage.getItem('peerly-session')).toBeNull()
+    expect(localStorage.getItem('peerly-id-token')).toBeNull()
+  })
+
+  it('keeps a preference this device already chose', () => {
+    localStorage.setItem('peerly-theme', 'dark')
+    importDeviceSyncSnapshot({
+      v: 1, createdAt: 1, values: { 'peerly-theme': 'light' },
+    }, 'user-1')
+    expect(localStorage.getItem('peerly-theme')).toBe('dark')
+  })
+
   it('merges workspace and DM histories without losing either device', () => {
     localStorage.setItem('peerly-history-ws-general', '[{"id":"a","timestamp":1}]')
     localStorage.setItem('peerly-gdm-hist-v1-room', '{"v":2,"savedAt":1,"wires":[{"id":"a","ts":1}],"reactions":[]}')

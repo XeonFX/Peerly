@@ -3,10 +3,31 @@
   "name": "peerly",
   "main": "worker/index.mjs",
   "compatibility_date": "2026-07-22",
+  // The worker's own imports reach into `packages/core/dist` — the shared
+  // control plane is TypeScript compiled to JS, and `worker/realtime/*.mjs`
+  // loads it from there. Bundling without it fails at
+  // `packages/core/worker/realtime/index.mjs:19`, which is how a Workers Build
+  // fails on a clean checkout while every local build succeeds on a warm one.
+  // Declared here so any path that bundles this worker gets it, not only the
+  // ones that happen to run `npm run build` first.
+  "build": { "command": "npm run build:core" },
   "vars": {
     // The auth bridge executes in the Worker runtime, where Cloudflare's
     // build-time VITE_* variables are not available automatically.
-    "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com"
+    "VITE_GOOGLE_CLIENT_ID": "724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com",
+    "APP_ID": "peerly",
+    // Production stays on the legacy relay until the Durable Objects control
+    // plane passes its seven-day exit criteria (see
+    // docs/DURABLE_OBJECTS_ARCHITECTURE.md Phase 5).
+    //
+    // IMPORTANT: no `durable_objects`/`migrations` may appear in this file
+    // until that cutover PR. Workers Builds deploys every non-production
+    // branch with `wrangler versions upload`, and Cloudflare rejects any
+    // version that carries a Durable Object migration (API error 10211) —
+    // migrations only apply through a full deploy, which happens on merge to
+    // main. The DO-enabled staging worker lives in wrangler.preview.jsonc.
+    "COORDINATION_BACKEND": "legacy-relay",
+    "CONTENT_BACKEND": "p2p"
   },
   "assets": {
     "binding": "ASSETS",
@@ -21,29 +42,5 @@
       "simple": { "limit": 30, "period": 60 }
     }
   ],
-  "observability": { "enabled": true, "head_sampling_rate": 1 },
-  "env": {
-    // A single, stable staging worker for testing any branch with real Google
-    // sign-in. Google OAuth requires exact JavaScript origins (no wildcards),
-    // so per-branch preview URLs can never sign in — this fixed hostname is
-    // registered once in the OAuth client and reused for every branch:
-    //   npm run build && npx wrangler deploy --env preview
-    "preview": {
-      "name": "peerly-preview",
-      // assets is a non-inheritable key: every env re-declares it.
-      "assets": {
-        "binding": "ASSETS",
-        "directory": "./dist",
-        "not_found_handling": "single-page-application",
-        "run_worker_first": ["/api/*"]
-      },
-      "ratelimits": [
-        {
-          "name": "RENDEZVOUS_RATE_LIMITER",
-          "namespace_id": "1002",
-          "simple": { "limit": 60, "period": 60 }
-        }
-      ]
-    }
-  }
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
 }

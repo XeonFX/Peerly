@@ -42,3 +42,8 @@ Thumbs.db
 # AI / local tooling
 .claude
 .cursor
+# wrangler dev state and generated bundles
+.wrangler
+dist-e2e
+
+dist-preview

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { verifyAllowList } from './allowList'
+import { signAllowList, verifyAllowList, workspaceAuthorityScope } from './allowList'
 import { DeviceIdentity } from './deviceIdentity'
 import { WorkspaceAuthManager } from './workspaceAuth'
 
@@ -41,6 +41,24 @@ async function creatorSetup() {
 }
 
 describe('WorkspaceAuthManager.canInvite', () => {
+  it('upgrades a legacy policy only on the original creator device', async () => {
+    const creator = memoryIdentity()
+    const creatorKeyId = await creator.publicKeyId()
+    const allowList = await signAllowList(creator, ['alice@example.com', 'bob@example.com'])
+    const config = { workspaceId: 'legacy-workspace', creatorKeyId, allowList }
+    const member = withIdentity(new WorkspaceAuthManager(config), memoryIdentity())
+    expect(await member.ensureScopedAllowList()).toEqual(allowList)
+    const owner = withIdentity(new WorkspaceAuthManager(config), creator)
+    const [updated, concurrent] = await Promise.all([
+      owner.ensureScopedAllowList(), owner.ensureScopedAllowList(),
+    ])
+    expect(concurrent).toEqual(updated)
+    expect(updated.scope).toBe(await workspaceAuthorityScope(config.workspaceId, creatorKeyId))
+    expect(updated.signedAt).toBeGreaterThan(allowList.signedAt)
+    expect(await verifyAllowList(updated, creatorKeyId, config.workspaceId)).toBe(true)
+    expect(await owner.ensureScopedAllowList()).toEqual(updated)
+  })
+
   it('is true on the device that created the workspace', async () => {
     const { manager } = await creatorSetup()
     expect(await manager.canInvite()).toBe(true)

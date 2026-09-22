@@ -143,9 +143,14 @@ export function IdentityLoginButtons({
       const claims = await authManager.signInWithE2eEmail(email)
       const token = authManager.getIdToken()
       if (!token) throw new Error(tr('Sign-in failed'))
+      // Whichever provider actually minted it. Hardcoding 'google' here meant
+      // the Durable Objects harness — which signs in through the generic
+      // `oidc` provider so the worker can verify the token too — stored a
+      // provider the worker would then reject.
+      const providerId = authManager.getIdentityProvider() ?? 'google'
       const userId = await deriveUserId(claims.iss, claims.sub)
-      saveIdCredentials(token, 'google', claims.email, userId)
-      onSignedIn({ email: claims.email, name: claims.name, token, providerId: 'google', userId })
+      saveIdCredentials(token, providerId, claims.email, userId)
+      onSignedIn({ email: claims.email, name: claims.name, token, providerId, userId })
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err))
     } finally {

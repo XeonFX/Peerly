@@ -1,0 +1,22 @@
+name: Peerly CodeQL
+
+# Two files are excluded, both because TURN's algorithms are fixed by the
+# protocol rather than chosen here.
+#
+# RFC 5389 §15.4 defines MESSAGE-INTEGRITY as HMAC-SHA1 and the long-term
+# credential key as `MD5(username:realm:password)`. coturn implements exactly
+# that and rejects anything else, so `js/weak-cryptographic-algorithm` and
+# `js/insufficient-password-hash` fire on every correct implementation. There
+# is no variant of this code that both passes those queries and works.
+#
+# Neither file ships. `turn-smoke.mjs` is an operational check run from a
+# terminal or a schedule, and the other is its test. The protocol module they
+# drive, `packages/core/src/turnAllocate.ts`, stays analysed: it takes the hash
+# functions as parameters and contains no cryptography of its own, which is
+# what keeps this exclusion as narrow as it is.
+#
+# Scoped to paths rather than disabling the queries, so the same mistake made
+# anywhere else in either repo still fails the build.
+paths-ignore:
+  - packages/core/scripts/turn-smoke.mjs
+  - packages/core/src/turnAllocate.test.ts

@@ -149,15 +149,34 @@ export function applyNsfwScanResult(
 }
 
 /**
- * Live-scan cadence with backoff after long clean runs so multi-hour calls
- * do not thrash the main thread.
+ * How often to sample a live stream, and how far to back off once it has been
+ * clean for a while, so multi-hour calls do not thrash the main thread.
+ *
+ * The right numbers depend on what is being screened: one stranger's camera
+ * wants a fast first verdict, a grid of colleagues' tiles wants a small share
+ * of the CPU. That is configuration, not two copies of this function.
  */
+export type VideoScreeningCadence = {
+  /** Delay before the first backoff step is reached. */
+  readonly baseMs: number
+  /** Ascending [cleanRuns, delayMs] steps: at or above `cleanRuns`, wait
+   *  `delayMs`. The last step is the ceiling. */
+  readonly backoff: readonly (readonly [cleanRuns: number, delayMs: number])[]
+}
+
+/** Tuned for a single live stream, where a fast first verdict matters most. */
+export const LIVE_VIDEO_CADENCE: VideoScreeningCadence = {
+  baseMs: VIDEO_SCREEN_INTERVAL_MS,
+  backoff: [[5, 2_000], [15, 8_000], [30, 20_000]],
+}
+
 export function videoScreeningDelay(
   cleanRuns: number,
-  baseMs: number = VIDEO_SCREEN_INTERVAL_MS
+  cadence: VideoScreeningCadence = LIVE_VIDEO_CADENCE
 ): number {
-  if (cleanRuns < 5) return baseMs
-  if (cleanRuns < 15) return 2_000
-  if (cleanRuns < 30) return 8_000
-  return 20_000
+  for (let index = cadence.backoff.length - 1; index >= 0; index--) {
+    const step = cadence.backoff[index]!
+    if (cleanRuns >= step[0]) return step[1]
+  }
+  return cadence.baseMs
 }

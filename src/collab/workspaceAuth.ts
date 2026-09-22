@@ -1,8 +1,10 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
 import { DeviceIdentity, type DeviceKeyId } from './deviceIdentity'
-import { signAllowList, verifyAllowList, newerAllowList, type SignedAllowList } from './allowList'
+import { signAllowList, verifyAllowList, newerAllowList, workspaceAuthorityScope, type SignedAllowList } from './allowList'
 import {
+  e2eOidcTarget,
   issueE2eGoogleToken,
+  issueE2eOidcToken,
   getE2eJwksFetcher,
   isE2eAuthBypass,
   E2E_GOOGLE_CLIENT_ID,
@@ -18,6 +20,7 @@ import { signedMessageBytes, type SignedFields } from './messageSigning'
 import { signedReactionBytes, type SignedReactionFields } from './reactionSigning'
 import { createIdentityHandshake } from './identityHandshake'
 import { generateWorkspaceId, type WorkspaceAccess, type WorkspaceInvite } from './inviteLink'
+import { generateWorkspaceRouteId } from './workspaceRouteId'
 
 export type WorkspaceAuthConfig = {
   workspaceId: string
@@ -29,12 +32,13 @@ export class WorkspaceAuthManager {
   private readonly identity = new DeviceIdentity()
   private readonly config: WorkspaceAuthConfig
   private allowList: SignedAllowList
+  private scopeUpgrade: Promise<SignedAllowList> | null = null
   private idToken: string | null = null
   private identityProvider: IdentityProviderId | null = null
   private readonly fetchJwks: JwksFetcher | undefined
 
   constructor(config: WorkspaceAuthConfig, options?: { fetchJwks?: JwksFetcher }) {
-    this.config = config
+    this.config = { ...config }
     this.allowList = config.allowList
     this.fetchJwks = options?.fetchJwks ?? (isE2eAuthBypass() ? getE2eJwksFetcher() : undefined)
   }
@@ -127,8 +131,13 @@ export class WorkspaceAuthManager {
       throw new Error('E2E auth bypass is not enabled')
     }
     const keyId = await this.deviceKeyId()
-    const token = await issueE2eGoogleToken(email, keyId)
-    return this.verifyAndStoreIdToken(token, 'google')
+    // The nonce is the device key id throughout: it is the binding the worker
+    // enforces, so a token minted for one device cannot enrol another.
+    const oidc = e2eOidcTarget()
+    if (oidc) {
+      return this.verifyAndStoreIdToken(await issueE2eOidcToken(oidc, email, keyId), 'oidc')
+    }
+    return this.verifyAndStoreIdToken(await issueE2eGoogleToken(email, keyId), 'google')
   }
 
   buildPeerHandshake(handlers?: {
@@ -152,10 +161,11 @@ export class WorkspaceAuthManager {
         getE2eProvider(providerId) ?? getIdentityProvider(providerId),
       fetchJwks: this.fetchJwks,
       creatorKeyId: this.config.creatorKeyId,
+      workspaceSecret: this.config.workspaceId,
       getKnownAllowList: () => this.allowList,
       onPeerVerified: handlers?.onPeerVerified,
       onAllowListSeen: list => {
-        void verifyAllowList(list, this.config.creatorKeyId).then(valid => {
+        void verifyAllowList(list, this.config.creatorKeyId, this.config.workspaceId).then(valid => {
           if (!valid) return
           const next = newerAllowList(this.allowList, list)
           if (next.signedAt !== this.allowList.signedAt) {
@@ -182,6 +192,22 @@ export class WorkspaceAuthManager {
     return (await this.deviceKeyId()) === this.config.creatorKeyId
   }
 
+  /** Only the original creator can upgrade a legacy unscoped policy. */
+  async ensureScopedAllowList(): Promise<SignedAllowList> {
+    if (this.allowList.scope) return this.allowList
+    // StrictMode and concurrent consumers must share one signature/revision.
+    this.scopeUpgrade ??= (async () => {
+      if (!(await this.canInvite())) return this.allowList
+      if (!(await verifyAllowList(this.allowList, this.config.creatorKeyId))) return this.allowList
+      return this.addMembers([])
+    })()
+    try {
+      return await this.scopeUpgrade
+    } finally {
+      this.scopeUpgrade = null
+    }
+  }
+
   /**
    * Add members to an existing workspace by re-signing its allow-list.
    *
@@ -203,7 +229,8 @@ export class WorkspaceAuthManager {
       )
     }
 
-    const next = await signAllowList(this.identity, [...this.allowList.emails, ...emails])
+    const next = await signAllowList(this.identity, [...this.allowList.emails, ...emails],
+      await workspaceAuthorityScope(this.config.workspaceId, this.config.creatorKeyId), this.allowList.signedAt)
     this.allowList = next
     return next
   }
@@ -218,7 +245,8 @@ export class WorkspaceAuthManager {
     const drop = new Set(emails.map(email => email.toLowerCase()))
     const remaining = this.allowList.emails.filter(email => !drop.has(email.toLowerCase()))
     if (remaining.length === this.allowList.emails.length) return this.allowList
-    const next = await signAllowList(this.identity, remaining)
+    const next = await signAllowList(this.identity, remaining,
+      await workspaceAuthorityScope(this.config.workspaceId, this.config.creatorKeyId), this.allowList.signedAt)
     this.allowList = next
     return next
   }
@@ -226,15 +254,19 @@ export class WorkspaceAuthManager {
   async createInvite(workspaceName: string, memberEmails: string[]): Promise<WorkspaceInvite> {
     const creatorKeyId = await this.deviceKeyId()
     const workspaceId = generateWorkspaceId()
-    const allowList = await signAllowList(this.identity, memberEmails)
+    const allowList = await signAllowList(this.identity, memberEmails,
+      await workspaceAuthorityScope(workspaceId, creatorKeyId))
     const invite: WorkspaceInvite = {
       v: 1,
       workspaceId,
+      workspaceRouteId: generateWorkspaceRouteId(),
       workspaceName: workspaceName.trim() || 'Workspace',
       creatorKeyId,
       allowList,
     }
     this.allowList = allowList
+    this.config.workspaceId = workspaceId
+    this.config.creatorKeyId = creatorKeyId
     return invite
   }
 }
@@ -259,5 +291,5 @@ function getE2eProvider(providerId: string): IdentityProvider | null {
  * more trustworthy than a URL someone pasted.
  */
 export async function verifyInviteAllowList(access: WorkspaceAccess): Promise<boolean> {
-  return verifyAllowList(access.allowList, access.creatorKeyId)
+  return verifyAllowList(access.allowList, access.creatorKeyId, access.workspaceId)
 }

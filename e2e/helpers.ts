@@ -25,10 +25,15 @@ export function e2eWorkspaceId(workerIndex = test.info().workerIndex): string {
   return `e2e${String(workerIndex + 1).padStart(29, '0')}`
 }
 
+export function e2eWorkspaceRouteId(workerIndex = test.info().workerIndex): string {
+  return (workerIndex + 1).toString(16).padStart(32, '0')
+}
+
 export function e2eInviteHash(workerIndex = test.info().workerIndex): string {
   const invite = {
     v: 1,
     workspaceId: e2eWorkspaceId(workerIndex),
+    workspaceRouteId: e2eWorkspaceRouteId(workerIndex),
     workspaceName: E2E_WORKSPACE_NAME,
     creatorKeyId: E2E_CREATOR_KEY_ID,
     allowList: E2E_ALLOW_LIST,
@@ -124,7 +129,9 @@ export async function clearSession(page: Page) {
 
 export async function openProfile(page: Page) {
   await page.getByTestId('member-self').click()
-  await expect(page.getByTestId('profile-page')).toBeVisible()
+  await expect(page.getByTestId('workspace-member-popover')).toBeVisible()
+  await page.getByTestId('workspace-member-edit-profile').click()
+  await expect(page.getByTestId('account-preferences-page')).toBeVisible()
 }
 
 /**
@@ -229,7 +236,7 @@ export const waitForRelay = waitForSignaling
 export async function waitForPeerConnection(page: Page, timeout = 30_000) {
   await waitForRelay(page)
   const status = page.getByTestId('connection-status')
-  await expect(status).toContainText('Connected', { timeout })
+  await expect(status).toContainText(/Connected \([1-9]\d* peers?\)/, { timeout })
 }
 
 export async function expectPeerVisible(page: Page, peerName: string) {
@@ -280,11 +287,6 @@ export async function createChannel(page: Page, name: string) {
   await expectChannel(page, name)
 }
 
-export async function startDirectMessage(page: Page, peerName: string) {
-  await page.getByTestId(`message-peer-${peerName}`).click()
-  await expect(page.locator('.dm-title', { hasText: peerName })).toBeVisible({ timeout: 15_000 })
-}
-
 export async function expectChannel(page: Page, name: string, timeout = 15_000) {
   await expect(page.locator('.channel-item', { hasText: name })).toBeVisible({ timeout })
 }
@@ -321,6 +323,48 @@ export async function withTwoUsers(
     await run(alice, bob)
   } finally {
     // After a hard timeout the context may already be closed — don't hang cleanup.
+    await Promise.allSettled([aliceCtx.close(), bobCtx.close()])
+  }
+}
+
+/**
+ * Two globally signed-in users with worker-unique accounts.
+ *
+ * Global presence is shared across every E2E workspace, so fixed Alice/Bob
+ * accounts make parallel friend-invite tests target each other's devices.
+ * Worker-scoped emails keep directed lobby flows deterministic.
+ */
+export async function withTwoGlobalUsers(
+  browser: Browser,
+  run: (
+    alice: Page,
+    bob: Page,
+    accounts: { aliceEmail: string; bobEmail: string }
+  ) => Promise<void>
+) {
+  const suffix = test.info().workerIndex
+  const accounts = {
+    aliceEmail: `global-alice-${suffix}@e2e.test`,
+    bobEmail: `global-bob-${suffix}@e2e.test`,
+  }
+  const aliceCtx = await browser.newContext()
+  const bobCtx = await browser.newContext()
+  const alice = await aliceCtx.newPage()
+  const bob = await bobCtx.newPage()
+
+  try {
+    await installFreshSession(alice)
+    await installFreshSession(bob)
+    await Promise.all([alice.goto('/'), bob.goto('/')])
+    await e2eSignIn(alice, { name: 'Alice', email: accounts.aliceEmail })
+    await e2eSignIn(bob, { name: 'Bob', email: accounts.bobEmail })
+    for (const [page, name] of [[alice, 'Alice'], [bob, 'Bob']] as const) {
+      await page.getByTestId('home-account-tab').click()
+      await page.getByTestId('profile-name').fill(name)
+      await page.getByTestId('home-friends-tab').click()
+    }
+    await run(alice, bob, accounts)
+  } finally {
     await Promise.allSettled([aliceCtx.close(), bobCtx.close()])
   }
 }

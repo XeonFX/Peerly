@@ -42,6 +42,15 @@ type Props = {
   /** Incoming lobby ring from App (open that DM). */
   pendingRing: DmRingPayload | null
   onConsumeRing: () => void
+  /**
+   * Whose conversation is open, from the route. Held there rather than here so
+   * a refresh returns to the conversation instead of the list.
+   */
+  dmUserId?: string | undefined
+  /** Message composed from a workspace member card, sent after the global DM opens. */
+  pendingMessage?: string
+  onPendingMessageConsumed: () => void
+  onOpenDm: (userId: string | null) => void
 }
 
 const HOME_SIDEBAR_KEY = 'peerly-home-sidebar-width-v1'
@@ -80,11 +89,22 @@ export function HomeView({
   onRemoveFriend,
   pendingRing,
   onConsumeRing,
+  dmUserId,
+  pendingMessage,
+  onPendingMessageConsumed,
+  onOpenDm,
 }: Props) {
   const { tr } = useI18n()
   const browserStorage = useBrowserStorage()
   const { capability: p2pCapability } = useP2pCapability()
-  const [activeFriend, setActiveFriend] = useState<Friend | null>(null)
+  const activeFriend = useMemo(
+    () => friends.find(friend => friend.subjectUserId === dmUserId) ?? null,
+    [friends, dmUserId]
+  )
+  const setActiveFriend = useCallback(
+    (friend: Friend | null) => onOpenDm(friend?.subjectUserId ?? null),
+    [onOpenDm]
+  )
   const [roomCode, setRoomCode] = useState<string | null>(null)
   const [ringBanner, setRingBanner] = useState<DmRingPayload | null>(null)
   const [query, setQuery] = useState('')
@@ -125,17 +145,37 @@ export function HomeView({
     async (friend: Friend) => {
       onSectionChange('friends')
       setMobileFriendsOpen(false)
+      // The effect above turns this into a room code, by the same path a
+      // refresh takes, so both routes into a conversation behave identically.
       setActiveFriend(friend)
-      const secret = friendDmSecret(friend)
-      if (!secret) {
-        setRoomCode(null)
-        return
-      }
-      const code = await dmRoomCode(profile.userId, friend.subjectUserId, secret)
-      setRoomCode(code)
     },
-    [profile.userId, onSectionChange]
+    [onSectionChange, setActiveFriend]
   )
+
+  /**
+   * Derive the room code for whichever conversation the route names.
+   *
+   * On a refresh straight into `/friends/<id>` nothing calls `openFriend`, so
+   * without this the code stayed null and the pane fell back to the list until
+   * some later render happened to open it — the conversation appearing
+   * "after a while" instead of immediately.
+   */
+  useEffect(() => {
+    if (!activeFriend) {
+      setRoomCode(null)
+      return
+    }
+    const secret = friendDmSecret(activeFriend)
+    if (!secret) {
+      setRoomCode(null)
+      return
+    }
+    let cancelled = false
+    void dmRoomCode(profile.userId, activeFriend.subjectUserId, secret).then(code => {
+      if (!cancelled) setRoomCode(code)
+    })
+    return () => { cancelled = true }
+  }, [activeFriend, profile.userId])
 
   // Handle lobby ring: open or banner.
   useEffect(() => {
@@ -349,15 +389,21 @@ export function HomeView({
         </button>
       </aside>
 
-      <div className={`${mobileDetailOpen ? 'block' : 'hidden md:block'} min-h-0 min-w-0 flex-1 overflow-hidden bg-base-100`}>
+      <div className={`${mobileDetailOpen ? 'flex' : 'hidden md:flex'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-base-100`}>
           {section === 'friends' && activeFriend && roomCode ? (
             <GlobalDmChat
               friendName={activeFriend.subjectName}
+              friendUserId={activeFriend.subjectUserId}
               friendEmail={activeFriend.subjectEmail}
               friendOnline={friendOnline}
               partnerInRoom={chat.partnerInRoom}
               messages={chat.messages}
               selfUserId={profile.userId}
+              selfProfile={{
+                name: profile.name,
+                color: profile.color ?? '#36c5f0',
+                avatar: profile.avatar,
+              }}
               error={chat.error}
               searchQuery={query}
               onSend={chat.sendMessage}
@@ -368,11 +414,14 @@ export function HomeView({
               transfers={chat.transfers}
               onEdit={chat.editMessage}
               onDelete={chat.deleteMessage}
+              pendingMessage={pendingMessage}
+              onPendingMessageConsumed={onPendingMessageConsumed}
               onClose={() => {
                 setActiveFriend(null)
                 setRoomCode(null)
                 setMobileFriendsOpen(false)
               }}
+              onEditProfile={() => onSectionChange('account')}
             />
           ) : section === 'friends' ? (
             <main className="h-full overflow-y-auto bg-base-100">

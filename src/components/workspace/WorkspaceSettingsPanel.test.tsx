@@ -84,6 +84,10 @@ describe('WorkspaceSettingsPanel', () => {
           onNameChange={() => {}}
           onAvatarChange={() => {}}
           onAvatarClear={() => {}}
+          selfId="peer-alice"
+          inviteLink="https://peerly.test/#invite=example"
+          relayOnline
+          connectionStatus="connected"
           onBack={() => {}}
         />
       </I18nProvider>
@@ -123,6 +127,10 @@ describe('WorkspaceSettingsPanel', () => {
           onNameChange={() => {}}
           onAvatarChange={() => {}}
           onAvatarClear={() => {}}
+          selfId="peer-alice"
+          inviteLink="https://peerly.test/#invite=example"
+          relayOnline
+          connectionStatus="connected"
           onBack={() => {}}
         />
       </I18nProvider>

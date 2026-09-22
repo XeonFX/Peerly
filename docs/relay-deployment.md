@@ -1,5 +1,10 @@
 # Relay and TURN deployment hardening
 
+This covers the self-hosted `ws-relay` + coturn stack, which is still what
+production (`COORDINATION_BACKEND=legacy-relay`) runs. The newer Cloudflare
+Durable Objects control plane (preview only today) replaces this stack when
+selected — see [DURABLE_OBJECTS_ARCHITECTURE.md](./DURABLE_OBJECTS_ARCHITECTURE.md).
+
 The browser never receives a long-lived relay or TURN secret. `/api/network/credentials` verifies the configured OIDC provider, requires the token nonce to equal the browser device key, verifies a fresh signature from that key, then mints a host-bound relay ticket and coturn REST credentials valid for at most ten minutes.
 
 ## Worker secrets

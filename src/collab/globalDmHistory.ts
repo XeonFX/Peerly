@@ -51,6 +51,18 @@ export function mergeGlobalDmReactions(
   return store.mergeReactions(current, incoming) as GlobalDmReaction[]
 }
 
+/**
+ * Merge persisted history with messages created while a conversation starts.
+ * Replacing state here loses a just-composed message when hydration finishes
+ * after the user is routed from a workspace member card.
+ */
+export function mergeGlobalDmMessages(
+  current: GlobalDmMessage[],
+  incoming: GlobalDmMessage[]
+): GlobalDmMessage[] {
+  return store.mergeMessages(current, incoming) as GlobalDmMessage[]
+}
+
 export function upsertGlobalDmMessage(
   messages: GlobalDmMessage[],
   next: GlobalDmMessage

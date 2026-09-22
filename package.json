@@ -1,8 +1,8 @@
 {
   "name": "peerly",
   "private": false,
-  "version": "1.13.1",
-  "description": "Serverless P2P team collaboration — verified identity, invite-only workspaces, chat, files, and video via Trystero",
+  "version": "1.15.0",
+  "description": "Encrypted hybrid team collaboration — Durable Object chat with P2P files and video",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -29,18 +29,19 @@
   "scripts": {
     "dev": "node server/dev.mjs",
     "dev:relay": "node server/dev-relay.mjs",
-    "dev:app": "vite --host",
+    "dev:app": "VITE_APP_ID=peerly VITE_CONTENT_BACKEND=p2p vite --host",
     "stop": "lsof -ti :8080 -ti :5173 -ti :5174 -ti :17273 2>/dev/null | xargs kill -9 2>/dev/null || true",
-    "build": "tsc -b && vite build && npm run guard:bundle && npm run guard:size",
+    "build": "VITE_APP_ID=peerly tsc -b && VITE_APP_ID=peerly vite build && npm run guard:bundle && npm run guard:size",
     "postbuild": "node scripts/configure-auth-bridge.mjs",
-    "test": "vitest run --maxWorkers=4",
-    "test:watch": "vitest",
-    "test:e2e": "playwright test",
-    "test:a11y": "playwright test e2e/accessibility.spec.ts",
-    "test:coverage": "vitest run --coverage --maxWorkers=4",
-    "test:mutation": "stryker run",
-    "test:e2e:nostr": "E2E_SIGNALING=nostr playwright test -g \"two users connect and see each other|chat messages sync between peers|file sharing between peers|shared image preview survives page reload\"",
-    "test:e2e:ui": "playwright test --ui",
+    "test": "VITE_APP_ID=peerly vitest run --maxWorkers=4",
+    "test:watch": "VITE_APP_ID=peerly vitest",
+    "test:workers": "mkdir -p dist-preview && vitest run -c vitest.workers.config.ts",
+    "test:e2e": "VITE_APP_ID=peerly playwright test",
+    "test:a11y": "VITE_APP_ID=peerly playwright test e2e/accessibility.spec.ts",
+    "test:coverage": "VITE_APP_ID=peerly vitest run --coverage --maxWorkers=4",
+    "test:mutation": "VITE_APP_ID=peerly stryker run",
+    "test:e2e:nostr": "VITE_APP_ID=peerly E2E_SIGNALING=nostr playwright test -g \"two users connect and see each other|chat messages sync between peers|file sharing between peers|shared image preview survives page reload\"",
+    "test:e2e:ui": "VITE_APP_ID=peerly playwright test --ui",
     "lint": "oxlint",
     "preview": "vite preview",
     "guard:bundle": "node scripts/guard-bundle.mjs",
@@ -50,8 +51,21 @@
     "audit:production": "npm audit --omit=dev --audit-level=high",
     "test:load:relay": "node scripts/load-relay.mjs",
     "verify:production": "node scripts/verify-production.mjs",
-    "worker:check": "wrangler types --check && wrangler deploy --dry-run --env=''",
-    "test:bump": "node --test scripts/bump-version.test.mjs"
+    "worker:check": "wrangler types --check && wrangler types worker-configuration.preview.d.ts -c wrangler.preview.jsonc --env-interface PreviewEnv --check && wrangler deploy --dry-run --env='' && wrangler deploy --dry-run -c wrangler.preview.jsonc",
+    "test:bump": "node --test scripts/bump-version.test.mjs",
+    "test:e2e:do": "VITE_APP_ID=peerly playwright test -c playwright.do.config.ts",
+    "turn:smoke": "node packages/core/scripts/turn-smoke.mjs",
+    "typecheck": "VITE_APP_ID=peerly tsc -b",
+    "build:e2e": "VITE_APP_ID=peerly tsc -b && VITE_APP_ID=peerly vite build --outDir dist-e2e && node scripts/check-e2e-fixtures.mjs dist-e2e",
+    "build:core": "npm --prefix packages/core run build",
+    "pretest": "npm run build:core",
+    "pretest:workers": "npm run build:core",
+    "pretest:coverage": "npm run build:core",
+    "prebuild": "npm run build:core",
+    "prebuild:e2e": "npm run build:core",
+    "deploy:preview": "wrangler deploy -c wrangler.preview.jsonc",
+    "build:preview": "VITE_APP_ID=peerly tsc -b && VITE_APP_ID=peerly VITE_SIGNALING=durable-objects VITE_CONTENT_BACKEND=durable-objects vite build --outDir dist-preview && node scripts/guard-bundle.mjs dist-preview && node packages/core/scripts/check-vite-bundle.mjs dist-preview/assets 700000 && node scripts/configure-auth-bridge.mjs dist-preview",
+    "prebuild:preview": "npm run build:core"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
@@ -64,6 +78,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
+    "@cloudflare/vitest-pool-workers": "^0.12.0",
     "@emnapi/core": "^1.11.2",
     "@emnapi/runtime": "^1.11.2",
     "@playwright/test": "^1.52.0",
@@ -85,5 +100,9 @@
     "vite": "^8.1.1",
     "vitest": "^3.2.4",
     "wrangler": "^4.113.0"
+  },
+  "overrides": {
+    "sharp": "^0.35.3",
+    "qs": "^6.15.3"
   }
 }

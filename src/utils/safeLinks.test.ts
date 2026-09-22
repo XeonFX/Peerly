@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { splitSafeLinks } from './safeLinks'
+import { firstSafeLink, splitSafeLinks } from './safeLinks'
 
 describe('splitSafeLinks', () => {
   it('linkifies only https and keeps sentence punctuation outside the link', () => {
@@ -14,5 +14,12 @@ describe('splitSafeLinks', () => {
     expect(splitSafeLinks('http://example.com javascript:alert(1)')).toEqual([
       { kind: 'text', value: 'http://example.com javascript:alert(1)' },
     ])
+  })
+
+  it('returns the first visible URL without trailing sentence punctuation', () => {
+    expect(
+      firstSafeLink('First https://one.example/docs, then https://two.example.')
+    ).toBe('https://one.example/docs')
+    expect(firstSafeLink('No safe link: http://example.com')).toBeNull()
   })
 })

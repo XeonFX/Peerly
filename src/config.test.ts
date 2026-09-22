@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { APP_COMMIT, APP_VERSION, appBuildLabel, DEFAULT_NOSTR_RELAYS } from './config'
+import {
+  APP_COMMIT,
+  APP_VERSION,
+  appBuildLabel,
+  DEFAULT_NOSTR_RELAYS,
+  resolveContentBackend,
+} from './config'
 
 describe('build identity', () => {
   // These are compile-time constants injected by build-info.mjs. vitest does not
@@ -46,5 +52,13 @@ describe('default Nostr relays', () => {
     // mostr.pub stopped accepting connections entirely.
     expect(DEFAULT_NOSTR_RELAYS).not.toContain('wss://relay.mostr.pub')
     expect(DEFAULT_NOSTR_RELAYS).not.toContain('wss://relay.damus.io')
+  })
+})
+
+describe('content transport', () => {
+  it('defaults to production P2P and explicitly opts preview into durable objects', () => {
+    expect(resolveContentBackend(undefined)).toBe('p2p')
+    expect(resolveContentBackend('durable-objects')).toBe('durable-objects')
+    expect(resolveContentBackend('p2p')).toBe('p2p')
   })
 })

@@ -1,5 +1,10 @@
 # Production relay, TURN, and rendezvous rollout
 
+This describes the current production path (`COORDINATION_BACKEND=legacy-relay`).
+The Durable Objects control plane's own cutover/rollout steps live in
+[DURABLE_OBJECTS_ARCHITECTURE.md](./DURABLE_OBJECTS_ARCHITECTURE.md) (Phase 5)
+instead of here.
+
 Deploy two independent relay/TURN stacks (different providers or regions) and
 set `VITE_RELAY_HOSTS` plus Worker `TURN_URLS` to both. Each relay gets its own
 hostname-bound entry in `RELAY_TICKET_SECRETS`; both Workers mint against the

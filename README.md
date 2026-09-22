@@ -1,8 +1,8 @@
 # Peerly
 
-Serverless peer-to-peer team collaboration — channels, chat, progressive file sharing, and video calls over WebRTC. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), and [Trystero](https://github.com/dmotz/trystero). Peerly has no application backend that stores workspace messages or files; signaling services are used only to help browsers discover each other.
+Encrypted hybrid team collaboration — reliable channels and chat through Cloudflare Durable Objects, with progressive file sharing and video calls over WebRTC. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), [Cloudflare Workers](https://workers.cloudflare.com/), and [Trystero](https://github.com/dmotz/trystero). Durable Objects retain only client-encrypted event envelopes; file bodies and media stay P2P. A deployment-level P2P content backend remains available as an explicit rollback.
 
-Highlights: the P2P room core ships as the npm package [`@peerly/core`](packages/core), reusable by other apps — alongside messenger attention, signed message actions, rich file/call workflows, channel management, an installable offline shell, URL routing, complete English/Polish UI, and accessibility hardening. The running app always shows its exact version and commit in the UI.
+Highlights: the reusable P2P and Durable Objects primitives ship as the npm package [`@peerly/core`](packages/core), while Peerly owns its product-specific authorization and event policies. The app also includes messenger attention, signed message actions, rich file/call workflows, channel management, an installable offline shell, URL routing, complete English/Polish UI, and accessibility hardening. The running app always shows its exact version and commit in the UI.
 
 **Live app:** [peerly.cc](https://peerly.cc)
 
@@ -16,12 +16,12 @@ Per-screen behavior, routes, and major functions:
 - **Workspace appearance** — rename a workspace and upload a custom icon from workspace settings; stored locally per browser and shown in the sidebar and picker
 - **Light and dark themes** — follows the operating-system preference by default and stores an explicit choice per device
 - **Identity separate from workspace** — leave a workspace without losing your identity; return to the picker while remaining signed in
-- **Verified identity** — sign in with Google, Microsoft, Apple, or generic OIDC; peers verify JWTs client-side via JWKS
-- **Creator-signed allow-list** — only invited email addresses can join; enforced cryptographically in the P2P handshake
+- **Verified identity** — sign in with Google, Microsoft, Apple, or generic OIDC; the Worker verifies enrollment in Durable Objects mode and peers verify identity in P2P mode
+- **Creator-signed allow-list** — only invited email addresses can join; the exact signed revision is enforced by the Durable Object authorization boundary and by peer handshakes in P2P mode
 - **Creator-only invites** — only the device that created a workspace can add members to the allow-list; anyone can copy the invite link
 - **Device-bound auth** — ECDSA challenge-response prevents replayed identity tokens
 - **Session continuity** — warns before the current ID token expires and offers same-account reauthentication so new peer handshakes keep working
-- **Managed channels & DMs** — scoped messaging over one encrypted P2P room, with channel rename/delete/reorder and locally closable DM threads
+- **Managed channels & DMs** — client-encrypted, persisted message/reaction streams with channel rename/delete/reorder and locally closable DM threads; P2P remains a selectable backend
 - **Reader-friendly history** — incoming messages do not pull you away from older history; a new-message pill returns to the latest messages
 - **Messenger attention** — unread totals update the tab title and favicon; users can explicitly opt into background DM notifications and local attention sounds, including an incoming-call ringtone
 - **Signed message actions** — HTTPS links are safely linkified; authors can edit/delete with signed revisions, and reactions carry their own identity-bound signatures
@@ -161,22 +161,49 @@ left as a button that always fails.
 
 ## Signaling
 
-Browsers need a **signaling channel** to discover each other (WebRTC handshake). Application data stays P2P afterward.
+Browsers need a **signaling channel** to discover each other for P2P file and
+media flows. Message content uses a separately selected backend:
+
+| Content mode | Behavior | Config |
+|---|---|---|
+| **Durable Objects** (preview) | Encrypted messages, reactions, and channel definitions are persisted before fan-out; late joiners receive bounded history | `VITE_CONTENT_BACKEND=durable-objects` and `CONTENT_BACKEND=durable-objects` |
+| **P2P** (production default) | Messages and history move directly between currently connected browsers | `VITE_CONTENT_BACKEND=p2p` and `CONTENT_BACKEND=p2p` |
+
+Files and call media remain P2P in both modes.
 
 | Mode | When | Config |
 |------|------|--------|
 | **Nostr** (default) | Dev & deploy — public signaling, no application server | None |
 | **ws-relay** | Offline / local CI | `npm run dev:relay` or `VITE_SIGNALING=ws-relay` |
 | **Supabase** | Relay you control | `VITE_SIGNALING=supabase` + Supabase URL/key |
+| **Durable Objects** (preview only) | Cloudflare-hosted control plane instead of a relay | `VITE_SIGNALING=durable-objects` against a Worker deployed with matching backend config — see below |
 
 `npm run test:e2e` uses a local relay (many connections from one IP would throttle public Nostr relays) and runs 4 workers in parallel — each worker gets its own workspace/room, so tests never meet each other. `npm run test:e2e:nostr` runs a small subset against public relays, deliberately serial.
 
 Deployment owners can replace the curated Nostr set with the build-time `VITE_NOSTR_RELAYS` variable. Peerly does **not** currently expose relay editing to end users: members need at least one signaling relay in common, so a safe user-facing design must distribute a workspace relay profile rather than silently changing one device.
 
+### Durable Objects control plane (preview)
+
+A fourth signaling mode moves *coordination* — device enrollment, session cookies, presence, workspace/DM notifications, WebRTC signaling, and short-lived TURN credentials — off the self-hosted relay and onto a Cloudflare Worker backed by Durable Objects, served from `/api/network/*` and `/api/realtime/*` (see [`worker/index.mjs`](worker/index.mjs) and [`packages/core/worker/realtime`](packages/core/worker/realtime)). The preview deployment also enables the content Durable Object: the browser encrypts messages, reactions, and channel definitions with the workspace/DM secret; the server persists only ciphertext and bounded routing metadata before broadcasting it. File bytes and calls remain WebRTC P2P.
+
+`VITE_SIGNALING=durable-objects` only works against a Worker that was itself deployed with `COORDINATION_BACKEND=durable-objects`, the Durable Object bindings/migrations, and its own secrets (`NETWORK_SESSION_SECRET`, `OPAQUE_USER_ID_SECRET`, `TURN_AUTH_SECRET`, …). A client pointed at an unconfigured Worker fails closed with `503`, and a stale/invalid capability fails with `400`/`401` rather than degrading silently. Production (`peerly.cc`) still runs `COORDINATION_BACKEND=legacy-relay`; only the stable preview deployment (`preview.peerly.cc`, via [`wrangler.preview.jsonc`](wrangler.preview.jsonc)) runs the Durable Objects path today, ahead of a full production cutover.
+
+For the security protocol changes, existing-preview history limitations, and the exact preview deployment command, see [PR #92 security fixes and preview rollout](docs/PR92_SECURITY_FIXES.md).
+
+This control plane is shared code in [`packages/core/worker/realtime`](packages/core/worker/realtime) and [`packages/core/src/realtime`](packages/core/src/realtime): Peerly and HeyHubs each deploy their own Worker and Durable Object namespaces from it, with independent secrets and data. See [docs/DURABLE_OBJECTS_ARCHITECTURE.md](docs/DURABLE_OBJECTS_ARCHITECTURE.md) for the full design, or [docs/RELAY_VS_DURABLE_OBJECTS.md](docs/RELAY_VS_DURABLE_OBJECTS.md) for a comparison against the relay stack production still runs.
+
+`npm run test:e2e:do` drives it the way a user would: it builds the app with the DO backend, serves that build from the real Worker on localhost with real Durable Objects, and runs two browser contexts against it. Test-only sign-in there is *configuration* — a generic `oidc` provider whose JWKS is served from the build, set only in [`wrangler.e2e.jsonc`](wrangler.e2e.jsonc). A deployment that sets none of those variables resolves the provider to `null` and the route 503s, so it cannot be switched on by accident.
+
+What that suite cannot prove is TURN: two browser contexts on one host connect over host candidates and never reach a relay. `npm run turn:smoke` covers that separately by asking coturn for a real allocation, with no browser involved.
+
+[docs/REWRITE_ARCHITECTURE.md](docs/REWRITE_ARCHITECTURE.md) records how this was built and what remains; [docs/DURABLE_OBJECTS_CUTOVER.md](docs/DURABLE_OBJECTS_CUTOVER.md) is the step-by-step for putting it in front of users.
+
 ### TURN (optional)
 
 For strict NAT / corporate firewalls, configure your TURN URLs. The browser
-obtains short-lived REST credentials from `/api/network/credentials`:
+obtains short-lived REST credentials from `/api/network/credentials` — or, on
+the `durable-objects` signaling mode above, from `/api/network/session`
+instead, using the same `TURN_AUTH_SECRET`:
 
 ```bash
 VITE_TURN_URLS=turn:your-turn.example:3478,turns:your-turn.example:5349 \
@@ -190,7 +217,9 @@ reaches coturn and `relay.*` continues to reach HTTPS/WSS.
 
 ## Deploy
 
-Peerly is a **static SPA**. Build once, serve `dist/` from any static host.
+Peerly's UI is a static SPA. A P2P-only build can serve `dist/` from any static
+host; Durable Objects mode must be served by the configured Worker so its
+authenticated `/api/realtime/*` routes and bindings are available.
 
 ```bash
 npm run build
@@ -288,13 +317,15 @@ npm Trusted Publishing with provenance, automatic version bump via release PR.
 ├── public/                 Static assets (favicon, etc.)
 ├── scripts/
 │   ├── guard-bundle.mjs    Fail build if E2E keys reached dist/
+│   ├── emit-e2e-jwks.mjs   Publish the E2E issuer's JWKS into dist/ (E2E only)
 │   ├── check-csp.mjs       Serve dist with CSP, test a negative control + offline shell
 │   └── check-relays.mjs    Nostr relay health diagnostic
-├── server/                 Dev relay, test server, process helpers
+├── server/                 Dev relay, test servers, process helpers
 │   ├── dev.mjs             npm run dev (Nostr signaling)
 │   ├── dev-relay.mjs       npm run dev:relay
 │   ├── relay.mjs           WebSocket signaling relay
-│   └── test-server.mjs     E2E: relay + Vite with auth bypass
+│   ├── test-server.mjs     E2E: relay + Vite with auth bypass
+│   └── test-server-do.mjs  E2E: built app behind the real Worker + Durable Objects
 ├── src/
 │   ├── collab/             P2P protocol, crypto, identity, stores
 │   ├── components/         React UI (join, settings, storage, chat, files, video)
@@ -309,8 +340,11 @@ npm Trusted Publishing with provenance, automatic version bump via release PR.
 ├── .env.example            Environment template (copy to .env)
 ├── .nvmrc                  Node 24.18.0 (npm 11.16.0 / CI alignment)
 ├── playwright.config.ts
+├── playwright.do.config.ts Durable Objects browser suite (own target, serial)
 ├── vite.config.ts
-├── wrangler.jsonc          Cloudflare SPA assets and API routing
+├── wrangler.jsonc          Production: SPA assets and API routing
+├── wrangler.preview.jsonc  Staging with Durable Objects (preview.peerly.cc)
+├── wrangler.e2e.jsonc      Local-only DO target for the browser suite
 └── vitest.config.ts
 ```
 
@@ -325,9 +359,13 @@ npm Trusted Publishing with provenance, automatic version bump via release PR.
 | `npm run build` | Typecheck + production build + bundle guard |
 | `npm test` | Vitest unit/component tests (counts change with the suite — run `npm test` for the current total) |
 | `npm run test:watch` | Vitest in watch mode |
+| `npm run typecheck` | `tsc -b` across every project (the root config is solution-style, so `tsc -p` alone checks nothing) |
+| `npm run test:workers` | Durable Object behaviour against real workerd |
 | `npm run test:e2e` | Playwright E2E (local relay; parallel workers per Playwright config) |
+| `npm run test:e2e:do` | Two browsers against the real Worker and real Durable Objects |
 | `npm run test:e2e:nostr` | E2E subset over public Nostr |
 | `npm run test:e2e:ui` | Playwright interactive UI |
+| `npm run turn:smoke -- <urls>` | Ask coturn for a real TURN allocation per transport. Needs `TURN_AUTH_SECRET` |
 | `npm run preview` | Preview the production build locally |
 | `npm run check:relays` | Health-check the default Nostr relays |
 | `npm run check:csp` | Verify production CSP, its inline-script negative control, and the offline shell |
@@ -348,13 +386,13 @@ working until two peers fail to find each other.
 ## Security model
 
 - **Invite link = credential** — workspace ID lives in the URL hash (never sent to servers in HTTP requests)
-- **Identity handshake** — three-round P2P verification: OIDC JWT + allow-list signature + live device-key proof
-- **No server-side enforcement** — allow-list is creator-signed; peers verify signatures and JWTs locally
+- **Identity and membership** — enrollment verifies OIDC and a live device-key challenge; workspace content authorization verifies the creator's exact signed allow-list and derives opaque deployment-scoped member IDs
+- **Server-side enforcement without plaintext identity storage** — Durable Objects receive opaque member IDs and a monotonic signed-list fingerprint, close revoked sockets, and never receive raw invited emails
 - **Messages are author-signed** — every message and file announcement is signed with the sender's device key at send time. Signed v2 revisions make edits/deletes tamper-evident, and each reaction is signed independently. Relayed history is verified on import: tampered entries are dropped, and identity claims are honoured only for keys bound to that user in a live handshake.
 - **Device approval is explicit** — sharing an account login does not grant one device authority over another device's messages. Both devices must confirm a one-time pairing, exchange reciprocal signed grants, and retain those grants locally. Continuous sync is peer-to-peer and only runs while approved devices are simultaneously online; account sessions and identity tokens are never copied.
 - **Security headers** — a strict Content-Security-Policy ships via `public/_headers`; CI serves the production bundle with those headers, asserts zero startup violations, and proves its negative control is blocked.
 - **Inviting is creator-only** — the allow-list is only accepted if it verifies against the workspace's creator key, and that key never leaves the browser profile that created the workspace. A second device, even the creator's, cannot add members.
-- **Revocation is best-effort** — the creator can remove a member, and every device judges peers against the newest creator-signed list it holds, so updated members stop admitting the removed member at their next handshake. The honest limit: the removed member and any member who never received the update can still pair, and open connections are not torn down. Nothing short of a server closes that gap.
+- **Revocation is monotonic in Durable Objects mode** — a newer creator-signed allow-list replaces the previous authority and removed members' live sockets are closed; the P2P rollback retains eventual peer-learned revocation
 - **Live messages** — attributed by transport peer id, not payload `senderId`
 - **Legacy history** — unsigned entries from older versions retain readable text but lose durable identity claims; newly authored entries are signed and verified
 - **Local media classification** — sensitive-media screening never uploads frames, but it is advisory and fails open rather than acting as a moderation authority
@@ -363,14 +401,14 @@ working until two peers fail to find each other.
 
 ## Design limits
 
-Consequences of having no server, stated as the trade-offs they are:
+Hybrid storage and transport trade-offs:
 
-- **Deletion is local, by design** — with no authority that owns the data, storage cleanup affects one browser only. A safe workspace-wide reset would need a signed monotonic reset epoch so an offline peer cannot resurrect old state; until then, Peerly does not pretend to a global delete it cannot enforce.
-- **You are the archive** — manual JSON backup covers workspace-channel messages and access; DMs and file bodies live in local copies and online peers. No cloud archive is the point, not a gap.
+- **Durable history is bounded** — encrypted event envelopes retain for at most 30 days and the latest 1,000 events per workspace or DM; this is reliable delivery and recent history, not a permanent archive
+- **File availability remains peer-owned** — metadata can outlive an online sender, but file bodies live in local copies and transfer only while a member holding the content is reachable
 - **Transfers are whole-file** — file bodies are content-addressed and integrity-checked; resumable byte-range transfer is traded away for that simplicity, and join progress is channel-based rather than byte-accurate.
-- **Revocation is eventual** — a removed member stops being admitted as devices learn the newer creator-signed list; a stale device honours the old list until it hears the new one. Nothing short of a server closes that gap, and Peerly chooses no server.
+- **P2P rollback revocation is eventual** — a removed member stops being admitted as devices learn the newer creator-signed list; Durable Objects mode closes existing revoked sockets immediately after accepting a newer signed authority revision
 - **Relays are deployment-time configuration** — members need at least one signaling relay in common, so per-user relay editing could silently partition a workspace. Overrides exist at build time instead.
-- **Moderation stays on your device** — local NSFW screening is advisory, and there is deliberately no workspace-wide block or ban authority: any such authority would be a server with power over content.
+- **Moderation stays on your device** — local NSFW screening is advisory; the server holds ciphertext without the workspace/DM key and therefore cannot inspect content
 
 ## CI
 

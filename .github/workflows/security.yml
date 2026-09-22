@@ -21,6 +21,9 @@ jobs:
       - uses: github/codeql-action/init@adfda868f108ac4222129de456ea554034a27db7 # v4
         with:
           languages: javascript-typescript
+          # Excludes the two TURN files whose SHA-1/MD5 the protocol mandates.
+          # See the config for why, and why it is scoped to paths.
+          config-file: ./.github/codeql/codeql-config.yml
       - uses: github/codeql-action/analyze@adfda868f108ac4222129de456ea554034a27db7 # v4
 
   dependency-review:

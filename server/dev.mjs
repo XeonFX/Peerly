@@ -12,4 +12,7 @@ console.log('\nStarting Peerly — signaling: public Nostr relays\n')
 
 run('vite', 'npx', ['vite', '--host'], {
   VITE_SIGNALING: 'nostr',
+  // The Vite-only dev server has no Durable Object routes. Preview and the
+  // Worker E2E harness exercise the default durable content backend.
+  VITE_CONTENT_BACKEND: 'p2p',
 })
