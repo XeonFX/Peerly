@@ -1,0 +1,4 @@
+# These tests run inside this repository and import unpublished app fixtures.
+# They are not part of the Worker API shipped to consumers.
+*.test.*
+*.test-fixtures.*
