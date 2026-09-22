@@ -24,8 +24,10 @@ const base64UrlBytes = value => {
 const normalizeEmails = emails =>
   [...new Set(emails.map(email => email.trim().toLowerCase()))].sort()
 
-const allowListBytes = (emails, signedAt) =>
-  new TextEncoder().encode(`${normalizeEmails(emails).join(',')}|${signedAt}`)
+const allowListBytes = (emails, signedAt, scope) =>
+  new TextEncoder().encode(JSON.stringify([
+    'peerly-workspace-members-v2', scope, normalizeEmails(emails), signedAt,
+  ]))
 
 async function verifyAllowList(allowList, creatorKeyId) {
   const match = /^P-256:([A-Za-z0-9_-]{20,}):([A-Za-z0-9_-]{20,})$/.exec(
@@ -51,7 +53,7 @@ async function verifyAllowList(allowList, creatorKeyId) {
       { name: 'ECDSA', hash: 'SHA-256' },
       key,
       base64UrlBytes(allowList.signature),
-      allowListBytes(allowList.emails, allowList.signedAt)
+      allowListBytes(allowList.emails, allowList.signedAt, allowList.scope)
     )
   } catch {
     return false
@@ -64,9 +66,10 @@ export const workspaceContentAuthorizeCommand = defineCommand(
     if (!isPlainObject(payload)) fail('workspace.content.authorize')
     const allowList = payload.allowList
     if (
-      !boundedString(payload.capability, 256) ||
+      !/^[A-Za-z0-9_-]{43}$/.test(payload.capability ?? '') ||
       !boundedString(payload.creatorKeyId, 256) ||
       !isPlainObject(allowList) ||
+      allowList.scope !== payload.capability ||
       !boundedArray(
         allowList.emails,
         MAX_WORKSPACE_MEMBERS,
@@ -86,6 +89,7 @@ export const workspaceContentAuthorizeCommand = defineCommand(
         emails: normalizeEmails(allowList.emails),
         signedAt: allowList.signedAt,
         signature: allowList.signature,
+        scope: allowList.scope,
       },
     }
   }
@@ -96,7 +100,7 @@ export const dmContentAuthorizeCommand = defineCommand(
   payload => {
     if (
       !isPlainObject(payload) ||
-      !boundedString(payload.capability, 256) ||
+      !/^[A-Za-z0-9_-]{43}$/.test(payload.capability ?? '') ||
       !boundedString(payload.peerUserId, 128)
     ) {
       fail('dm.content.authorize')
@@ -142,6 +146,14 @@ const authorizeChannel = async (deps, context, input) => {
 export function createContentHandlers(deps) {
   return {
     'workspace.content.authorize': async (payload, context) => {
+      if (payload.allowList.scope !== payload.capability) {
+        throw new FrameError('workspace authority scope is invalid', { code: 'auth-required' })
+      }
+      // Timestamps are signed revisions, not arbitrary client-controlled
+      // counters that may permanently outrank the owner's future updates.
+      if (payload.allowList.signedAt > deps.clock.nowMs() + 5 * 60_000) {
+        throw new FrameError('workspace authority revision is in the future', { code: 'auth-required' })
+      }
       if (!context.publicUserId || !context.privateMemberId) {
         throw new FrameError('authenticated membership is required', {
           code: 'auth-required',
@@ -169,13 +181,14 @@ export function createContentHandlers(deps) {
       const routeId = await deriveScopeRouteId(
         deps.opaqueUserIdSecret,
         deps.appName,
-        'workspace-content',
-        payload.capability
+        'workspace-content-v2',
+        JSON.stringify([payload.creatorKeyId, payload.capability])
       )
       return authorizeChannel(deps, context, {
         routeId,
         principalId: context.privateMemberId,
         authority: {
+          owner: payload.creatorKeyId,
           version: payload.allowList.signedAt,
           fingerprint: `${payload.creatorKeyId}\n${payload.allowList.signature}`,
           members: memberIds,
@@ -193,13 +206,14 @@ export function createContentHandlers(deps) {
       const routeId = await deriveScopeRouteId(
         deps.opaqueUserIdSecret,
         deps.appName,
-        'dm-content',
-        payload.capability
+        'dm-content-v2',
+        JSON.stringify([members, payload.capability])
       )
       return authorizeChannel(deps, context, {
         routeId,
         principalId: context.publicUserId,
         authority: {
+          owner: members.join('\n'),
           version: 1,
           fingerprint: members.join('\n'),
           members,

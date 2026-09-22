@@ -74,6 +74,7 @@ import {
   type OutgoingWorkspaceInvite,
 } from '../collab/workspaceInviteStore'
 import type { WorkspaceInvite } from '../collab/inviteLink'
+import { createPrivateLobbyActions } from '../collab/privateLobbyActions'
 
 const PRESENCE_SCHEME = 'peerly-presence-v1'
 
@@ -212,11 +213,12 @@ export function usePresenceLobby({
       return binding
     }
 
-    const presenceAction = room.makeAction<SignedControl<PresencePayload>>('pres')
-    const inviteAction = room.makeAction<FriendInvitePayload>('finv')
-    const inviteRespAction = room.makeAction<FriendInviteResponsePayload>('finvr')
-    const dmRingAction = room.makeAction<DmRingPayload>('dmring')
-    const workspaceInviteAction = room.makeAction<WorkspaceInvitePayload>('winv')
+    const privateActions = createPrivateLobbyActions(room)
+    const presenceAction = room.makeAction<SignedControl<PresencePayload & { invitationKey: string }>>('pres')
+    const inviteAction = privateActions.makeAction<FriendInvitePayload>('finv')
+    const inviteRespAction = privateActions.makeAction<FriendInviteResponsePayload>('finvr')
+    const dmRingAction = privateActions.makeAction<DmRingPayload>('dmring')
+    const workspaceInviteAction = privateActions.makeAction<WorkspaceInvitePayload>('winv')
 
     const announcePresence = (to?: string) => {
       const me = profileRef.current
@@ -229,9 +231,11 @@ export function usePresenceLobby({
         name: me.name,
         rendezvousId,
       }
-      void signControl(id, PRESENCE_SCHEME, 'presence', me.userId, payload, {
-        attestation: proof,
-      }).then(message => presenceAction.send(message, to ? { target: to } : undefined))
+      void privateActions.publicKey().then(invitationKey =>
+        signControl(id, PRESENCE_SCHEME, 'presence', me.userId, { ...payload, invitationKey }, {
+          attestation: proof,
+        })
+      ).then(message => presenceAction.send(message, to ? { target: to } : undefined)).catch(() => {})
     }
 
     const recordPresence = (peerId: string, parsed: PresencePayload) => {
@@ -249,6 +253,7 @@ export function usePresenceLobby({
     const dropPeer = (peerId: string) => {
       if (!presence.get(peerId)) return
       presence.drop(peerId)
+      privateActions.forgetPeer(peerId)
       setPresenceVersion(v => v + 1)
     }
 
@@ -306,7 +311,7 @@ export function usePresenceLobby({
 
     presenceAction.onMessage = (raw, { peerId }) => {
       void (async () => {
-        const message = await verifySignedControl<PresencePayload>(
+        const message = await verifySignedControl<PresencePayload & { invitationKey?: string }>(
           raw,
           PRESENCE_SCHEME,
           'presence'
@@ -320,6 +325,7 @@ export function usePresenceLobby({
           fromUserId: message.userId,
         })
         if (!binding || await lookupRendezvousId(binding.claims.email) !== parsed.rendezvousId) return
+        if (!(await privateActions.rememberVerifiedPeer(peerId, message.deviceKeyId, message.payload.invitationKey))) return
         recordPresence(peerId, parsed)
         // New verified peer might match a pending invite.
         deliverPendingInvites()

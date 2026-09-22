@@ -4,7 +4,7 @@
   // origins (no wildcards), so per-branch preview URLs can never sign in;
   // this fixed hostname is registered once in the OAuth client and reused
   // for every branch:
-  //   npm run build && npx wrangler deploy -c wrangler.preview.jsonc
+  //   npm run deploy:preview
   //
   // This is a separate config file (not an `env` inside wrangler.jsonc)
   // because the Durable Object `migrations` block cannot appear anywhere in
@@ -20,7 +20,7 @@
   // Vite replaces VITE_* values at build time; the runtime `vars` block below
   // does not populate the browser bundle.
   "build": {
-    "command": "VITE_APP_ID=peerly VITE_GOOGLE_CLIENT_ID=724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com VITE_SIGNALING=durable-objects VITE_CONTENT_BACKEND=durable-objects VITE_TURN_URLS=turn:turn.peerly.cc:3478?transport=udp,turn:turn.peerly.cc:3478?transport=tcp,turns:turn.peerly.cc:5349?transport=tcp npm run build"
+    "command": "VITE_APP_ID=peerly VITE_GOOGLE_CLIENT_ID=724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com VITE_SIGNALING=durable-objects VITE_CONTENT_BACKEND=durable-objects VITE_TURN_URLS=turn:turn.peerly.cc:3478?transport=udp,turn:turn.peerly.cc:3478?transport=tcp,turns:turn.peerly.cc:5349?transport=tcp npm run build:preview"
   },
   "routes": [
     { "pattern": "preview.peerly.cc", "custom_domain": true }
@@ -34,7 +34,7 @@
   },
   "assets": {
     "binding": "ASSETS",
-    "directory": "./dist",
+    "directory": "./dist-preview",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },

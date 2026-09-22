@@ -41,6 +41,7 @@ function runToCompletion(command, args, env) {
 runToCompletion('npm', ['run', 'build:e2e'], {
   VITE_APP_ID: 'peerly',
   VITE_SIGNALING: 'durable-objects',
+  VITE_CONTENT_BACKEND: 'durable-objects',
   VITE_E2E_AUTH_BYPASS: 'true',
   // The issuer is this origin, and the JWKS below is served from it. Both
   // halves — browser and worker — then verify through the same real fetch.

@@ -45,3 +45,5 @@ Thumbs.db
 # wrangler dev state and generated bundles
 .wrangler
 dist-e2e
+
+dist-preview

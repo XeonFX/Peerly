@@ -4,7 +4,10 @@ import {
   expectMessage,
   expectPeerVisible,
   installFreshSession,
-  joinWorkspace,
+  openInviteJoin,
+  openProfile,
+  e2eSignIn,
+  waitForWorkspace,
   sendMessage,
   withTwoGlobalUsers,
   waitForSignaling,
@@ -83,10 +86,30 @@ test.describe('durable objects control plane', () => {
     try {
       const alice = await aliceCtx.newPage()
       const bob = await bobCtx.newPage()
+      const serverFrames: string[] = []
+      for (const page of [alice, bob]) page.on('websocket', socket => {
+        socket.on('framesent', frame => serverFrames.push(String(frame.payload)))
+      })
 
-      await joinWorkspace(alice, { name: 'Alice', email: 'alice@e2e.test' })
+      await createWorkspace(alice, {
+        name: 'Alice', email: 'alice@e2e.test', workspaceName: 'durable-history', guests: 'bob@e2e.test',
+      })
+      await alice.getByTestId('workspace-settings-open').click()
+      const inviteLink = await alice.getByTestId('workspace-settings-invite-link').inputValue()
+      const inviteHash = new URL(inviteLink).hash.slice(1)
+      const workspaceSecret = JSON.parse(Buffer.from(inviteHash.slice('invite='.length), 'base64url').toString()).workspaceId
+      await alice.getByTestId('workspace-settings-back').click()
+      const joinBob = async (page: Page) => {
+        await openInviteJoin(page, inviteHash)
+        await e2eSignIn(page, { name: 'Bob', email: 'bob@e2e.test' })
+        await page.getByTestId('join-submit').click()
+        await waitForWorkspace(page)
+        await openProfile(page)
+        await page.getByTestId('profile-name').fill('Bob')
+        await page.getByTestId('profile-back').click()
+      }
       await waitForSignaling(alice)
-      await joinWorkspace(bob, { name: 'Bob', email: 'bob@e2e.test' })
+      await joinBob(bob)
 
       // Text uses the authorized content Durable Object. Requiring a WebRTC
       // peer here would make the reliability test fail on the optional file/
@@ -97,6 +120,9 @@ test.describe('durable objects control plane', () => {
 
       await sendMessage(alice, 'through the gateway')
       await expectMessage(bob, 'through the gateway')
+      expect(serverFrames.length).toBeGreaterThan(0)
+      expect(serverFrames.join('\n')).not.toContain(workspaceSecret)
+      expect(serverFrames.join('\n')).not.toContain('through the gateway')
 
       // Remove both local copies and every possible P2P history source. A new
       // browser can display this only if the encrypted event was committed by
@@ -105,7 +131,7 @@ test.describe('durable objects control plane', () => {
       const freshBobCtx = await browser.newContext()
       contexts.push(freshBobCtx)
       const freshBob = await freshBobCtx.newPage()
-      await joinWorkspace(freshBob, { name: 'Bob', email: 'bob@e2e.test' })
+      await joinBob(freshBob)
       await expectMessage(freshBob, 'through the gateway')
     } finally {
       await Promise.allSettled(contexts.map(context => context.close()))

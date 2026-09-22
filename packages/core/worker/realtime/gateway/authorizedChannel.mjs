@@ -12,6 +12,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS channel_authority (
   one INTEGER PRIMARY KEY CHECK (one = 1),
   version INTEGER NOT NULL,
+  owner TEXT,
   fingerprint TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS channel_members (
@@ -72,6 +73,10 @@ export function defineAuthorizedChannel(options) {
       super(ctx, env)
       ctx.blockConcurrencyWhile(async () => {
         ctx.storage.sql.exec(SCHEMA)
+        if (!ctx.storage.sql.exec('PRAGMA table_info(channel_authority)').toArray()
+          .some(column => column.name === 'owner')) {
+          ctx.storage.sql.exec('ALTER TABLE channel_authority ADD COLUMN owner TEXT')
+        }
       })
     }
 
@@ -103,6 +108,7 @@ export function defineAuthorizedChannel(options) {
         !Number.isSafeInteger(authority?.version) ||
         authority.version < 0 ||
         !isBounded(authority?.fingerprint, 512) ||
+        !isBounded(authority?.owner, 512) ||
         members.length === 0 ||
         members.length > MAX_AUTHORITY_MEMBERS ||
         members.some(member => !isBounded(member, 128))
@@ -111,8 +117,13 @@ export function defineAuthorizedChannel(options) {
       }
 
       const current = this.ctx.storage.sql.exec(
-        'SELECT version, fingerprint FROM channel_authority WHERE one = 1'
+        'SELECT version, fingerprint, owner FROM channel_authority WHERE one = 1'
       ).toArray()[0]
+      // An old unpinned channel is never silently claimed by the next caller.
+      // Apps migrate to owner-bound routes before using this authorization.
+      if (current && current.owner !== authority.owner) {
+        return { code: 'authority-conflict' }
+      }
       if (current && authority.version < current.version) {
         return { code: 'stale-authority' }
       }
@@ -126,10 +137,11 @@ export function defineAuthorizedChannel(options) {
 
       if (!current || authority.version > current.version) {
         this.ctx.storage.sql.exec(
-          `INSERT OR REPLACE INTO channel_authority (one, version, fingerprint)
-           VALUES (1, ?, ?)`,
+          `INSERT OR REPLACE INTO channel_authority (one, version, fingerprint, owner)
+           VALUES (1, ?, ?, ?)`,
           authority.version,
-          authority.fingerprint
+          authority.fingerprint,
+          authority.owner
         )
         this.ctx.storage.sql.exec('DELETE FROM channel_members')
         for (const member of members) {

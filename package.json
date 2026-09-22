@@ -35,7 +35,7 @@
     "postbuild": "node scripts/configure-auth-bridge.mjs",
     "test": "VITE_APP_ID=peerly vitest run --maxWorkers=4",
     "test:watch": "VITE_APP_ID=peerly vitest",
-    "test:workers": "mkdir -p dist && vitest run -c vitest.workers.config.ts",
+    "test:workers": "mkdir -p dist-preview && vitest run -c vitest.workers.config.ts",
     "test:e2e": "VITE_APP_ID=peerly playwright test",
     "test:a11y": "VITE_APP_ID=peerly playwright test e2e/accessibility.spec.ts",
     "test:coverage": "VITE_APP_ID=peerly vitest run --coverage --maxWorkers=4",
@@ -62,7 +62,10 @@
     "pretest:workers": "npm run build:core",
     "pretest:coverage": "npm run build:core",
     "prebuild": "npm run build:core",
-    "prebuild:e2e": "npm run build:core"
+    "prebuild:e2e": "npm run build:core",
+    "deploy:preview": "wrangler deploy -c wrangler.preview.jsonc",
+    "build:preview": "VITE_APP_ID=peerly tsc -b && VITE_APP_ID=peerly VITE_SIGNALING=durable-objects VITE_CONTENT_BACKEND=durable-objects vite build --outDir dist-preview && node scripts/guard-bundle.mjs dist-preview && node packages/core/scripts/check-vite-bundle.mjs dist-preview/assets 700000 && node scripts/configure-auth-bridge.mjs dist-preview",
+    "prebuild:preview": "npm run build:core"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

@@ -5,6 +5,7 @@ import {
 } from '@trystero-p2p/core'
 import { createIdSource, decodeFrame, encodeFrame } from '../protocol/index.js'
 import { getDurableObjectsTransport } from './runtime.js'
+import { deriveChannelCapability } from '../channelCapability.js'
 import type { ScopeKind } from './types.js'
 
 type DurableObjectsRoomConfig = BaseRoomConfig & {
@@ -37,7 +38,10 @@ class ScopeSocket {
     const transport = getDurableObjectsTransport(this.config.app)
     await transport.connect()
     const routeId = this.config.routeId ?? (
-      await transport.requestScope(this.config.kind, this.config.capability)
+      await transport.requestScope(
+        this.config.kind,
+        await deriveChannelCapability(this.config.capability, `signal:${this.config.kind}`)
+      )
     ).routeId
     if (!routeId) throw new Error('Durable Objects scope authorization failed')
 

@@ -425,6 +425,7 @@ export {
   type NsfwScreenConfig,
 } from './nsfwScreen.js'
 export { RealtimeClient } from './app/realtimeClient.js'
+export { deriveChannelCapability } from './channelCapability.js'
 export type { RealtimeClientConfig } from './realtime/transport.js'
 export { selectDurableObjectsTransport, type CoordinationTransport } from './realtime/transport.js'
 export {

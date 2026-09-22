@@ -56,8 +56,8 @@ describe('default Nostr relays', () => {
 })
 
 describe('content transport', () => {
-  it('defaults to durable objects and keeps p2p as an explicit rollback', () => {
-    expect(resolveContentBackend(undefined)).toBe('durable-objects')
+  it('defaults to production P2P and explicitly opts preview into durable objects', () => {
+    expect(resolveContentBackend(undefined)).toBe('p2p')
     expect(resolveContentBackend('durable-objects')).toBe('durable-objects')
     expect(resolveContentBackend('p2p')).toBe('p2p')
   })

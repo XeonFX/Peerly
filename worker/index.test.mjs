@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import worker, { allowedAuthParent } from './index.mjs'
+import { resolveContentBackend } from '../src/config.ts'
 
 // wrangler.preview.jsonc allows `//` line comments; strip them before
 // JSON.parse. Scans char-by-char tracking string/escape state so a `//`
@@ -38,6 +39,30 @@ function parseJsonc(text) {
 const previewConfig = parseJsonc(
   readFileSync(new URL('../wrangler.preview.jsonc', import.meta.url), 'utf8')
 )
+const productionConfig = parseJsonc(
+  readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')
+)
+
+describe('deployment content profiles', () => {
+  it('keeps a default frontend build compatible with the production Worker', async () => {
+    expect(resolveContentBackend(undefined)).toBe(productionConfig.vars.CONTENT_BACKEND)
+    expect(productionConfig.vars.COORDINATION_BACKEND).toBe('legacy-relay')
+    const response = await worker.fetch(new Request('https://peerly.cc/api/realtime/content/test'),
+      productionConfig.vars, {})
+    expect(response.status).toBe(503)
+  })
+
+  it('deploys the explicit DO frontend and backend together on preview.peerly.cc', () => {
+    expect(previewConfig.assets.directory).not.toBe(productionConfig.assets.directory)
+    expect(previewConfig.assets.directory).toBe('./dist-preview')
+    expect(previewConfig.build.command).toContain('npm run build:preview')
+    expect(previewConfig.routes).toContainEqual({ pattern: 'preview.peerly.cc', custom_domain: true })
+    expect(resolveContentBackend('durable-objects')).toBe(previewConfig.vars.CONTENT_BACKEND)
+    expect(previewConfig.vars.COORDINATION_BACKEND).toBe('durable-objects')
+    expect(previewConfig.build.command).toContain('VITE_CONTENT_BACKEND=durable-objects')
+    expect(previewConfig.build.command).toContain('VITE_SIGNALING=durable-objects')
+  })
+})
 
 describe('Peerly auth bridge parent validation', () => {
   it('accepts production and exact HTTPS Peerly branch preview origins', () => {

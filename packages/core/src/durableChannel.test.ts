@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { openDurableChannel } from './durableChannel.js'
+import { deriveChannelCapability } from './channelCapability.js'
 
 class FakeWebSocket extends EventTarget {
   readyState = WebSocket.OPEN
@@ -123,6 +124,21 @@ describe('openDurableChannel', () => {
     const outbound = JSON.parse(socket.sent[0])
     expect(JSON.stringify(outbound.data)).not.toContain('private message')
     expect(outbound.data).toMatchObject({ v: 1 })
+
+    // Reproduce the old failure: the server sees every routing capability
+    // and the ciphertext, but none of these must be usable as a content key.
+    const root = 'high-entropy-room-capability'
+    for (const purpose of ['workspace-content:creator', 'dm-content', 'signal:workspace', 'signal:room']) {
+      const seenByServer = await deriveChannelCapability(root, purpose)
+      const material = await crypto.subtle.digest('SHA-256',
+        new TextEncoder().encode(`peerly-durable-channel-v1\n${seenByServer}`))
+      const key = await crypto.subtle.importKey('raw', material, 'AES-GCM', false, ['decrypt'])
+      const bytes = (value: string) => Uint8Array.from(
+        atob(value.replaceAll('-', '+').replaceAll('_', '/')), char => char.charCodeAt(0))
+      await expect(crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(outbound.data.iv) },
+        key, bytes(outbound.data.ciphertext))).rejects.toThrow()
+    }
+
 
     socket.receive({
       type: 'event',

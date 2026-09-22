@@ -51,11 +51,11 @@ export const NETWORK_APP_ID = requireAppId(PUBLIC_NETWORK_ENV)
 
 export type ContentBackend = 'durable-objects' | 'p2p'
 
-/** Durable encrypted history is the default; deployments can explicitly roll back. */
+/** Production remains P2P until cutover; the preview build explicitly enables DO. */
 export function resolveContentBackend(
   value: string | undefined = import.meta.env.VITE_CONTENT_BACKEND
 ): ContentBackend {
-  return value === 'p2p' ? 'p2p' : 'durable-objects'
+  return value === 'durable-objects' ? 'durable-objects' : 'p2p'
 }
 
 export const CONTENT_BACKEND = resolveContentBackend()

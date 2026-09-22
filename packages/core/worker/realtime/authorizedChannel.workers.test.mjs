@@ -14,6 +14,7 @@ const identity = name => ({
 })
 
 const authority = (version = 1, members = ['alice', 'bob']) => ({
+  owner: 'original-creator',
   version,
   fingerprint: `authority-${version}`,
   members: members.map(member => `principal-${member}`),
@@ -49,6 +50,16 @@ async function connect(stub, user) {
 }
 
 describe('AuthorizedChannelDO', () => {
+  it('never replaces a pinned owner even for a higher revision', async () => {
+    const stub = env.CONTENT_CHANNELS.getByName(`peerly:owner-${crypto.randomUUID()}`)
+    const alice = identity('alice')
+    expect(await authorize(stub, alice)).toEqual({ ok: true })
+    expect(await authorize(stub, identity('bob'), {
+      ...authority(Number.MAX_SAFE_INTEGER, ['bob']), owner: 'attacker-key',
+    })).toEqual({ code: 'authority-conflict' })
+    expect(await authorize(stub, alice)).toEqual({ ok: true })
+  })
+
   it('rejects a socket without a gateway-issued authorization', async () => {
     const stub = env.CONTENT_CHANNELS.getByName(
       `peerly:unauthorized-${crypto.randomUUID()}`

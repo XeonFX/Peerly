@@ -71,3 +71,16 @@ describe('signed allow-list', () => {
     expect(newerAllowList(newer, older)).toBe(newer)
   })
 })
+
+describe('workspace-scoped allow-list signatures', () => {
+  it('rejects replay to another workspace or a changed scope', async () => {
+    const creator = new DeviceIdentity(memoryStore())
+    const key = await creator.publicKeyId()
+    const { workspaceAuthorityScope } = await import('./allowList')
+    const scope = await workspaceAuthorityScope('workspace-a', key)
+    const list = await signAllowList(creator, ['alice@example.com'], scope)
+    expect(await verifyAllowList(list, key, 'workspace-a')).toBe(true)
+    expect(await verifyAllowList(list, key, 'workspace-b')).toBe(false)
+    expect(await verifyAllowList({ ...list, scope: await workspaceAuthorityScope('workspace-b', key) }, key)).toBe(false)
+  })
+})

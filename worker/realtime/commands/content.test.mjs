@@ -5,11 +5,7 @@ import {
   dmContentAuthorizeCommand,
   workspaceContentAuthorizeCommand,
 } from './content.mjs'
-import {
-  E2E_ALLOW_LIST,
-  E2E_CREATOR_KEY_ID,
-  E2E_WORKSPACE_ID,
-} from '../../../src/collab/e2eConstants.ts'
+import { workspacePolicy } from './content.test-fixtures.mjs'
 
 const SECRET = 'test-opaque-user-secret'
 
@@ -32,11 +28,8 @@ describe('Peerly durable content authorization', () => {
       'peerly',
       'alice@e2e.test'
     )
-    const payload = workspaceContentAuthorizeCommand.validate({
-      capability: E2E_WORKSPACE_ID,
-      creatorKeyId: E2E_CREATOR_KEY_ID,
-      allowList: E2E_ALLOW_LIST,
-    })
+    const { payload } = await workspacePolicy()
+    workspaceContentAuthorizeCommand.validate(payload)
     const { handlers, authorize } = build()
     const result = await handlers['workspace.content.authorize'](payload, {
       identity: 'opaque-alice',
@@ -50,7 +43,7 @@ describe('Peerly durable content authorization', () => {
       publicUserId: 'public-alice',
       principalId: privateMemberId,
       authority: expect.objectContaining({
-        version: E2E_ALLOW_LIST.signedAt,
+        version: payload.allowList.signedAt,
       }),
     }))
     const members = authorize.mock.calls[0][0].authority.members
@@ -59,11 +52,7 @@ describe('Peerly durable content authorization', () => {
   })
 
   it('rejects a tampered workspace list and a non-member identity', async () => {
-    const validPayload = workspaceContentAuthorizeCommand.validate({
-      capability: E2E_WORKSPACE_ID,
-      creatorKeyId: E2E_CREATOR_KEY_ID,
-      allowList: E2E_ALLOW_LIST,
-    })
+    const { payload: validPayload } = await workspacePolicy()
     const { handlers } = build()
     await expect(
       handlers['workspace.content.authorize'](
@@ -103,7 +92,7 @@ describe('Peerly durable content authorization', () => {
 
   it('initializes a DM authority from exactly the authenticated pair', async () => {
     const payload = dmContentAuthorizeCommand.validate({
-      capability: 'a'.repeat(64),
+      capability: 'a'.repeat(43),
       peerUserId: 'public-bob',
     })
     const { handlers, authorize } = build()
@@ -116,6 +105,7 @@ describe('Peerly durable content authorization', () => {
     expect(authorize).toHaveBeenCalledWith(expect.objectContaining({
       principalId: 'public-alice',
       authority: {
+        owner: 'public-alice\npublic-bob',
         version: 1,
         fingerprint: 'public-alice\npublic-bob',
         members: ['public-alice', 'public-bob'],

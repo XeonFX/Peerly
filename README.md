@@ -166,8 +166,8 @@ media flows. Message content uses a separately selected backend:
 
 | Content mode | Behavior | Config |
 |---|---|---|
-| **Durable Objects** (default) | Encrypted messages, reactions, and channel definitions are persisted before fan-out; late joiners receive bounded history | `VITE_CONTENT_BACKEND=durable-objects` and `CONTENT_BACKEND=durable-objects` |
-| **P2P** (rollback) | Messages and history move directly between currently connected browsers | `VITE_CONTENT_BACKEND=p2p` and `CONTENT_BACKEND=p2p` |
+| **Durable Objects** (preview) | Encrypted messages, reactions, and channel definitions are persisted before fan-out; late joiners receive bounded history | `VITE_CONTENT_BACKEND=durable-objects` and `CONTENT_BACKEND=durable-objects` |
+| **P2P** (production default) | Messages and history move directly between currently connected browsers | `VITE_CONTENT_BACKEND=p2p` and `CONTENT_BACKEND=p2p` |
 
 Files and call media remain P2P in both modes.
 
@@ -187,6 +187,8 @@ Deployment owners can replace the curated Nostr set with the build-time `VITE_NO
 A fourth signaling mode moves *coordination* — device enrollment, session cookies, presence, workspace/DM notifications, WebRTC signaling, and short-lived TURN credentials — off the self-hosted relay and onto a Cloudflare Worker backed by Durable Objects, served from `/api/network/*` and `/api/realtime/*` (see [`worker/index.mjs`](worker/index.mjs) and [`packages/core/worker/realtime`](packages/core/worker/realtime)). The preview deployment also enables the content Durable Object: the browser encrypts messages, reactions, and channel definitions with the workspace/DM secret; the server persists only ciphertext and bounded routing metadata before broadcasting it. File bytes and calls remain WebRTC P2P.
 
 `VITE_SIGNALING=durable-objects` only works against a Worker that was itself deployed with `COORDINATION_BACKEND=durable-objects`, the Durable Object bindings/migrations, and its own secrets (`NETWORK_SESSION_SECRET`, `OPAQUE_USER_ID_SECRET`, `TURN_AUTH_SECRET`, …). A client pointed at an unconfigured Worker fails closed with `503`, and a stale/invalid capability fails with `400`/`401` rather than degrading silently. Production (`peerly.cc`) still runs `COORDINATION_BACKEND=legacy-relay`; only the stable preview deployment (`preview.peerly.cc`, via [`wrangler.preview.jsonc`](wrangler.preview.jsonc)) runs the Durable Objects path today, ahead of a full production cutover.
+
+For the security protocol changes, existing-preview history limitations, and the exact preview deployment command, see [PR #92 security fixes and preview rollout](docs/PR92_SECURITY_FIXES.md).
 
 This control plane is shared code in [`packages/core/worker/realtime`](packages/core/worker/realtime) and [`packages/core/src/realtime`](packages/core/src/realtime): Peerly and HeyHubs each deploy their own Worker and Durable Object namespaces from it, with independent secrets and data. See [docs/DURABLE_OBJECTS_ARCHITECTURE.md](docs/DURABLE_OBJECTS_ARCHITECTURE.md) for the full design, or [docs/RELAY_VS_DURABLE_OBJECTS.md](docs/RELAY_VS_DURABLE_OBJECTS.md) for a comparison against the relay stack production still runs.
 

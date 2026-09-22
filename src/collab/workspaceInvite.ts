@@ -56,6 +56,7 @@ export function workspaceInviteBytes(
   // Preserve verification of v1 invitations created before route IDs existed:
   // the old canonical payload ended at the allow-list signature.
   if (payload.invite.workspaceRouteId) fields.push(payload.invite.workspaceRouteId)
+  if (payload.invite.allowList.scope) fields.push(payload.invite.allowList.scope)
   return encodeCanonicalLines(fields)
 }
 
@@ -143,7 +144,7 @@ export async function verifyWorkspaceInvite(payload: WorkspaceInvitePayload): Pr
   const age = Date.now() - payload.ts
   if (age > WORKSPACE_INVITE_TTL_MS || age < -MAX_CLOCK_SKEW_MS) return false
   if (payload.deviceKeyId !== payload.invite.creatorKeyId) return false
-  if (!(await verifyAllowList(payload.invite.allowList, payload.invite.creatorKeyId))) {
+  if (!(await verifyAllowList(payload.invite.allowList, payload.invite.creatorKeyId, payload.invite.workspaceId))) {
     return false
   }
   return verifyWithDeviceKeyId(

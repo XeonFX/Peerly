@@ -1,10 +1,13 @@
 import type { DeviceIdentity, DeviceKeyId } from './deviceIdentity'
 import { verifyWithDeviceKeyId } from './deviceIdentity'
+import { deriveChannelCapability } from '@peerly/core'
 
 export type SignedAllowList = {
   emails: string[]
   signedAt: number
   signature: string
+  /** V2 binds the signed policy to a server-visible workspace capability. */
+  scope?: string
 }
 
 function canonicalizeEmails(emails: string[]): string[] {
@@ -20,19 +23,26 @@ function canonicalizeEmails(emails: string[]): string[] {
  * text directly would make the signature depend on incidental serialization
  * details instead of the data. This is fixed and unambiguous.
  */
-function canonicalPayload(emails: string[], signedAt: number): Uint8Array {
-  return new TextEncoder().encode(`${canonicalizeEmails(emails).join(',')}|${signedAt}`)
+function canonicalPayload(emails: string[], signedAt: number, scope?: string): Uint8Array {
+  return new TextEncoder().encode(scope === undefined
+    ? `${canonicalizeEmails(emails).join(',')}|${signedAt}`
+    : JSON.stringify(['peerly-workspace-members-v2', scope, canonicalizeEmails(emails), signedAt]))
 }
+
+export const workspaceAuthorityScope = (secret: string, creatorKeyId: string): Promise<string> =>
+  deriveChannelCapability(secret, `workspace-content:${creatorKeyId}`)
 
 /** Creator signs the workspace's membership list with their device key. */
 export async function signAllowList(
   identity: DeviceIdentity,
-  emails: string[]
+  emails: string[],
+  scope?: string,
+  previousSignedAt = 0
 ): Promise<SignedAllowList> {
   const canonicalEmails = canonicalizeEmails(emails)
-  const signedAt = Date.now()
-  const signature = await identity.sign(canonicalPayload(canonicalEmails, signedAt))
-  return { emails: canonicalEmails, signedAt, signature }
+  const signedAt = Math.max(Date.now(), previousSignedAt + 1)
+  const signature = await identity.sign(canonicalPayload(canonicalEmails, signedAt, scope))
+  return { emails: canonicalEmails, signedAt, signature, ...(scope === undefined ? {} : { scope }) }
 }
 
 /**
@@ -42,14 +52,19 @@ export async function signAllowList(
  */
 export async function verifyAllowList(
   list: SignedAllowList,
-  creatorKeyId: DeviceKeyId
+  creatorKeyId: DeviceKeyId,
+  workspaceSecret?: string
 ): Promise<boolean> {
   if (!Array.isArray(list.emails) || typeof list.signedAt !== 'number' || !list.signature) {
     return false
   }
+  if (list.scope !== undefined && (
+    !/^[A-Za-z0-9_-]{43}$/.test(list.scope) ||
+    (workspaceSecret !== undefined && list.scope !== await workspaceAuthorityScope(workspaceSecret, creatorKeyId))
+  )) return false
   return verifyWithDeviceKeyId(
     creatorKeyId,
-    canonicalPayload(list.emails, list.signedAt),
+    canonicalPayload(list.emails, list.signedAt, list.scope),
     list.signature
   )
 }

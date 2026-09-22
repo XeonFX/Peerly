@@ -10,7 +10,7 @@
   // fails on a clean checkout while every local build succeeds on a warm one.
   // Declared here so any path that bundles this worker gets it, not only the
   // ones that happen to run `npm run build` first.
-  "build": { "command": "VITE_CONTENT_BACKEND=p2p npm run build:core" },
+  "build": { "command": "npm run build:core" },
   "vars": {
     // The auth bridge executes in the Worker runtime, where Cloudflare's
     // build-time VITE_* variables are not available automatically.
