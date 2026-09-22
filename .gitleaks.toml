@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Public localStorage key for the legal-consent version; not an authentication credential"
+condition = "AND"
+paths = ['''^src/consent\.ts$''']
+regexTarget = "secret"
+regexes = ['''^peerly-legal-consent-v1$''']
