@@ -1,6 +1,6 @@
 {
   "name": "@peerly/core",
-  "version": "1.15.0",
+  "version": "1.15.1",
   "description": "Reusable encrypted realtime core with authenticated Durable Objects, P2P rooms, device identity, signing, media, and presence",
   "license": "MIT",
   "repository": {

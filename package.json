@@ -1,7 +1,7 @@
 {
   "name": "peerly",
   "private": false,
-  "version": "1.15.0",
+  "version": "1.15.1",
   "description": "Encrypted hybrid team collaboration — Durable Object chat with P2P files and video",
   "license": "MIT",
   "repository": {
