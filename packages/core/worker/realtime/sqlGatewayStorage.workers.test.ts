@@ -1,4 +1,5 @@
-import { env, runInDurableObject } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
+import { runInDurableObject } from 'cloudflare:test'
 import { describeGatewayStorageContract } from '../../src/adapters/gatewayStorage.contract.js'
 import {
   createSqlGatewayStorage, GATEWAY_SCHEMA,

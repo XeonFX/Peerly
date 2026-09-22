@@ -1,5 +1,5 @@
-import { env, fetchMock } from 'cloudflare:test'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { env } from 'cloudflare:workers'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { handleRealtimeRoute } from './router.mjs'
 
 /**
@@ -155,26 +155,17 @@ beforeAll(async () => {
   )
   signingKey = pair.privateKey
   publicJwk = { ...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid: 'e2e', alg: 'RS256', use: 'sig' }
-  fetchMock.activate()
-  fetchMock.disableNetConnect()
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+    const url = input instanceof Request ? input.url : String(input)
+    if (url !== `${ISSUER}${JWKS_PATH}`) throw new Error(`Unexpected outbound request: ${url}`)
+    return Response.json({ keys: [publicJwk] })
+  })
 })
 
-// Interceptors are deliberately left armed: the JWKS is cached after its
-// first fetch, so how many times it is actually requested is an implementation
-// detail this suite should not pin.
-
-function serveJwks(times = 4) {
-  fetchMock.get(ISSUER)
-    .intercept({ path: JWKS_PATH })
-    .reply(200, JSON.stringify({ keys: [publicJwk] }), {
-      headers: { 'content-type': 'application/json' },
-    })
-    .times(times)
-}
+afterAll(() => vi.restoreAllMocks())
 
 describe('two accounts through the real routes', () => {
   it('enrols, establishes a session and connects — twice, independently', async () => {
-    serveJwks()
     const alice = await signIn('alice@e2e.test', 'sub-alice')
     const bob = await signIn('bob@e2e.test', 'sub-bob')
 
@@ -191,7 +182,6 @@ describe('two accounts through the real routes', () => {
   })
 
   it('lands the two accounts in different gateway objects', async () => {
-    serveJwks()
     const alice = await signIn('alice2@e2e.test', 'sub-alice-2')
     const bob = await signIn('bob2@e2e.test', 'sub-bob-2')
     // The cookie carries the opaque account id; two different subjects must
@@ -202,7 +192,6 @@ describe('two accounts through the real routes', () => {
   it('refuses a token whose nonce is not the enrolling device key', async () => {
     // The binding that makes an id token useless to anyone but the device that
     // requested it. Without it a stolen token enrols an attacker's device.
-    serveJwks(1)
     const device = await createDevice()
     const token = await mintIdToken({
       email: 'mallory@e2e.test', nonce: 'not-the-device-key', subject: 'sub-mallory',

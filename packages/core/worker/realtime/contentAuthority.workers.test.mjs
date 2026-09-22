@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:test'
+import { env } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import { createContentHandlers, workspaceContentAuthorizeCommand } from '../../../../worker/realtime/commands/content.mjs'
 import { workspacePolicy } from '../../../../worker/realtime/commands/content.test-fixtures.mjs'
