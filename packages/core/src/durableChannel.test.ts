@@ -40,6 +40,25 @@ async function openWithSnapshot(snapshot: object, encryptionSecret?: string) {
 }
 
 describe('openDurableChannel', () => {
+  it('keeps a caller message id and hides stable channel-state keys', async () => {
+    const { room, socket } = await openWithSnapshot({ type: 'snapshot', connectionId: 'self', members: [] }, 'private-workspace-secret')
+    const action = room.makeAction('channel-sync')
+    for (let revision = 1; revision <= 2; revision++) {
+      const sending = action.send({ name: 'private-channel-name', revision }, {
+        messageId: `stable-${revision}`, state: { key: 'private-channel-id', revision, deleted: false },
+      })
+      await vi.waitFor(() => expect(socket.sent).toHaveLength(revision))
+      const frame = JSON.parse(socket.sent[revision - 1])
+      expect(frame.messageId).toBe(`stable-${revision}`)
+      expect(frame.state.key).toMatch(/^[A-Za-z0-9_-]{43}$/)
+      expect(socket.sent[revision - 1]).not.toMatch(/private-workspace-secret|private-channel-name|private-channel-id/)
+      if (revision === 2) expect(frame.state.key).toBe(JSON.parse(socket.sent[0]).state.key)
+      socket.receive({ type: 'ack', messageId: frame.messageId })
+      await sending
+    }
+    room.leave()
+  })
+
   it('aggregates connections by user and excludes this account other tabs', async () => {
     const { room } = await openWithSnapshot({
       type: 'snapshot',

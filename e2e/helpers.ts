@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
+import { createHash } from 'node:crypto'
 import {
   E2E_ALLOW_LIST,
   E2E_CREATOR_KEY_ID,
@@ -13,20 +14,19 @@ export type JoinOptions = {
 }
 
 /**
- * One workspace per Playwright worker, so workers can run in parallel without
- * meeting each other: the workspace id doubles as the Trystero room id, and
- * tests sharing a room see each other's peers and messages.
+ * One workspace per test and worker. A closing context can briefly remain
+ * connected while the next test starts; reusing rooms leaks peer history.
  *
  * No new signing is needed per worker — the creator's allow-list signature
  * covers only `emails|signedAt` (see src/collab/allowList.ts), not the
  * workspace id, so the fixed signed fixture is valid for every derived id.
  */
 export function e2eWorkspaceId(workerIndex = test.info().workerIndex): string {
-  return `e2e${String(workerIndex + 1).padStart(29, '0')}`
+  return `e2e${e2eWorkspaceRouteId(workerIndex).slice(3)}`
 }
 
 export function e2eWorkspaceRouteId(workerIndex = test.info().workerIndex): string {
-  return (workerIndex + 1).toString(16).padStart(32, '0')
+  return createHash('sha256').update(`${test.info().testId}:${workerIndex}`).digest('hex').slice(0, 32)
 }
 
 export function e2eInviteHash(workerIndex = test.info().workerIndex): string {

@@ -50,7 +50,9 @@ type PendingMessage = {
   meta: { peerId: string; userId?: string; deviceKeyId?: string }
 }
 
-const MAX_BUFFERED_PER_ACTION = 1_000
+// A channel-state replay can include up to 1,000 legacy encrypted snapshots
+// plus 1,000 current entities; metadata must not be truncated before binding.
+const MAX_BUFFERED_PER_ACTION = 2_000
 const MAX_PENDING_OUTBOUND = 1_000
 const OUTBOUND_ACK_TIMEOUT_MS = 30_000
 const RECONNECT_BASE_MS = 250
@@ -168,12 +170,18 @@ export async function openDurableChannel(
           if (outbound.size >= MAX_PENDING_OUTBOUND) {
             throw new Error('durable-channel-queue-full')
           }
-          const messageId = crypto.randomUUID()
+          const messageId = sendOptions?.messageId ?? crypto.randomUUID()
+          if (!messageId || messageId.length > 80 || outbound.has(messageId)) throw new Error('invalid-or-pending-message-id')
+          const state = sendOptions?.state
+          if (state && !options.encryptionSecret) throw new Error('state-requires-encryption')
+          const stateKey = state ? bytesToBase64Url(new Uint8Array(await crypto.subtle.digest('SHA-256',
+            new TextEncoder().encode(`peerly-channel-state-v1\n${options.encryptionSecret}\n${event}\n${state.key}`)))) : undefined
           const frame = JSON.stringify({
             type: 'event',
             event,
             messageId,
             data,
+            ...(state ? { state: { key: stateKey, revision: state.revision, deleted: state.deleted === true } } : {}),
             ...(sendOptions?.target ? { target: sendOptions.target } : {}),
           })
           await new Promise<void>((resolve, reject) => {

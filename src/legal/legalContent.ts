@@ -34,7 +34,7 @@ const privacyPl: LegalDoc = {
     {
       heading: '2. Nasze podejście: szyfrowana trwałość i P2P',
       blocks: [
-        { p: 'Wiadomości, reakcje i definicje kanałów są szyfrowane w przeglądarce przed wysłaniem. Nasza infrastruktura Cloudflare Durable Objects przechowuje wyłącznie zaszyfrowane koperty zdarzeń i nie otrzymuje klucza przestrzeni ani rozmowy potrzebnego do odczytania treści. Pliki oraz obraz i dźwięk z połączeń nie są przechowywane w Durable Objects: pozostają lokalnie i są przesyłane P2P. P2P można również włączyć jako alternatywny transport wiadomości na poziomie wdrożenia.' },
+        { p: 'Wiadomości, reakcje i definicje kanałów są szyfrowane w przeglądarce przed wysłaniem. Nasza infrastruktura Cloudflare Durable Objects przechowuje wyłącznie zaszyfrowane koperty zdarzeń i nie otrzymuje klucza przestrzeni ani rozmowy potrzebnego do odczytania treści. Pliki oraz obraz i dźwięk z połączeń nie są przechowywane w Durable Objects: pozostają lokalnie i są przesyłane P2P. Produkcja obecnie korzysta z P2P do wiadomości; Durable Objects działają na preview do czasu przełączenia produkcji.' },
       ],
     },
     {
@@ -42,11 +42,11 @@ const privacyPl: LegalDoc = {
       blocks: [
         { p: 'Logowanie (OIDC): logujesz się przez zewnętrznego dostawcę (Google, Microsoft, Apple lub inny OIDC). Token tożsamości jest wysyłany do naszego Workera w celu weryfikacji. Odczytany adres e-mail służy do utworzenia pseudonimowego identyfikatora członka; token i surowy adres e-mail nie są zapisywane w Durable Object. Nazwa i adres e-mail są też zapisywane lokalnie w przeglądarce.' },
         { p: 'Lista dostępu (zaproszenia): twórca przestrzeni podpisuje listę adresów e-mail osób uprawnionych do dołączenia. Uczestnicy widzą tę listę. Worker przetwarza ją przy autoryzacji, weryfikuje podpis i przekazuje Durable Object wyłącznie pseudonimowe identyfikatory członków, a nie surowe adresy.' },
-        { p: 'Lobby i zaproszenia do znajomych: uwierzytelniony, nietrwały kanał Durable Object przekazuje podpisane dane obecności, zaproszeń i powiadomień DM. Dane te mogą zawierać adres e-mail nadawcy zaproszenia, ale nie są zapisywane jako historia ani skrzynka na serwerze.' },
+        { p: 'Lobby i zaproszenia do znajomych: nietrwały przekaźnik lub kanał Durable Object przekazuje podpisaną obecność i szyfrowane zaproszenia kierowane do odbiorcy. Publiczna obecność zawiera nazwę, pseudonimowe identyfikatory użytkownika i urządzenia, klucz zaproszeń oraz krótkotrwałe poświadczenie zweryfikowane przez nasz Worker. Nie zawiera tokena OIDC ani adresu e-mail z tego tokena. Zaproszenie może zawierać adres e-mail i poświadczenie OIDC nadawcy wewnątrz treści zaszyfrowanej dla odbiorcy; nie jest przechowywane jako historia ani skrzynka na serwerze.' },
         { p: 'Adres IP: natura WebRTC sprawia, że łącząc się z uczestnikiem prywatnej przestrzeni lub rozmowy, Wasze przeglądarki wymieniają adresy IP; są one też widoczne dla operatorów przekaźników/TURN. Publiczna obecność i routing zaproszeń korzystają z kanału przekaźnika i nie tworzą połączenia WebRTC z każdą osobą online.' },
         { p: 'Obecność w przestrzeni: nasz przekaźnik może tymczasowo (do ok. 45 sekund od ostatniego sygnału) przetwarzać niejawny identyfikator przestrzeni, pseudonimowy identyfikator członka i zaszyfrowane dane obecności, aby lista online działała także podczas zestawiania połączenia P2P. Przekaźnik nie otrzymuje klucza potrzebnego do odszyfrowania tych danych.' },
-        { p: 'Treści i metadane: Durable Objects otrzymują zaszyfrowane wiadomości, reakcje i definicje kanałów oraz widoczne dla infrastruktury pseudonimowe identyfikatory użytkownika i urządzenia, typ zdarzenia i czas. Nazwa i awatar są szyfrowane w transporcie. Pliki oraz obraz/dźwięk z połączeń trafiają bezpośrednio do uczestników P2P.' },
-        { p: 'Dane w urządzeniu: historia i pliki (IndexedDB), preferencje, klucz kryptograficzny urządzenia, zapamiętane przestrzenie i zgody — w pamięci lokalnej Twojej przeglądarki. Opcjonalne parowanie synchronizuje wybrane dane bezpośrednio między wzajemnie zatwierdzonymi urządzeniami, gdy oba są online; sesje logowania, tokeny tożsamości i prywatne klucze nie są kopiowane.' },
+        { p: 'Treści i metadane: Durable Objects otrzymują zaszyfrowane wiadomości, reakcje i definicje kanałów oraz widoczne dla infrastruktury pseudonimowe identyfikatory użytkownika i urządzenia, typ zdarzenia i czas. Nazwy i awatary są szyfrowane w treści przestrzeni; nazwa wyświetlana w publicznym lobby jest widoczna dla jego uczestników. Pliki oraz obraz/dźwięk z połączeń trafiają bezpośrednio do uczestników P2P.' },
+        { p: 'Dane w urządzeniu: historia i preferencje (localStorage), oczekujące wiadomości i pliki (IndexedDB), klucz kryptograficzny urządzenia, zapamiętane przestrzenie i zgody — w pamięci lokalnej Twojej przeglądarki. Opcjonalne parowanie synchronizuje wybrane dane bezpośrednio między wzajemnie zatwierdzonymi urządzeniami, gdy oba są online; sesje logowania, tokeny tożsamości i prywatne klucze nie są kopiowane.' },
         { note: 'Nie prowadzimy analityki, nie używamy pikseli śledzących ani reklam. Nie sprzedajemy danych.' },
       ],
     },
@@ -86,7 +86,7 @@ const privacyPl: LegalDoc = {
     {
       heading: '7. Przechowywanie i usuwanie',
       blocks: [
-        { p: 'Zaszyfrowane zdarzenia są przechowywane maksymalnie przez 30 dni i w limicie 1000 najnowszych zdarzeń na przestrzeń lub rozmowę; starsze zdarzenia są automatycznie usuwane. Dane lokalne możesz usunąć w każdej chwili (wyloguj się, opuść lub wyczyść przestrzeń, wyczyść dane witryny). Kopie wysłane innym pozostają na ich urządzeniach. W sprawie kopii serwerowej napisz na adres kontaktowy poniżej.' },
+        { p: 'W trybie Durable Objects zaszyfrowane zdarzenia czatu są przechowywane maksymalnie przez 30 dni i w limicie 1000 najnowszych zdarzeń na przestrzeń lub rozmowę; starsze zdarzenia są automatycznie usuwane. Zaszyfrowany bieżący stan kanałów i rekordy ich usunięcia są zachowywane osobno, bez tego limitu czasu, aby umożliwić synchronizację urządzeń po dłuższej nieobecności. Dane lokalne możesz usunąć w każdej chwili (wyloguj się, opuść lub wyczyść przestrzeń, wyczyść dane witryny). Kopie wysłane innym pozostają na ich urządzeniach. W sprawie kopii serwerowej napisz na adres kontaktowy poniżej.' },
       ],
     },
     {
@@ -144,7 +144,7 @@ const privacyEn: LegalDoc = {
     {
       heading: '2. Our approach: encrypted durability and P2P',
       blocks: [
-        { p: 'Messages, reactions, and channel definitions are encrypted in your browser before transmission. Our Cloudflare Durable Objects infrastructure stores only encrypted event envelopes and does not receive the workspace or conversation key needed to read their content. Files and call audio/video are not stored in Durable Objects: they remain local and transfer P2P. P2P can also be enabled as an alternative message transport at deployment level.' },
+        { p: 'Messages, reactions, and channel definitions are encrypted in your browser before transmission. Our Cloudflare Durable Objects infrastructure stores only encrypted event envelopes and does not receive the workspace or conversation key needed to read their content. Files and call audio/video are not stored in Durable Objects: they remain local and transfer P2P. Production currently uses P2P message delivery; Durable Objects run on preview until the production cutover.' },
       ],
     },
     {
@@ -152,11 +152,11 @@ const privacyEn: LegalDoc = {
       blocks: [
         { p: 'Sign-in (OIDC): you sign in through a third-party provider (Google, Microsoft, Apple, or another OIDC provider). The ID token is sent to our Worker for verification. Its email is used to derive a pseudonymous member identifier; the token and raw email are not stored in a Durable Object. Your name and email are also stored locally in your browser.' },
         { p: 'Allow-list (invitations): the workspace creator signs a list of email addresses permitted to join, which members can see. The Worker processes that list during authorization, verifies its signature, and gives the Durable Object only pseudonymous member identifiers rather than raw addresses.' },
-        { p: 'Lobby and friend invitations: an authenticated, non-persistent Durable Object channel forwards signed presence, invitation, and DM-notification data. This can include the invitation sender’s email, but it is not stored as server history or a mailbox.' },
+        { p: 'Lobby and friend invitations: a non-persistent relay or Durable Object channel forwards signed public presence and encrypted, directed invitations. Public presence contains a display name, pseudonymous user/device identifiers, an invitation public key, and a short-lived identity certificate verified by our Worker. It contains no OIDC token or email claim. A directed invitation can include its sender’s email and OIDC attestation inside the recipient-encrypted payload; it is not stored as server history or a mailbox.' },
         { p: 'IP address: by the nature of WebRTC, connecting to a participant in a private workspace or conversation means your browsers exchange IP addresses; they are also visible to relay/TURN operators. Public presence and invitation routing use a relay channel and do not create a WebRTC connection to every online user.' },
         { p: 'Workspace presence: our relay may temporarily process (for about 45 seconds after the latest signal) an opaque workspace identifier, a pseudonymous member identifier, and encrypted presence data so the online list works while P2P is still connecting. The relay does not receive the key needed to decrypt that data.' },
-        { p: 'Content and metadata: Durable Objects receive encrypted messages, reactions, and channel definitions plus infrastructure-visible pseudonymous user and device identifiers, event type, and time. Names and avatars are encrypted in transit. Files and call audio/video go directly to participants P2P.' },
-        { p: 'On-device data: history and files (IndexedDB), preferences, a device cryptographic key, remembered workspaces, and consents — in your browser’s local storage. Optional pairing syncs selected data directly between mutually approved devices while both are online; login sessions, identity tokens, and private keys are not copied.' },
+        { p: 'Content and metadata: Durable Objects receive encrypted messages, reactions, and channel definitions plus infrastructure-visible pseudonymous user and device identifiers, event type, and time. Names and avatars are encrypted in workspace content; public lobby display names are visible to lobby participants. Files and call audio/video go directly to participants P2P.' },
+        { p: 'On-device data: history and preferences (localStorage), pending messages and files (IndexedDB), a device cryptographic key, remembered workspaces, and consents — in your browser’s local storage. Optional pairing syncs selected data directly between mutually approved devices while both are online; login sessions, identity tokens, and private keys are not copied.' },
         { note: 'We run no analytics, tracking pixels, or advertising. We do not sell data.' },
       ],
     },
@@ -196,7 +196,7 @@ const privacyEn: LegalDoc = {
     {
       heading: '7. Retention and deletion',
       blocks: [
-        { p: 'Encrypted events are retained for at most 30 days and are capped at the latest 1,000 events per workspace or conversation; older events are removed automatically. You can delete local data at any time (sign out, leave or clear a workspace, clear site data). Copies sent to others remain on their devices. Contact us below about a server-held copy.' },
+        { p: 'In Durable Objects mode, encrypted chat events are retained for at most 30 days and are capped at the latest 1,000 events per workspace or conversation; older events are removed automatically. Encrypted current channel state and deletion records are retained separately without that time limit so devices can reconcile after a long absence. You can delete local data at any time (sign out, leave or clear a workspace, clear site data). Copies sent to others remain on their devices. Contact us below about a server-held copy.' },
       ],
     },
     {

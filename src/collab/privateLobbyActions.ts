@@ -17,7 +17,8 @@ type Envelope = {
 /**
  * Invitations contain the roots of workspace/DM encryption. Signing alone
  * does not hide those roots from the lobby relay. Keys admitted here MUST
- * come from a verified, OIDC-bound signed presence message, never raw frames.
+ * come from a signed presence message bound to a verified Worker identity
+ * certificate, never raw frames. OIDC tokens stay inside private messages.
  */
 export function createPrivateLobbyActions(room: Pick<RelayChannelRoom, 'makeAction'>) {
   const keys = crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveKey'])

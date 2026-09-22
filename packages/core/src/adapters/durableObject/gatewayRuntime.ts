@@ -108,8 +108,16 @@ export class GatewayRuntime {
     }
   }
 
+  private authorizeSocket(raw: RawSocket): boolean {
+    const attachment = raw.deserializeAttachment() as Attachment
+    const session = this.options.storage.sessions.byId(attachment?.sid)
+    if (session && this.validateSession({ sid: attachment.sid, deviceKeyId: attachment.dk, epoch: session.epoch })) return true
+    raw.close(CLOSE.AUTH_REQUIRED, 'session expired or revoked')
+    return false
+  }
+
   private sockets(): ControlSocket[] {
-    return this.options.ctx.getWebSockets().map(raw => this.wrap(raw))
+    return this.options.ctx.getWebSockets().filter(raw => this.authorizeSocket(raw)).map(raw => this.wrap(raw))
   }
 
   socketSet() {
@@ -176,6 +184,7 @@ export class GatewayRuntime {
   }
 
   async onMessage(raw: RawSocket, message: unknown): Promise<void> {
+    if (!this.authorizeSocket(raw)) return
     await this.service.handleMessage(this.wrap(raw), message)
   }
 

@@ -77,6 +77,7 @@ export {
   type DeviceKeyId,
 } from './deviceIdentity.js'
 export { deriveUserId } from './userId.js'
+export { createLobbyIdentityClient, type LobbyIdentity, type LobbyCertificate } from './lobbyIdentity.js'
 export {
   parseOidcDeviceAttestation,
   verifyGoogleDeviceBinding,

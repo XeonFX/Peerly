@@ -86,6 +86,22 @@ test.describe('durable objects control plane', () => {
     try {
       const alice = await aliceCtx.newPage()
       const bob = await bobCtx.newPage()
+      // Drop only content ACKs on the first page lifetime. The server still
+      // commits and Bob still receives; reload restores normal ACK handling.
+      await alice.addInitScript(() => {
+        const state = window as Window & { dropContentAcks?: boolean }
+        state.dropContentAcks = false
+        const NativeSocket = window.WebSocket
+        window.WebSocket = class extends NativeSocket {
+          constructor(url: string | URL, protocols?: string | string[]) {
+            super(url, protocols)
+            this.addEventListener('message', event => {
+              if (!state.dropContentAcks || !String(url).includes('/api/realtime/content/')) return
+              try { if (JSON.parse(String(event.data)).type === 'ack') event.stopImmediatePropagation() } catch { /* Other protocols. */ }
+            })
+          }
+        }
+      })
       const serverFrames: string[] = []
       for (const page of [alice, bob]) page.on('websocket', socket => {
         socket.on('framesent', frame => serverFrames.push(String(frame.payload)))
@@ -118,11 +134,28 @@ test.describe('durable objects control plane', () => {
       await waitForSignaling(bob)
       await expectPeerVisible(alice, 'Bob')
 
+      await alice.evaluate(() => { (window as Window & { dropContentAcks?: boolean }).dropContentAcks = true })
       await sendMessage(alice, 'through the gateway')
       await expectMessage(bob, 'through the gateway')
+      await expect(alice.getByTestId('pending-messages')).toContainText('through the gateway')
+      await alice.reload()
+      await waitForWorkspace(alice)
+      await expectMessage(alice, 'through the gateway')
+      await expect(alice.getByTestId('pending-messages')).toHaveCount(0)
+      await expect(bob.getByTestId('chat-message').filter({ hasText: 'through the gateway' })).toHaveCount(1)
       expect(serverFrames.length).toBeGreaterThan(0)
       expect(serverFrames.join('\n')).not.toContain(workspaceSecret)
       expect(serverFrames.join('\n')).not.toContain('through the gateway')
+      const presenceFrames = serverFrames.map(frame => JSON.parse(frame)).filter(frame => frame.event === 'pres')
+      expect(presenceFrames.length).toBeGreaterThan(0)
+      for (const frame of presenceFrames) {
+        expect(frame.data.attestation).toBeUndefined()
+        expect(JSON.stringify(frame)).not.toMatch(/alice@e2e\.test|bob@e2e\.test|idToken/)
+        const claims = JSON.parse(Buffer.from(frame.data.payload.certificate.split('.')[0], 'base64url').toString())
+        expect(Object.keys(claims).sort()).toEqual(['deviceKeyId', 'expiresAt', 'rendezvousId', 'userId'])
+        expect(claims.deviceKeyId).toBe(frame.data.deviceKeyId)
+        expect(claims.userId).toBe(frame.data.userId)
+      }
 
       // Remove both local copies and every possible P2P history source. A new
       // browser can display this only if the encrypted event was committed by
@@ -165,6 +198,13 @@ test.describe('durable objects control plane', () => {
       await expect(alice.getByTestId('global-dm-messages')).toContainText('👍 1', {
         timeout: 20_000,
       })
+
+      // Retries retain the original transport id; revisions must be new
+      // events or server idempotency would silently discard the edit.
+      await alice.getByTestId('global-dm-mine').hover()
+      alice.once('dialog', dialog => void dialog.accept('Edited durable direct message'))
+      await alice.getByLabel('Edit message').click()
+      await expect(bob.getByTestId('global-dm-messages')).toContainText('Edited durable direct message')
 
       await alice.getByTestId('global-dm-file-input').setInputFiles({
         name: 'hybrid.txt',
@@ -211,6 +251,24 @@ test.describe('device pairing', () => {
     try {
       const first = await firstCtx.newPage()
       const second = await secondCtx.newPage()
+
+      await first.addInitScript(() => {
+        const send = WebSocket.prototype.send
+        WebSocket.prototype.send = function (data) {
+          if (typeof data === 'string' && sessionStorage.getItem('block-revocation') === 'yes') {
+            let frame: { type?: string; id?: string } = {}
+            try { frame = JSON.parse(data) } catch { /* Other WebSocket protocols. */ }
+            if (frame.type === 'device.revoke') {
+              queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({
+                v: 1, id: frame.id, type: 'error', sentAt: Date.now(),
+                payload: { for: frame.id, code: 'internal', retryable: true },
+              }) })))
+              return
+            }
+          }
+          send.call(this, data)
+        }
+      })
 
       await openDevices(first)
 
@@ -279,11 +337,18 @@ test.describe('device pairing', () => {
       // the same device is what the unit tests already do; what matters here
       // is that the grant is really gone rather than merely hidden.
       first.once('dialog', dialog => void dialog.accept())
+      await first.evaluate(() => sessionStorage.setItem('block-revocation', 'yes'))
       await first.getByTestId('revoke-device').click()
-      await expect(first.getByTestId('approved-device')).toHaveCount(0, { timeout: 20_000 })
+      await expect(first.getByTestId('approved-device')).toContainText('Server revocation pending.')
 
       await first.reload()
       await expect(first.getByTestId('my-devices-page')).toBeVisible({ timeout: 20_000 })
+      await expect(first.getByTestId('approved-device')).toContainText('Server revocation pending.')
+      await expect(first.getByTestId('revoke-device')).toHaveText('Retry')
+      await first.evaluate(() => {
+        sessionStorage.removeItem('block-revocation')
+        window.dispatchEvent(new Event('online'))
+      })
       await expect(first.getByTestId('approved-device')).toHaveCount(0, { timeout: 20_000 })
     } finally {
       await Promise.allSettled([firstCtx.close(), secondCtx.close()])

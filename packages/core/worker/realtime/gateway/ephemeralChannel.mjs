@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
+import { activeChannelSession, bindChannelSession, expireChannelSessions, revokeChannelSession } from './channelSessions.mjs'
 
 const DEFAULT_FRAME_BYTES = 48 * 1024
 const DEFAULT_MAX_CONNECTIONS = 1_000
@@ -29,7 +30,9 @@ export function defineEphemeralChannel(options) {
       }
       const userId = request.headers.get('x-realtime-user')
       const deviceKeyId = request.headers.get('x-realtime-dk')
-      if (!isBounded(userId, 128) || !isBounded(deviceKeyId, 256)) {
+      const uid = request.headers.get('x-realtime-uid')
+      const sid = request.headers.get('x-realtime-sid')
+      if (!isBounded(userId, 128) || !isBounded(deviceKeyId, 256) || !uid || !sid) {
         return new Response('Unauthorized', { status: 401 })
       }
       if (this.ctx.getWebSockets().length >= maxConnections) {
@@ -46,11 +49,17 @@ export function defineEphemeralChannel(options) {
       const connectionId = crypto.randomUUID()
       server.serializeAttachment({
         connectionId,
+        uid,
+        sid,
         userId,
         deviceKeyId,
         rateWindowAt: now,
         rateCount: 0,
       })
+      if (!await bindChannelSession(this, server, 'LOBBY_CHANNELS')) {
+        server.close(4001, 'invalid session')
+        return new Response('Unauthorized', { status: 401 })
+      }
       server.send(JSON.stringify({
         type: 'snapshot',
         connectionId,
@@ -61,6 +70,10 @@ export function defineEphemeralChannel(options) {
     }
 
     webSocketMessage(socket, raw) {
+      if (!activeChannelSession(socket)) {
+        socket.close(4001, 'session expired or revoked')
+        return
+      }
       const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw)
       if (new TextEncoder().encode(text).byteLength > maxFrameBytes) {
         socket.close(1009, 'frame too large')
@@ -103,7 +116,7 @@ export function defineEphemeralChannel(options) {
         senderDeviceKeyId: sender.deviceKeyId,
       })
       for (const peer of this.ctx.getWebSockets()) {
-        if (peer === socket) continue
+        if (peer === socket || !activeChannelSession(peer)) continue
         const recipient = attachmentOf(peer)
         if (!recipient || (frame.target && recipient.userId !== frame.target)) continue
         try {
@@ -123,9 +136,21 @@ export function defineEphemeralChannel(options) {
       this.broadcastMembers(socket)
     }
 
+    revokeSession(session) {
+      const result = revokeChannelSession(this, session)
+      this.broadcastMembers()
+      return result
+    }
+
+    async alarm() {
+      const next = expireChannelSessions(this)
+      this.broadcastMembers()
+      if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next)
+    }
+
     members(exclude) {
       return this.ctx.getWebSockets().flatMap(socket => {
-        if (socket === exclude) return []
+        if (socket === exclude || !activeChannelSession(socket)) return []
         const member = attachmentOf(socket)
         return member
           ? [{
@@ -143,7 +168,7 @@ export function defineEphemeralChannel(options) {
         members: this.members(exclude),
       })
       for (const socket of this.ctx.getWebSockets()) {
-        if (socket === exclude) continue
+        if (socket === exclude || !activeChannelSession(socket)) continue
         try {
           socket.send(frame)
         } catch {

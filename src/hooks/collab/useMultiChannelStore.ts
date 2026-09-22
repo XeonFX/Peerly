@@ -33,6 +33,9 @@ export function useMultiChannelStore(
   const channelIdsRef = useRef(channelIds)
   channelIdsRef.current = channelIds
   const [messagesByChannel, setMessagesByChannel] = useState<Record<string, Message[]>>({})
+  const [persistenceError, setPersistenceError] = useState<string | null>(null)
+  const savedChannelsRef = useRef(new Map<string, Message[]>())
+  const failedChannelsRef = useRef(new Set<string>())
   const messagesByChannelRef = useRef(messagesByChannel)
   messagesByChannelRef.current = messagesByChannel
 
@@ -51,7 +54,13 @@ export function useMultiChannelStore(
   const persistChannelMessages = useCallback(
     (channelId: string, channelMessages: Message[]) => {
       if (channelMessages.length > 0) {
-        saveLocalHistory(workspaceId, channelId, channelMessages)
+        if (savedChannelsRef.current.get(channelId) === channelMessages) return
+        if (saveLocalHistory(workspaceId, channelId, channelMessages)) {
+          savedChannelsRef.current.set(channelId, channelMessages)
+          failedChannelsRef.current.delete(channelId)
+        } else {
+          failedChannelsRef.current.add(channelId)
+        }
       }
     },
     [workspaceId]
@@ -324,6 +333,9 @@ export function useMultiChannelStore(
     // write. Revoking and clearing the messages that referenced those URLs must
     // happen together, or state is left pointing at revoked URLs.
     epochRef.current += 1
+    savedChannelsRef.current.clear()
+    failedChannelsRef.current.clear()
+    setPersistenceError(null)
     blobUrlsRef.current.revokeAll()
     loadedChannelsRef.current = new Set()
     messagesByChannelRef.current = {}
@@ -348,6 +360,9 @@ export function useMultiChannelStore(
     for (const [channelId, channelMessages] of Object.entries(messagesByChannelRef.current)) {
       persistChannelMessages(channelId, channelMessages)
     }
+    setPersistenceError(failedChannelsRef.current.size > 0
+      ? 'Recent messages could not be saved on this device. Keep this tab open and export a backup in workspace settings, then free browser storage.'
+      : null)
   }, [persistChannelMessages])
 
   useEffect(() => {
@@ -393,6 +408,7 @@ export function useMultiChannelStore(
     getHistoryEntries,
     applyHistory,
     flushHistory,
+    persistenceError,
     resetWorkspace,
     setFileNsfw,
     blobUrls: blobUrlsRef,

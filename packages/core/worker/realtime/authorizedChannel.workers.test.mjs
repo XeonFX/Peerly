@@ -1,16 +1,11 @@
 import { env } from 'cloudflare:workers'
 import { describe, expect, it, vi } from 'vitest'
+import { channelIdentity as identity, channelSession } from './channel.test-fixtures.mjs'
 
 const encrypted = label => ({
   v: 1,
   iv: 'a'.repeat(16),
   ciphertext: btoa(label),
-})
-const identity = name => ({
-  uid: `opaque-${name}`,
-  publicUserId: `user-${name}`,
-  deviceKeyId: `device-${name}`,
-  principalId: `principal-${name}`,
 })
 
 const authority = (version = 1, members = ['alice', 'bob']) => ({
@@ -29,12 +24,14 @@ async function authorize(stub, user, policy = authority()) {
 }
 
 async function connect(stub, user) {
+  const session = await channelSession(user)
   const response = await stub.fetch('http://content/', {
     headers: {
       upgrade: 'websocket',
       'x-realtime-uid': user.uid,
       'x-realtime-user': user.publicUserId,
       'x-realtime-dk': user.deviceKeyId,
+      'x-realtime-sid': session.sid,
     },
   })
   expect(response.status).toBe(101)

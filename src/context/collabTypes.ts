@@ -24,7 +24,10 @@ export type ChatSlice = {
   fileError: string | null
   unreadByChannel: Record<string, number>
   totalUnread: number
-  sendMessage: (text: string) => void
+  sendMessage: (text: string) => Promise<void>
+  pendingMessages: { id: string; text: string; failed: boolean }[]
+  retryPendingMessages: () => Promise<void>
+  draftScope: string
   editMessage: (messageId: string, text: string) => void
   deleteMessage: (messageId: string) => void
   toggleReaction: (messageId: string, emoji: string) => void

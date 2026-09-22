@@ -1,5 +1,6 @@
 import { deleteFileBlobs, listFileBlobIds } from './fileStore'
 import { notifyStorageChanged } from './browserStorage'
+import { clearUnsavedWorkspaceHistory } from './historyStorage'
 
 /**
  * Per-workspace footprint on this device, and the knife to trim it.
@@ -205,6 +206,7 @@ export async function clearWorkspaceFiles(workspaceId: string): Promise<number> 
  */
 export async function clearWorkspaceData(workspaceId: string): Promise<void> {
   await clearWorkspaceFiles(workspaceId)
+  clearUnsavedWorkspaceHistory(workspaceId)
 
   for (const key of localStorageKeysFor(workspaceId)) {
     localStorage.removeItem(key)

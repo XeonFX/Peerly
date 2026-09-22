@@ -7,6 +7,7 @@ import {
 import type { Channel, Message, Peer } from '../../types'
 import { Avatar } from '../Avatar'
 import { MessageInput } from '../MessageInput'
+import { PendingMessages } from '../PendingMessages'
 import { MessageList } from '../MessageList'
 import { VideoCall } from '../VideoCall'
 import { SyncStatusBar } from '../SyncStatusBar'
@@ -49,6 +50,7 @@ export function ChannelPanel({
   const [replyTarget, setReplyTarget] = useState<{ id: string; author: string; text: string } | null>(null)
   const { connectionError, connectionNotice, isReady } = useConnectionSlice()
   const { messages, transfers, sendMessage, editMessage, deleteMessage, toggleReaction, sendFiles, requestFile, markFileNsfw, syncProgress, fileError, soundsEnabled } = useChatSlice()
+  const { pendingMessages, retryPendingMessages, draftScope } = useChatSlice()
   const {
     inCall,
     callMode,
@@ -347,7 +349,10 @@ export function ChannelPanel({
         onReplyMessage={setReplyTarget}
         onOpenAuthor={openMessageAuthor}
       />
+      <PendingMessages entries={pendingMessages} onRetry={retryPendingMessages} />
       <MessageInput
+        key={`${draftScope}:${channel.id}`}
+        draftKey={`peerly-draft:${draftScope}:${channel.id}`}
         channelName={title}
         isDirectMessage={channel.kind === 'dm'}
         onSend={sendMessage}

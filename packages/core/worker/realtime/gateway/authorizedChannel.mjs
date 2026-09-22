@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
+import { activeChannelSession, bindChannelSession, expireChannelSessions, revokeChannelSession } from './channelSessions.mjs'
 
 const AUTH_TTL_MAX_MS = 5 * 60_000
 const DEFAULT_FRAME_BYTES = 48 * 1024
@@ -40,6 +41,12 @@ CREATE TABLE IF NOT EXISTS channel_events (
 );
 CREATE INDEX IF NOT EXISTS channel_events_created
   ON channel_events(created_at);
+CREATE TABLE IF NOT EXISTS channel_states (
+  event TEXT NOT NULL, state_key TEXT NOT NULL, revision INTEGER NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL, target_user_id TEXT,
+  sender_user_id TEXT NOT NULL, sender_dk TEXT NOT NULL,
+  PRIMARY KEY (event, state_key)
+);
 `
 
 const attachmentOf = socket => socket.deserializeAttachment()
@@ -58,11 +65,12 @@ const isBounded = (value, max) =>
 export function defineAuthorizedChannel(options) {
   const allowedEvents = new Set(options.allowedEvents ?? [])
   const persistedEvents = new Set(options.persistedEvents ?? [])
+  const stateEvents = new Set(options.stateEvents ?? [])
   const maxFrameBytes = options.maxFrameBytes ?? DEFAULT_FRAME_BYTES
   const maxHistoryEvents = options.maxHistoryEvents ?? DEFAULT_HISTORY_EVENTS
   const retentionMs = options.retentionMs ?? DEFAULT_RETENTION_MS
 
-  for (const event of persistedEvents) {
+  for (const event of [...persistedEvents, ...stateEvents]) {
     if (!allowedEvents.has(event)) {
       throw new Error(`persisted event is not allowed: ${event}`)
     }
@@ -73,6 +81,15 @@ export function defineAuthorizedChannel(options) {
       super(ctx, env)
       ctx.blockConcurrencyWhile(async () => {
         ctx.storage.sql.exec(SCHEMA)
+        // Preserve pre-upgrade encrypted metadata without trying to inspect
+        // its entity id. Clients reconcile these legacy snapshots by revision.
+        for (const event of stateEvents) {
+          ctx.storage.sql.exec(`INSERT OR IGNORE INTO channel_states
+            (event, state_key, revision, data, target_user_id, sender_user_id, sender_dk)
+            SELECT event, 'legacy:' || message_id, 0, data, target_user_id, sender_user_id, sender_dk
+            FROM channel_events WHERE event = ?`, event)
+          ctx.storage.sql.exec('DELETE FROM channel_events WHERE event = ?', event)
+        }
         if (!ctx.storage.sql.exec('PRAGMA table_info(channel_authority)').toArray()
           .some(column => column.name === 'owner')) {
           ctx.storage.sql.exec('ALTER TABLE channel_authority ADD COLUMN owner TEXT')
@@ -179,7 +196,8 @@ export function defineAuthorizedChannel(options) {
       const uid = request.headers.get('x-realtime-uid')
       const deviceKeyId = request.headers.get('x-realtime-dk')
       const publicUserId = request.headers.get('x-realtime-user')
-      if (!uid || !deviceKeyId || !publicUserId) {
+      const sid = request.headers.get('x-realtime-sid')
+      if (!uid || !deviceKeyId || !publicUserId || !sid) {
         return new Response('Unauthorized', { status: 401 })
       }
 
@@ -212,12 +230,17 @@ export function defineAuthorizedChannel(options) {
       server.serializeAttachment({
         connectionId,
         uid,
+        sid,
         userId: publicUserId,
         principalId: authorization.principal_id,
         deviceKeyId,
         rateWindowAt: now,
         rateCount: 0,
       })
+      if (!await bindChannelSession(this, server, 'CONTENT_CHANNELS')) {
+        server.close(4001, 'invalid session')
+        return new Response('Unauthorized', { status: 401 })
+      }
       server.send(JSON.stringify({
         type: 'snapshot',
         connectionId,
@@ -229,6 +252,10 @@ export function defineAuthorizedChannel(options) {
     }
 
     async webSocketMessage(socket, raw) {
+      if (!activeChannelSession(socket)) {
+        socket.close(4001, 'session expired or revoked')
+        return
+      }
       const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw)
       if (new TextEncoder().encode(text).byteLength > maxFrameBytes) {
         socket.close(1009, 'frame too large')
@@ -272,7 +299,29 @@ export function defineAuthorizedChannel(options) {
         senderUserId: sender.userId,
         senderDeviceKeyId: sender.deviceKeyId,
       })
-      if (persistedEvents.has(frame.event)) {
+      if (stateEvents.has(frame.event)) {
+        const state = frame.state
+        if (!state || !/^[A-Za-z0-9_-]{43}$/.test(state.key) ||
+          !Number.isSafeInteger(state.revision) || state.revision < 0 ||
+          state.revision > now + 60_000 || typeof state.deleted !== 'boolean' ||
+          frame.target !== undefined || text.length > 4096) {
+          return this.sendError(socket, frame.messageId, 'invalid-state')
+        }
+        const previous = this.ctx.storage.sql.exec('SELECT revision, deleted FROM channel_states WHERE event = ? AND state_key = ?',
+          frame.event, state.key).toArray()[0]
+        const deleted = state.deleted ? 1 : 0
+        if (previous && (previous.revision > state.revision ||
+          (previous.revision === state.revision && previous.deleted >= deleted))) {
+          this.sendAck(socket, frame.messageId)
+          return
+        }
+        if (!previous && this.ctx.storage.sql.exec("SELECT COUNT(*) AS n FROM channel_states WHERE state_key NOT LIKE 'legacy:%'").one().n >= 1000) {
+          return this.sendError(socket, frame.messageId, 'state-capacity')
+        }
+        this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO channel_states
+          (event, state_key, revision, deleted, data, sender_user_id, sender_dk) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          frame.event, state.key, state.revision, deleted, JSON.stringify(frame.data), sender.userId, sender.deviceKeyId)
+      } else if (persistedEvents.has(frame.event)) {
         const duplicate = this.ctx.storage.sql.exec(
           'SELECT 1 AS present FROM channel_events WHERE message_id = ?',
           frame.messageId
@@ -302,8 +351,9 @@ export function defineAuthorizedChannel(options) {
         await this.scheduleAlarm()
       }
 
+      if (!activeChannelSession(socket)) return
       for (const peer of this.ctx.getWebSockets()) {
-        if (peer === socket) continue
+        if (peer === socket || !activeChannelSession(peer)) continue
         const recipient = attachmentOf(peer)
         if (!recipient || (frame.target && recipient.userId !== frame.target)) continue
         try {
@@ -339,7 +389,7 @@ export function defineAuthorizedChannel(options) {
 
     members(exclude) {
       return this.ctx.getWebSockets().flatMap(socket => {
-        if (socket === exclude) return []
+        if (socket === exclude || !activeChannelSession(socket)) return []
         const value = attachmentOf(socket)
         return value
           ? [{
@@ -352,7 +402,9 @@ export function defineAuthorizedChannel(options) {
     }
 
     historyFor(userId) {
-      return this.ctx.storage.sql.exec(
+      const states = this.ctx.storage.sql.exec(`SELECT event, data, sender_user_id, sender_dk FROM channel_states
+        WHERE target_user_id IS NULL OR target_user_id = ? OR sender_user_id = ? ORDER BY revision ASC`, userId, userId).toArray()
+      const events = this.ctx.storage.sql.exec(
         `SELECT event, data, sender_user_id, sender_dk
          FROM channel_events
          WHERE target_user_id IS NULL OR target_user_id = ? OR sender_user_id = ?
@@ -360,7 +412,8 @@ export function defineAuthorizedChannel(options) {
         userId,
         userId,
         maxHistoryEvents
-      ).toArray().map(row => ({
+      ).toArray()
+      return [...states, ...events].map(row => ({
         type: 'event',
         event: row.event,
         data: JSON.parse(row.data),
@@ -377,11 +430,13 @@ export function defineAuthorizedChannel(options) {
     }
 
     async scheduleAlarm() {
+      const sessionExpiry = expireChannelSessions(this)
       const oldest = this.ctx.storage.sql.exec(
         'SELECT MIN(created_at) AS created_at FROM channel_events'
       ).toArray()[0]?.created_at
-      if (typeof oldest === 'number') {
-        await this.ctx.storage.setAlarm(oldest + retentionMs)
+      const next = Math.min(typeof oldest === 'number' ? oldest + retentionMs : Infinity, sessionExpiry)
+      if (Number.isFinite(next)) {
+        await this.ctx.storage.setAlarm(next)
       }
     }
 
@@ -404,9 +459,16 @@ export function defineAuthorizedChannel(options) {
       for (const socket of this.ctx.getWebSockets()) {
         const value = attachmentOf(socket)
         if (value && !members.has(value.principalId)) {
+          socket.serializeAttachment({ ...value, revoked: true })
           socket.close(4003, 'membership revoked')
         }
       }
+    }
+
+    revokeSession(session) {
+      const result = revokeChannelSession(this, session)
+      this.broadcastMembers()
+      return result
     }
 
     broadcastMembers(exclude) {
@@ -415,7 +477,7 @@ export function defineAuthorizedChannel(options) {
         members: this.members(exclude),
       })
       for (const socket of this.ctx.getWebSockets()) {
-        if (socket === exclude) continue
+        if (socket === exclude || !activeChannelSession(socket)) continue
         try {
           socket.send(frame)
         } catch {

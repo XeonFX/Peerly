@@ -46,6 +46,11 @@ export function defineUserGateway(app = {}) {
       super(ctx, env)
       ctx.blockConcurrencyWhile(async () => {
         ctx.storage.sql.exec(GATEWAY_SCHEMA)
+        ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS channel_session_subscribers (
+          binding TEXT NOT NULL, object_id TEXT NOT NULL, dk TEXT NOT NULL,
+          sid TEXT NOT NULL, expires_at INTEGER NOT NULL,
+          PRIMARY KEY (binding, object_id, dk, sid)
+        )`)
         if (app.schema) ctx.storage.sql.exec(app.schema)
         // `CREATE TABLE IF NOT EXISTS` does nothing for an object whose table
         // already exists, so a new column needs a step that can inspect what
@@ -83,12 +88,20 @@ export function defineUserGateway(app = {}) {
             storage,
             clock,
             random,
-            sockets: { all: () => [], others: () => [] },
+            sockets: {
+              all: () => runtime.socketSet().all(),
+              others: socket => runtime.socketSet().others(socket),
+            },
             deriveRouteId: (kind, capability) =>
               deriveScopeRouteId(this.env.OPAQUE_USER_ID_SECRET, this.appName, kind, capability),
             scopes: this.scopeAuthorizer(),
             peers: this.peerDelivery(),
-            emit: events => runtime.emit(events),
+            emit: async events => {
+              for (const event of events) {
+                if (event.kind === 'device.revoked') await this.revokeChannelSubscribers(event.body.deviceKeyId)
+              }
+              return runtime.emit(events)
+            },
           }),
           ...(app.handlers?.({
             sql,
@@ -220,6 +233,35 @@ export function defineUserGateway(app = {}) {
 
     async validateSession({ sid, dk, epoch, uid }) {
       return { ok: this.runtime.validateSession({ sid, deviceKeyId: dk, epoch, uid }) }
+    }
+
+    async subscribeChannelSession({ uid, dk, sid, binding, objectId }) {
+      if (!['CONTENT_CHANNELS', 'LOBBY_CHANNELS'].includes(binding) || !this.env[binding] ||
+        typeof objectId !== 'string' || !/^[a-f0-9]{64}$/.test(objectId)) return { ok: false }
+      const sql = this.ctx.storage.sql
+      const storage = createSqlGatewayStorage(sql)
+      const session = storage.sessions.byId(sid)
+      if (!session || storage.identity.current() !== uid ||
+        !this.runtime.validateSession({ sid, deviceKeyId: dk, epoch: session.epoch })) return { ok: false }
+      sql.exec('DELETE FROM channel_session_subscribers WHERE expires_at <= ?', Date.now())
+      const exists = sql.exec('SELECT 1 FROM channel_session_subscribers WHERE binding = ? AND object_id = ? AND dk = ? AND sid = ?',
+        binding, objectId, dk, sid).toArray().length > 0
+      if (!exists && sql.exec('SELECT COUNT(*) AS n FROM channel_session_subscribers').one().n >= 512) return { ok: false }
+      sql.exec('INSERT OR REPLACE INTO channel_session_subscribers (binding, object_id, dk, sid, expires_at) VALUES (?, ?, ?, ?, ?)',
+        binding, objectId, dk, sid, session.expiresAtMs)
+      return { ok: true, expiresAt: session.expiresAtMs }
+    }
+
+    async revokeChannelSubscribers(dk) {
+      const sql = this.ctx.storage.sql
+      const uid = createSqlGatewayStorage(sql).identity.current()
+      const rows = sql.exec('SELECT binding, object_id, sid FROM channel_session_subscribers WHERE dk = ?', dk).toArray()
+      // A failed downstream revoke must fail the command so its persisted
+      // client retry can finish the job. Keep subscriber rows until all ACK.
+      await Promise.all(rows.map(row => this.env[row.binding].get(
+        this.env[row.binding].idFromString(row.object_id)
+      ).revokeSession({ uid, dk, sid: row.sid })))
+      sql.exec('DELETE FROM channel_session_subscribers WHERE dk = ?', dk)
     }
 
     async consumeNonce(hashHex, expiresAt, uid) {

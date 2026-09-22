@@ -124,7 +124,13 @@ export function wireRoomProtocol(
   bindings.bindFileAction(fileAction)
   bindings.bindFileMetaAction(fileMetaAction)
   bindings.bindHistoryAction(historyAction)
-  bindings.bindChannelAction(channelAction)
+  bindings.bindChannelAction(contentRoom ? {
+    // Channel definitions belong to the whole workspace. Directed peer sync
+    // must not create recipient-specific copies in the durable state table.
+    send: payload => channelAction.send(payload, { state: {
+      key: payload.id, revision: payload.updatedAt ?? 0, deleted: payload.operation === 'delete',
+    } }),
+  } : channelAction)
   bindings.bindFileRequestAction(fileRequestAction)
   bindings.bindReactionAction(reactionAction)
   bindings.bindCallEndAction(callEndAction)

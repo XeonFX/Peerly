@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react'
 import {
   GENERAL_CHANNEL,
   getCustomChannels,
+  loadTombstones,
   mergeWorkspaceChannel,
   removeWorkspaceChannel,
 } from '../../collab/channelStore'
@@ -88,10 +89,14 @@ export function useChannelSync(workspaceId: string, onChannelsChange?: () => voi
   }, [])
 
   const broadcastAllToPeer = useCallback(
-    async (peerId: string) => {
+    async (peerId?: string) => {
       if (!channelActionRef.current) return
       for (const channel of getCustomChannels(workspaceIdRef.current)) {
         await sendChannel(channel, peerId)
+      }
+      for (const [id, updatedAt] of Object.entries(loadTombstones(workspaceIdRef.current))) {
+        await channelActionRef.current.send({ id, name: id, operation: 'delete', updatedAt },
+          peerId ? { target: peerId } : undefined)
       }
     },
     [sendChannel]

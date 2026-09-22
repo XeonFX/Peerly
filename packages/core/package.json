@@ -30,6 +30,9 @@
     "./worker/rendezvous": {
       "default": "./worker/rendezvous.mjs"
     },
+    "./worker/lobby-identity": {
+      "default": "./worker/lobbyIdentity.mjs"
+    },
     "./worker/google-auth": {
       "default": "./worker/googleAuth.mjs"
     },

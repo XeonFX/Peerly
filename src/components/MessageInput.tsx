@@ -7,7 +7,8 @@ import { useI18n } from '../i18n'
 type Props = {
   channelName?: string
   isDirectMessage?: boolean
-  onSend: (text: string) => void
+  onSend: (text: string) => Promise<void> | void
+  draftKey?: string
   onFiles: (files: File[]) => void
   disabled?: boolean
   replyTarget?: { id: string; author: string; text: string } | null
@@ -22,9 +23,14 @@ export function MessageInput({
   disabled,
   replyTarget,
   onCancelReply,
+  draftKey,
 }: Props) {
   const { tr } = useI18n()
-  const [text, setText] = useState('')
+  const [text, setText] = useState(() => {
+    try { return draftKey ? localStorage.getItem(draftKey) ?? '' : '' } catch { return '' }
+  })
+  const [saving, setSaving] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const dragDepthRef = useRef(0)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -34,13 +40,20 @@ export function MessageInput({
     if (replyTarget) textRef.current?.focus()
   }, [replyTarget])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = text.trim()
-    if (!trimmed) return
-    onSend(replyTarget ? buildReplyMessage(replyTarget.author, replyTarget.text, trimmed) : trimmed)
-    setText('')
-    onCancelReply?.()
+    if (!trimmed || saving) return
+    setSaving(true)
+    try {
+      await onSend(replyTarget ? buildReplyMessage(replyTarget.author, replyTarget.text, trimmed) : trimmed)
+      setText('')
+      try { if (draftKey) localStorage.removeItem(draftKey) } catch { /* Message is in the durable outbox. */ }
+      setSendError(null)
+      onCancelReply?.()
+    } catch {
+      setSendError(tr('Could not save this message for sending. Your draft is still here. Free browser storage and retry.'))
+    } finally { setSaving(false) }
   }
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,6 +92,7 @@ export function MessageInput({
       }}
       data-testid="message-composer"
     >
+      {sendError && <p className="mb-2 text-sm text-warning" role="alert">{sendError}</p>}
       {dragging && (
         <div className="pointer-events-none absolute inset-x-3 bottom-3 top-1 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/15 text-sm font-semibold text-primary backdrop-blur sm:inset-x-5 sm:bottom-4">
           {tr('Drop files to share')}
@@ -133,7 +147,11 @@ export function MessageInput({
               : tr('Message #{channel}', { channel: channelName })
           }
           value={text}
-          onChange={e => setText(e.target.value)}
+          onChange={e => {
+            setText(e.target.value)
+            try { if (draftKey) localStorage.setItem(draftKey, e.target.value) }
+            catch { setSendError(tr('Draft could not be saved. Keep this tab open.')) }
+          }}
           onPaste={event => {
             if (disabled) return
             const files = filesFromClipboard(event.clipboardData)
@@ -141,13 +159,13 @@ export function MessageInput({
             event.preventDefault()
             onFiles(files)
           }}
-          disabled={disabled}
+          disabled={disabled || saving}
           data-testid="message-input"
         />
         <button
           type="submit"
           className="btn btn-primary btn-sm shrink-0 rounded-xl px-4"
-          disabled={disabled || !text.trim()}
+          disabled={disabled || saving || !text.trim()}
           data-testid="send-button"
         >
           {tr('Send')}

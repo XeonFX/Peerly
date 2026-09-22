@@ -8,7 +8,12 @@ export type RelayChannelPeer = {
 export type RelayChannelPeers = Record<string, RelayChannelPeer>
 
 export type RelayChannelAction<T> = {
-  send(value: T, options?: { target?: string }): Promise<void>
+  send(value: T, options?: {
+    target?: string
+    messageId?: string
+    /** Latest encrypted entity state, separate from a rolling event history. */
+    state?: { key: string; revision: number; deleted?: boolean }
+  }): Promise<void>
   onMessage: ((value: T, meta: {
     peerId: string
     userId?: string

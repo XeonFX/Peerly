@@ -7,6 +7,7 @@ import {
   verifyOidcToken,
 } from '../packages/core/worker/networkCredentials.mjs'
 import { lookupRendezvous } from '../packages/core/worker/rendezvous.mjs'
+import { issueLobbyIdentity, verifyLobbyIdentity } from '../packages/core/worker/lobbyIdentity.mjs'
 
 const b64url = bytes => Buffer.from(bytes).toString('base64url')
 const jsonPart = value => b64url(new TextEncoder().encode(JSON.stringify(value)))
@@ -84,6 +85,44 @@ afterEach(() => {
 })
 
 describe('network credential worker', () => {
+  it('issues private discovery proofs, rejecting forgery, expiry and cross-origin replay', async () => {
+    const { rsaJwk, headers, devicePrivateKey, token } = await fixture()
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ keys: [rsaJwk] })))
+    const proof = new TextEncoder().encode(['peerly-lobby-identity-v1', 'google',
+      headers['x-peerly-device-key'], headers['x-peerly-request-ts'], headers['x-peerly-request-nonce']].join('\n'))
+    const signature = b64url(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, devicePrivateKey, proof))
+    const env = { VITE_GOOGLE_CLIENT_ID: 'client-id', RENDEZVOUS_SECRET: 'test-rendezvous-secret',
+      RENDEZVOUS_RATE_LIMITER: { limit: async () => ({ success: true }) } }
+    const response = await issueLobbyIdentity(new Request('https://app.example/api/rendezvous/presence', {
+      method: 'POST', headers: { ...headers, 'x-peerly-request-signature': signature },
+    }), env)
+    expect(response.status).toBe(200)
+    const { certificate, ...identity } = await response.json()
+    const decoded = Buffer.from(certificate.split('.')[0], 'base64url').toString()
+    expect(decoded).not.toContain('user@example.com')
+    expect(decoded).not.toContain(token)
+    expect(Object.keys(JSON.parse(decoded)).sort()).toEqual(['deviceKeyId', 'expiresAt', 'rendezvousId', 'userId'])
+    const verify = (body = certificate, origin = 'https://app.example') => verifyLobbyIdentity(
+      new Request(`${origin}/api/rendezvous/verify`, { method: 'POST', body }), env)
+    expect(await (await verify()).json()).toEqual(identity)
+    const parts = certificate.split('.')
+    const forged = jsonPart({ ...identity, deviceKeyId: 'attacker' }) + '.' + parts[1]
+    expect((await verify(forged)).status).toBe(401)
+    expect((await verify(certificate, 'https://other.example')).status).toBe(401)
+    expect((await verify('a'.repeat(2049))).status).toBe(413)
+    vi.spyOn(Date, 'now').mockReturnValue(identity.expiresAt + 1)
+    expect((await verify()).status).toBe(401)
+  })
+
+  it('refuses to mint discovery identity for a stolen token without its device signature', async () => {
+    const { rsaJwk, headers } = await fixture()
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ keys: [rsaJwk] })))
+    const response = await issueLobbyIdentity(new Request('https://app.example/api/rendezvous/presence', {
+      method: 'POST', headers,
+    }), { VITE_GOOGLE_CLIENT_ID: 'client-id', RENDEZVOUS_SECRET: 'test-secret',
+      RENDEZVOUS_RATE_LIMITER: { limit: async () => ({ success: true }) } })
+    expect(response.status).toBe(401)
+  })
   it('rejects unsafe multi-tenant Microsoft configuration', () => {
     expect(resolveOidcProvider('microsoft', {
       VITE_MICROSOFT_CLIENT_ID: 'client',

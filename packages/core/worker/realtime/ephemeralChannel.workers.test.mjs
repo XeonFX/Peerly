@@ -1,17 +1,16 @@
 import { env } from 'cloudflare:workers'
 import { describe, expect, it, vi } from 'vitest'
-
-const identity = name => ({
-  userId: `user-${name}`,
-  deviceKeyId: `device-${name}`,
-})
+import { channelIdentity as identity, channelSession } from './channel.test-fixtures.mjs'
 
 async function connect(stub, user) {
+  const session = await channelSession(user)
   const response = await stub.fetch('http://lobby/', {
     headers: {
       upgrade: 'websocket',
       'x-realtime-user': user.userId,
       'x-realtime-dk': user.deviceKeyId,
+      'x-realtime-uid': user.uid,
+      'x-realtime-sid': session.sid,
     },
   })
   expect(response.status).toBe(101)
@@ -52,7 +51,7 @@ describe('LobbyChannelDO', () => {
         event: 'finv',
         data: { signedInvite: 'opaque-to-channel' },
         senderUserId: 'user-alice',
-        senderDeviceKeyId: 'device-alice',
+        senderDeviceKeyId: identity('alice').deviceKeyId,
       }))
     })
 
