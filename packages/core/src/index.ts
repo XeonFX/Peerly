@@ -328,6 +328,9 @@ export {
 } from './dmCredentials.js'
 export {
   createDmRing,
+  dmRingBytes,
+  signDmRing,
+  verifyDmRing,
   decideDmRingToast,
   DM_RING_TOAST_COOLDOWN_MS,
   isValidDmRoomCode,
