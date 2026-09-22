@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   createDmRing,
+  dmRingBytes,
+  signDmRing,
+  verifyDmRing,
   decideDmRingToast,
   DM_RING_TOAST_COOLDOWN_MS,
   parseDmRingPayload,
@@ -66,6 +69,27 @@ const good = {
   deviceKeyId: 'P-256:test',
   sig: 'sig',
 }
+
+describe('legacy 1.x DM ring API', () => {
+  const fields = { toUserId: 'bob', fromUserId: 'alice', fromName: 'Alice', reason: 'message' as const, preview: 'hello' }
+
+  it('preserves the published signing bytes and interoperates with grant-free rings', async () => {
+    const legacy = await signDmRing(recorded, SCHEME, fields)
+    expect(new TextDecoder().decode(dmRingBytes(SCHEME, legacy)))
+      .toBe([SCHEME, 'bob', 'alice', 'Alice', 'message', 'hello', recorded.keyId].join('\n'))
+    await expect(ring.verify(legacy)).resolves.toBe(true)
+    await expect(verifyDmRing(SCHEME, await ring.sign(recorded, fields))).resolves.toBe(true)
+    await expect(verifyDmRing('another-app', legacy)).resolves.toBe(false)
+    await expect(verifyDmRing(SCHEME, { ...legacy, preview: 'tampered' })).resolves.toBe(false)
+  })
+
+  it('does not let a valid legacy signature authorize an unsigned device grant', async () => {
+    const legacy = await signDmRing(recorded, SCHEME, fields)
+    const deviceGrant = { userId: 'alice', subjectDeviceKeyId: recorded.keyId } as DeviceGrant
+    await expect(verifyDmRing(SCHEME, { ...legacy, deviceGrant })).resolves.toBe(false)
+    await expect(signDmRing(recorded, SCHEME, { ...fields, deviceGrant })).rejects.toThrow('Use createDmRing')
+  })
+})
 
 describe('parseDmRingPayload', () => {
   it('accepts a valid open ring', () => {

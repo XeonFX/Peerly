@@ -276,9 +276,13 @@ For direct messages, never derive a room password from public user identifiers
 alone. `generateDmSecret()` creates a random per-friend credential and
 `dmRoomCode(userA, userB, scheme, sharedSecret)` namespaces that credential for
 an app and pair. Exchange the secret only during an authenticated friendship
-handshake. DM ring payloads intentionally contain no room credential and should
-be signed with `signDmRing`; consumers must bind `deviceKeyId` to the friend
-record before accepting a ring.
+handshake. DM ring payloads intentionally contain no room credential. Use
+`createDmRing({ scheme, grants })` to sign and verify rings, then call
+`authorizedBy` to bind the verified sending device to the friend record.
+The deprecated `dmRingBytes`, `signDmRing`, and `verifyDmRing` helpers retain
+the grant-free 1.x wire format. They cannot authorize secondary devices:
+`verifyDmRing` rejects attached grants, and its callers must still bind
+`deviceKeyId` to the friend record before accepting a ring.
 
 The shared presence and text-history helpers clean reverse indexes and bound
 untrusted envelopes, but applications remain responsible for authenticating

@@ -64,6 +64,33 @@ function grantLines(grant: DeviceGrant | undefined): string[] {
     : []
 }
 
+/** @deprecated Use createDmRing. Retains the grant-free 1.x wire format. */
+export function dmRingBytes(scheme: string, ring: Omit<DmRingPayload, 'sig'>): Uint8Array {
+  return encodeCanonicalLines([
+    scheme, ring.toUserId, ring.fromUserId, ring.fromName, ring.reason,
+    ring.preview ?? '', ring.deviceKeyId,
+  ])
+}
+
+/** @deprecated Use createDmRing to support authorized secondary devices. */
+export async function signDmRing(
+  signer: DeviceSigner,
+  scheme: string,
+  fields: Omit<DmRingPayload, 'deviceKeyId' | 'sig'>
+): Promise<DmRingPayload> {
+  if (fields.deviceGrant !== undefined) throw new Error('Use createDmRing to sign device grants')
+  const body = { ...fields, deviceKeyId: await signer.publicKeyId() }
+  return { ...body, sig: await signer.sign(dmRingBytes(scheme, body)) }
+}
+
+/** @deprecated Signature-only legacy API; callers must still authorize the sender. */
+export async function verifyDmRing(scheme: string, ring: DmRingPayload): Promise<boolean> {
+  // The legacy signature does not cover a grant. Never return success for an
+  // attached grant that a caller might then trust without verifying it.
+  if (ring.deviceGrant !== undefined) return false
+  return verifyWithDeviceKeyId(ring.deviceKeyId as DeviceKeyId, dmRingBytes(scheme, ring), ring.sig)
+}
+
 export function createDmRing(config: DmRingConfig): DmRing {
   function bytes(ring: Omit<DmRingPayload, 'sig'>): Uint8Array {
     return encodeCanonicalLines([
