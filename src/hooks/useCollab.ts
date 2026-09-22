@@ -918,6 +918,7 @@ export function useCollab({
     sendMessage,
     pendingMessages: outbox.entries.filter(entry => entry.payload.channelId === activeChannelId)
       .map(entry => ({ id: entry.id, text: entry.payload.text, failed: entry.failed })),
+    cancelPendingMessage: outbox.cancel,
     retryPendingMessages: outbox.retry,
     draftScope: outboxScope ?? workspaceId,
     editMessage,

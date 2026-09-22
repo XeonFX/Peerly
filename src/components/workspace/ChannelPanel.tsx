@@ -50,7 +50,7 @@ export function ChannelPanel({
   const [replyTarget, setReplyTarget] = useState<{ id: string; author: string; text: string } | null>(null)
   const { connectionError, connectionNotice, isReady } = useConnectionSlice()
   const { messages, transfers, sendMessage, editMessage, deleteMessage, toggleReaction, sendFiles, requestFile, markFileNsfw, syncProgress, fileError, soundsEnabled } = useChatSlice()
-  const { pendingMessages, retryPendingMessages, draftScope } = useChatSlice()
+  const { pendingMessages, retryPendingMessages, cancelPendingMessage, draftScope } = useChatSlice()
   const {
     inCall,
     callMode,
@@ -349,7 +349,7 @@ export function ChannelPanel({
         onReplyMessage={setReplyTarget}
         onOpenAuthor={openMessageAuthor}
       />
-      <PendingMessages entries={pendingMessages} onRetry={retryPendingMessages} />
+      <PendingMessages entries={pendingMessages} onRetry={retryPendingMessages} onCancel={cancelPendingMessage} />
       <MessageInput
         key={`${draftScope}:${channel.id}`}
         draftKey={`peerly-draft:${draftScope}:${channel.id}`}

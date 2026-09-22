@@ -1,8 +1,9 @@
 import { useI18n } from '../i18n'
 
-export function PendingMessages({ entries, onRetry }: {
+export function PendingMessages({ entries, onRetry, onCancel }: {
   entries: { id: string; text: string; failed: boolean }[]
   onRetry: () => Promise<void>
+  onCancel?: (id: string) => Promise<void>
 }) {
   const { tr } = useI18n()
   if (!entries.length) return null
@@ -10,6 +11,7 @@ export function PendingMessages({ entries, onRetry }: {
     {entries.map(entry => <div key={entry.id} className="my-1 rounded-box border border-base-300 p-2 text-sm">
       <p className="whitespace-pre-wrap break-words">{entry.text}</p>
       <span className="text-xs text-base-content/60">{tr(entry.failed ? 'Delivery not confirmed. Message saved for retry.' : 'Pending delivery. Saved on this device.')}</span>
+      {onCancel && <button type="button" className="btn btn-ghost btn-xs" onClick={() => { void onCancel(entry.id).catch(() => {}) }}>{tr('Cancel retry')}</button>}
     </div>)}
     <button type="button" className="btn btn-ghost btn-xs" onClick={() => { void onRetry() }}>{tr('Retry pending messages')}</button>
   </div>

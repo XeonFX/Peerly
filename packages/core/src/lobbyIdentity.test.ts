@@ -42,3 +42,27 @@ it('coalesces public verification and fails closed after expiry or a bad respons
   fetchMock.mockImplementation(async () => new Response('', { status: 401 }))
   expect(await client.verify('tampered')).toBeNull()
 })
+
+it('never reuses the previous account certificate while concurrent renewal is pending', async () => {
+  let token = 'account-a'
+  configureRuntimeAuthCredentialProvider(() => ({ providerId: 'google', token,
+    signer: { publicKeyId: async () => 'device', sign: async () => 'signature' } }))
+  const claims = (userId: string) => ({ userId, deviceKeyId: 'device', rendezvousId: 'opaque', expiresAt: Date.now() + 300_000, certificate: userId })
+  let finish!: (response: Response) => void
+  const fetchMock = vi.fn().mockResolvedValueOnce(Response.json(claims('account-a')))
+    .mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve }))
+  vi.stubGlobal('fetch', fetchMock)
+  const client = createLobbyIdentityClient()
+  expect((await client.issue())?.userId).toBe('account-a')
+  token = 'account-b'
+  const pending = client.issue()
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+  const concurrent = client.issue()
+  // Let the second call read the same in-flight credential before resolving it.
+  await Promise.resolve()
+  await Promise.resolve()
+  finish(Response.json(claims('account-b')))
+  expect((await pending)?.userId).toBe('account-b')
+  expect((await concurrent)?.userId).toBe('account-b')
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})

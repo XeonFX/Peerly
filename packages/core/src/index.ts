@@ -451,3 +451,8 @@ export {
   type TransportDiagnostics,
   type TransportState,
 } from './realtime/types.js'
+
+export { createIndexedDbOutboxStorage, createMessageOutbox, type OutboxStorage, type OutboxEntry } from './messageOutbox.js'
+
+export { createIdentityClient, type AppIdentity, type AppCertificate } from './identityCertificate.js'
+export { isCertificateAttestation, identityAttestationFields, type CertificateAttestation, type IdentityAttestation } from './identityAttestation.js'

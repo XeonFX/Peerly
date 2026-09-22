@@ -26,6 +26,7 @@ export type ChatSlice = {
   totalUnread: number
   sendMessage: (text: string) => Promise<void>
   pendingMessages: { id: string; text: string; failed: boolean }[]
+  cancelPendingMessage: (id: string) => Promise<void>
   retryPendingMessages: () => Promise<void>
   draftScope: string
   editMessage: (messageId: string, text: string) => void

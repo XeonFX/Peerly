@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMessageOutbox } from './useMessageOutbox'
 import {
   ALLOWED_REACTIONS,
@@ -12,7 +12,7 @@ import {
   verifyTextReaction,
   type RelayChannelAction,
 } from '@peerly/core'
-import { useDurableChannel, useLatest, useRoom } from '@peerly/core/react'
+import { useHistoryPersistence, useConversationState, useDurableChannel, useLatest, useRoom } from '@peerly/core/react'
 import type { DeviceIdentity } from '../collab/deviceIdentity'
 import { LOBBY_APP_ID } from '../collab/mesh'
 import {
@@ -81,8 +81,10 @@ export function useGlobalDmChat({
   const friendNameRef = useLatest(friendName)
   const roomCodeRef = useLatest(roomCode)
 
-  const [messages, setMessages] = useState<GlobalDmMessage[]>([])
-  const [reactions, setReactions] = useState<GlobalDmReaction[]>([])
+  const scope = profile?.userId && roomCode ? `${profile.userId}:${roomCode}` : null
+  const [messages, setMessages, isCurrentConversation] = useConversationState<GlobalDmMessage[]>(scope, () => [])
+  const [reactions, setReactions] = useConversationState<GlobalDmReaction[]>(scope, () => [])
+  const [historyReady, setHistoryReady] = useConversationState(scope, () => false)
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({})
   const [transfers, setTransfers] = useState<GlobalDmTransfer[]>([])
   const [peerCount, setPeerCount] = useState(0)
@@ -216,6 +218,7 @@ export function useGlobalDmChat({
         if (await verifyReaction(reaction)) safeReactions.push(reaction)
       }
       if (!cancelled) {
+        setHistoryReady(true)
         setMessages(current => {
           const next = mergeGlobalDmMessages(current, verified)
           messagesRef.current = next
@@ -231,7 +234,7 @@ export function useGlobalDmChat({
     return () => {
       cancelled = true
     }
-  }, [roomCode, profileRef, friendUserIdRef, verifyWire, verifyReaction, materializeAttachment])
+  }, [roomCode, profileRef, friendUserIdRef, verifyWire, verifyReaction, materializeAttachment, setMessages, setReactions, setHistoryReady])
 
   useEffect(() => {
     const reload = () => {
@@ -258,13 +261,11 @@ export function useGlobalDmChat({
     }
     window.addEventListener('peerly-device-data-synced', reload)
     return () => window.removeEventListener('peerly-device-data-synced', reload)
-  }, [roomCode, profileRef, friendUserIdRef, verifyWire, verifyReaction, materializeAttachment])
+  }, [roomCode, profileRef, friendUserIdRef, verifyWire, verifyReaction, materializeAttachment, setMessages, setReactions])
 
-  // Persist on change.
-  useEffect(() => {
-    if (!roomCode) return
-    saveGlobalDmHistory(roomCode, messages, reactions)
-  }, [roomCode, messages, reactions])
+  const historyValue = useMemo(() => ({ messages, reactions }), [messages, reactions])
+  const historyPersistence = useHistoryPersistence(scope, Boolean(roomCode && historyReady), historyValue,
+    value => saveGlobalDmHistory(roomCode!, value.messages, value.reactions))
 
   const sendersRef = useRef<{
     chat: (msg: GlobalDmMessage, to?: string, messageId?: string) => Promise<void>
@@ -303,7 +304,7 @@ export function useGlobalDmChat({
     const fileReqAction = room?.makeAction<string>('gdmfilereq') ?? null
 
     const mergeWire = async (wire: GlobalDmMessage, peerId?: string) => {
-      if (!(await verifyWire(wire))) return
+      if (!isCurrentConversation() || !(await verifyWire(wire)) || !isCurrentConversation()) return
       const me = profileRef.current
       const friend = friendUserIdRef.current
       if (!wire.authorUserId || (wire.authorUserId !== me?.userId && wire.authorUserId !== friend)) {
@@ -340,7 +341,7 @@ export function useGlobalDmChat({
     }
 
     const mergeReaction = async (wire: GlobalDmReaction, peerId?: string) => {
-      if (!(await verifyReaction(wire))) return
+      if (!isCurrentConversation() || !(await verifyReaction(wire)) || !isCurrentConversation()) return
       if (!messagesRef.current.some(message => message.id === wire.messageId && !message.deletedAt)) return
       setReactions(current => mergeGlobalDmReactions(current, [wire]))
       if (wire.authorUserId === friendUserIdRef.current) recordSyncActivity({
@@ -513,7 +514,7 @@ export function useGlobalDmChat({
       }
       sendersRef.current = null
     }
-  }, [contentRoom, durableRoom, room, roomCode, ringFriendRef, profileRef, friendUserIdRef, friendNameRef, verifyWire, verifyReaction, materializeAttachment])
+  }, [contentRoom, durableRoom, room, roomCode, ringFriendRef, profileRef, friendUserIdRef, friendNameRef, verifyWire, verifyReaction, materializeAttachment, setMessages, setReactions, isCurrentConversation])
 
   const outboxScope = profile?.userId && roomCode ? `dm:${profile.userId}:${roomCode}` : null
   const outbox = useMessageOutbox<GlobalDmMessage>(outboxScope, Boolean(contentRoom && roomCode), async wire => {
@@ -524,8 +525,8 @@ export function useGlobalDmChat({
     // never merge the currently open conversation into that history.
     const stillCurrent = roomCodeRef.current === roomCode
     const nextMessages = upsertGlobalDmMessage(mergeGlobalDmMessages(loadGlobalDmHistory(roomCode), stillCurrent ? messagesRef.current : []), wire)
-    saveGlobalDmHistory(roomCode, nextMessages, stillCurrent ? reactionsRef.current : loadGlobalDmReactions(roomCode))
-    if (!loadGlobalDmHistory(roomCode).some(message => message.id === wire.id)) throw new Error('Could not save local history')
+    const saved = saveGlobalDmHistory(roomCode, nextMessages, stillCurrent ? reactionsRef.current : loadGlobalDmReactions(roomCode))
+    if (!saved) throw new Error('Could not save local history')
     if (!stillCurrent) return
     messagesRef.current = nextMessages
     setMessages(nextMessages)
@@ -637,7 +638,7 @@ export function useGlobalDmChat({
         setError('Could not send attachment.')
       }
     }
-  }, [profileRef, identityRef, roomCode, friendUserIdRef, friendNameRef, ringFriendRef])
+  }, [profileRef, identityRef, roomCode, friendUserIdRef, friendNameRef, ringFriendRef, setMessages])
 
   const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
     if (!ALLOWED_REACTIONS.has(emoji)) return
@@ -672,7 +673,7 @@ export function useGlobalDmChat({
       console.error('Failed to react to DM:', err)
       setError('Could not update reaction.')
     }
-  }, [profileRef, identityRef, friendUserIdRef, friendNameRef])
+  }, [profileRef, identityRef, friendUserIdRef, friendNameRef, setReactions])
 
   const reviseMessage = useCallback(async (messageId: string, nextText: string | null) => {
     try {
@@ -713,19 +714,20 @@ export function useGlobalDmChat({
       console.error('Failed to revise DM:', err)
       setError('Could not update message.')
     }
-  }, [identityRef, profileRef, friendUserIdRef, friendNameRef])
+  }, [identityRef, profileRef, friendUserIdRef, friendNameRef, setMessages])
 
   return {
     messages,
     peerCount,
     partnerInRoom: peerCount > 0,
-    error: outbox.error ?? error,
+    error: historyPersistence.error ?? outbox.error ?? error,
     reactions,
     attachmentUrls,
     transfers,
     sendMessage,
     pendingMessages: outbox.entries.map(entry => ({ id: entry.id, text: entry.payload.text, failed: entry.failed })),
-    retryPendingMessages: outbox.retry,
+    cancelPendingMessage: outbox.cancel,
+    retryPendingMessages: async () => { historyPersistence.retry(); await outbox.retry() },
     sendFiles,
     toggleReaction,
     editMessage: (messageId: string, text: string) => reviseMessage(messageId, text),

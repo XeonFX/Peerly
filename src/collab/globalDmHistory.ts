@@ -40,8 +40,8 @@ export function saveGlobalDmHistory(
   roomCode: string,
   messages: GlobalDmMessage[],
   reactions: GlobalDmReaction[] = []
-): void {
-  store.save(roomCode, messages, reactions)
+): boolean {
+  return store.save(roomCode, messages, reactions)
 }
 
 export function mergeGlobalDmReactions(

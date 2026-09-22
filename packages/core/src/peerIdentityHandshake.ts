@@ -2,9 +2,9 @@ import type { PeerHandshake } from '@trystero-p2p/core'
 import { bytesToBase64Url } from './base64url.js'
 import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity.js'
 import type { DeviceSigner } from './textChatSigning.js'
-import type { OidcDeviceAttestation } from './oidcDeviceBinding.js'
+import { isCertificateAttestation, type IdentityAttestation } from './identityAttestation.js'
 
-export type PeerIdentityAttestation = OidcDeviceAttestation & {
+export type PeerIdentityAttestation = IdentityAttestation & {
   deviceKeyId: DeviceKeyId
   userId: string
 }
@@ -22,13 +22,12 @@ export type PeerIdentityHandshakeDeps<TVerified> = {
 
 function parseAttestation(raw: unknown): PeerIdentityAttestation | null {
   if (!raw || typeof raw !== 'object') return null
-  const value = raw as Partial<PeerIdentityAttestation>
-  if (
-    typeof value.providerId !== 'string' || !value.providerId || value.providerId.length > 40 ||
-    typeof value.idToken !== 'string' || !value.idToken || value.idToken.length > 16_000 ||
-    typeof value.deviceKeyId !== 'string' || !value.deviceKeyId || value.deviceKeyId.length > 512 ||
-    typeof value.userId !== 'string' || !value.userId || value.userId.length > 256
-  ) return null
+  const value = raw as { providerId?: string; idToken?: string; certificate?: string; deviceKeyId?: string; userId?: string }
+  if (typeof value.deviceKeyId !== 'string' || !value.deviceKeyId || value.deviceKeyId.length > 512 ||
+      typeof value.userId !== 'string' || !value.userId || value.userId.length > 256) return null
+  if (!isCertificateAttestation(value) && (
+      typeof value.providerId !== 'string' || !value.providerId || value.providerId.length > 40 ||
+      typeof value.idToken !== 'string' || !value.idToken || value.idToken.length > 16_000)) return null
   return value as PeerIdentityAttestation
 }
 

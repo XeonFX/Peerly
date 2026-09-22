@@ -105,7 +105,10 @@ export function HomeView({
     (friend: Friend | null) => onOpenDm(friend?.subjectUserId ?? null),
     [onOpenDm]
   )
-  const [roomCode, setRoomCode] = useState<string | null>(null)
+  const roomScope = activeFriend ? JSON.stringify([profile.userId, activeFriend.subjectUserId, friendDmSecret(activeFriend)]) : null
+  const [derivedRoom, setDerivedRoom] = useState<{ scope: string; code: string } | null>(null)
+  // Async room derivation must never expose the preceding friend's transport.
+  const roomCode = derivedRoom?.scope === roomScope ? derivedRoom?.code ?? null : null
   const [ringBanner, setRingBanner] = useState<DmRingPayload | null>(null)
   const [query, setQuery] = useState('')
   const [mobileFriendsOpen, setMobileFriendsOpen] = useState(false)
@@ -162,20 +165,20 @@ export function HomeView({
    */
   useEffect(() => {
     if (!activeFriend) {
-      setRoomCode(null)
+      setDerivedRoom(null)
       return
     }
     const secret = friendDmSecret(activeFriend)
     if (!secret) {
-      setRoomCode(null)
+      setDerivedRoom(null)
       return
     }
     let cancelled = false
     void dmRoomCode(profile.userId, activeFriend.subjectUserId, secret).then(code => {
-      if (!cancelled) setRoomCode(code)
+      if (!cancelled && roomScope) setDerivedRoom({ scope: roomScope, code })
     })
     return () => { cancelled = true }
-  }, [activeFriend, profile.userId])
+  }, [activeFriend, profile.userId, roomScope])
 
   // Handle lobby ring: open or banner.
   useEffect(() => {
@@ -223,7 +226,7 @@ export function HomeView({
 
   const selectSection = (next: Props['section']) => {
     setActiveFriend(null)
-    setRoomCode(null)
+    setDerivedRoom(null)
     setQuery('')
     setMobileFriendsOpen(next === 'friends')
     onSectionChange(next)
@@ -231,7 +234,7 @@ export function HomeView({
 
   const backToMobileNavigation = () => {
     setActiveFriend(null)
-    setRoomCode(null)
+    setDerivedRoom(null)
     setQuery('')
     setMobileFriendsOpen(false)
     onSectionChange('friends')
@@ -409,6 +412,7 @@ export function HomeView({
               onSend={chat.sendMessage}
               pendingMessages={chat.pendingMessages}
               onRetryPendingMessages={chat.retryPendingMessages}
+              onCancelPendingMessage={chat.cancelPendingMessage}
               onFiles={chat.sendFiles}
               onToggleReaction={chat.toggleReaction}
               reactions={chat.reactions}
@@ -420,7 +424,7 @@ export function HomeView({
               onPendingMessageConsumed={onPendingMessageConsumed}
               onClose={() => {
                 setActiveFriend(null)
-                setRoomCode(null)
+                setDerivedRoom(null)
                 setMobileFriendsOpen(false)
               }}
               onEditProfile={() => onSectionChange('account')}
