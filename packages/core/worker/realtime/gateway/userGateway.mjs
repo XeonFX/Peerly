@@ -191,6 +191,7 @@ export function defineUserGateway(app = {}) {
     }
 
     async alarm() {
+      await this.invalidateRemovedChannelSessions()
       await this.runtime.onAlarm()
     }
 
@@ -210,6 +211,7 @@ export function defineUserGateway(app = {}) {
         deviceKeyId: dk, nowMs: now ?? Date.now(), ttlMs, uid,
       })
       if ('error' in result) return { code: 'invalid-device' }
+      await this.invalidateRemovedChannelSessions()
       await this.runtime.scheduleAlarm()
       return result
     }
@@ -227,8 +229,21 @@ export function defineUserGateway(app = {}) {
         deviceKeyId: dk, nowMs: now ?? Date.now(), ttlMs, uid,
       })
       if ('error' in result) return { code: 'invalid-device' }
+      await this.invalidateRemovedChannelSessions()
       await this.runtime.scheduleAlarm()
       return result
+    }
+
+    async invalidateRemovedChannelSessions() {
+      // Subscriber rows survive a failed RPC and are retried on registration/alarm.
+      const stale = this.ctx.storage.sql.exec(`SELECT DISTINCT c.dk FROM channel_session_subscribers c
+        LEFT JOIN sessions s ON c.sid = s.sid WHERE s.sid IS NULL`).toArray()
+      for (const row of stale) await this.revokeChannelSubscribers(row.dk)
+    }
+
+    async validateChannelSession({ sid, dk }) {
+      const session = createSqlGatewayStorage(this.ctx.storage.sql).sessions.byId(sid)
+      return { ok: Boolean(session && this.runtime.validateSession({ sid, deviceKeyId: dk, epoch: session.epoch })) }
     }
 
     async validateSession({ sid, dk, epoch, uid }) {

@@ -1,3 +1,4 @@
+import { useConversationState } from './reactConversationState.js'
 import { selfId, type PeerHandshake } from '@trystero-p2p/core'
 import {
   createContext,
@@ -511,7 +512,8 @@ export function useDurableChannel(
   } = options
   const authorizeRef = useLatest(authorize)
   const onErrorRef = useLatest(onError)
-  const [room, setRoom] = useState<RelayChannelRoom | null>(null)
+  const roomScope = useMemo(() => ({ enabled, authorizationKey, connectTimeoutMs, encryptionSecret, endpointPrefix }), [enabled, authorizationKey, connectTimeoutMs, encryptionSecret, endpointPrefix])
+  const [room, setRoom] = useConversationState<RelayChannelRoom | null>(roomScope, () => null)
 
   useEffect(() => {
     if (!enabled) {
@@ -553,15 +555,7 @@ export function useDurableChannel(
       opened?.leave()
       setRoom(null)
     }
-  }, [
-    authorizeRef,
-    authorizationKey,
-    connectTimeoutMs,
-    enabled,
-    encryptionSecret,
-    endpointPrefix,
-    onErrorRef,
-  ])
+  }, [authorizeRef, authorizationKey, connectTimeoutMs, enabled, encryptionSecret, endpointPrefix, onErrorRef, setRoom])
 
   return { room }
 }
@@ -658,7 +652,7 @@ export function useRelayChannel(
       coordinator.close()
       setRoom(null)
     }
-  }, [channel, memberId, connectTimeoutMs, durableObjects])
+  }, [channel, memberId, connectTimeoutMs, durableObjects, setRoom])
 
   return {
     room: durableObjects
@@ -803,7 +797,8 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
     errorText,
   } = options
   const strategy = resolveSignalingStrategy(env)
-  const [room, setRoom] = useState<Room | null>(null)
+  const roomScope = useMemo(() => ({ appId, roomId, password, strategy }), [appId, roomId, password, strategy])
+  const [room, setRoom] = useConversationState<Room | null>(roomScope, () => null)
   const [relayUrls, setRelayUrls] = useState<string[] | null>(() =>
     strategy === 'ws-relay' ? null : []
   )
@@ -993,17 +988,7 @@ export function useRoom(options: UseRoomOptions): { room: Room | null } {
       }
       setRoom(null)
     }
-  }, [
-    appId,
-    roomId,
-    password,
-    strategy,
-    resolvedRelayUrls,
-    onPeerHandshake,
-    handshakeTimeoutMs,
-    recoverIceFailures,
-    rejoinNonce,
-  ])
+  }, [appId, roomId, password, strategy, resolvedRelayUrls, onPeerHandshake, handshakeTimeoutMs, recoverIceFailures, rejoinNonce, setRoom])
 
   // A new room is a fresh start for recovery accounting; a pending rejoin
   // timer must not fire into a room it no longer belongs to.
@@ -1247,3 +1232,8 @@ export {
   type PairHello,
   type PairRole,
 } from './reactDevicePairing.js'
+
+export { useMessageOutbox } from './reactMessageOutbox.js'
+export { useConversationState } from './reactConversationState.js'
+
+export { useHistoryPersistence } from './reactHistoryPersistence.js'

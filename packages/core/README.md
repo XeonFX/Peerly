@@ -337,3 +337,44 @@ Dry-run still applies the bump in the runner workspace so the tarball is a
 *new* version (re-publishing an existing version fails). For a local sanity
 check: `cd packages/core && npm run build && npm pack --dry-run` (`prepack`
 builds automatically).
+
+## Shared messaging and identity
+
+Peerly and HeyHubs use these implementations directly; application wrappers
+supply storage names, signed wire types, UI text, and product authorization rules.
+
+| API | Responsibility |
+| --- | --- |
+| `createIndexedDbOutboxStorage(name)` / `createMessageOutbox(storage)` | Persist immutable signed messages with stable IDs; ordered retry and cancellation of future attempts. |
+| `useMessageOutbox(storage, scope, enabled, deliver)` from `/react` | Pending/failed state, reconnect/online retry, and navigation guards. `deliver` must reject until delivery is confirmed. In P2P mode, enable only when a recipient is present unless peer history replay guarantees delivery. |
+| `useConversationState(scope, initial)` from `/react` | Prevent reads/writes across conversations, including stale async work after A → B → A. Use the returned generation-specific setter in callback dependency arrays. |
+| `useHistoryPersistence(scope, ready, value, save)` from `/react` | Report local history write failures and retry dirty snapshots. Gate writes until history hydration completes. |
+| `createTextChatHistoryStore(config)` | Shared history merge/load/save. `save` returns `boolean`; a failed write remains readable in this process for retry/export. It does not survive closing the page. |
+| `createIdentityClient()` | Obtain and verify short-lived, origin-bound account/device certificates without disclosing an OIDC token to other clients. |
+| `createIdentityRoutes(options)` from `/worker/identity` | Verify the provider token and device proof; issue/verify a minimal certificate. Configure a secret and rate limiter. |
+| `UserGatewayDO.validateChannelSession({sid, dk})` | One authoritative session-validity decision for both applications' channel adapters. |
+
+The identity Worker is an identity authority: applications trust it to attest an
+account/device binding. HMACs are scoped to the protocol and origin. Certificates
+contain identifiers and validity timestamps; they contain no email, profile, or
+provider token. The provider token is sent only to the issuing Worker. A legacy
+Peerly discovery wrapper also includes the opaque rendezvous identifier.
+
+For signed historical entries, `verify(certificate, signedEntryTimestamp)` checks
+validity at that timestamp. Callers must first verify the entry's device signature
+and use its signed timestamp. Live handshakes must call `verify(certificate)` with
+no historical timestamp; an expired certificate must not authenticate a live peer.
+
+`SignedControl.attestation` and `PeerIdentityAttestation` accept either the legacy
+OIDC shape or `{ certificate }`. Applications that promise private identity must
+emit certificates and reject raw provider attestations for live traffic. HeyHubs
+keeps legacy board entries readable locally but does not redistribute their tokens.
+
+An outbox acknowledgement means the configured transport accepted the message;
+it does not mean that a person read it. Cancelling retry cannot recall an attempt
+already delivered. Applications own that wording and their retention policy.
+
+A registration that evicts a device invalidates its channel subscribers before
+returning. Failed invalidations keep their subscriber records for retry. DO channel
+adapters, room/workspace membership, discovery, and app-specific migrations remain
+separate from these shared session rules.

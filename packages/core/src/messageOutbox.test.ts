@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { createMessageOutbox, type OutboxEntry, type OutboxStorage } from './messageOutbox'
+import { createMessageOutbox, type OutboxEntry, type OutboxStorage } from './messageOutbox.js'
 
 function memoryStorage(): OutboxStorage {
   const records = new Map<string, OutboxEntry<unknown>>()
@@ -42,4 +42,18 @@ it('keeps queued messages scoped and does not drop messages added during deliver
   const send = vi.fn(async () => {})
   await outbox.flush('bob:workspace', send, () => false)
   expect(send).not.toHaveBeenCalled()
+})
+
+it('cancels retry without resurrecting an in-flight failed attempt', async () => {
+  const outbox = createMessageOutbox<{ id: string }>(memoryStorage())
+  await outbox.enqueue('scope', { id: 'cancel-me' })
+  let fail!: () => void
+  const blocked = new Promise<void>((_, reject) => { fail = () => reject(new Error('offline')) })
+  const send = vi.fn(() => blocked)
+  const flush = outbox.flush('scope', send, () => true)
+  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+  await outbox.remove('scope', 'cancel-me')
+  fail()
+  await flush
+  expect(await outbox.list('scope')).toEqual([])
 })

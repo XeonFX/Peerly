@@ -36,6 +36,7 @@ type Props = {
   transfers: GlobalDmTransfer[]
   onSend: (text: string) => Promise<void>
   pendingMessages: { id: string; text: string; failed: boolean }[]
+  onCancelPendingMessage?: (id: string) => Promise<void>
   onRetryPendingMessages: () => Promise<void>
   onFiles: (files: File[]) => Promise<void>
   onToggleReaction: (messageId: string, emoji: string) => Promise<void>
@@ -67,6 +68,7 @@ export function GlobalDmChat({
   onSend,
   pendingMessages,
   onRetryPendingMessages,
+  onCancelPendingMessage,
   onFiles,
   onToggleReaction,
   onEdit,
@@ -380,7 +382,7 @@ export function GlobalDmChat({
         <div ref={bottomRef} />
       </div>
 
-      <PendingMessages entries={pendingMessages} onRetry={onRetryPendingMessages} />
+      <PendingMessages entries={pendingMessages} onRetry={onRetryPendingMessages} onCancel={onCancelPendingMessage} />
       {sendError && <p className="px-3 text-sm text-warning" role="alert">{sendError}</p>}
       <form
         className="shrink-0 border-t border-base-300/70 p-3"

@@ -1,7 +1,7 @@
 import { encodeCanonicalLines } from './canonical.js'
 import { verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity.js'
 import type { DeviceSigner } from './textChatSigning.js'
-import type { OidcDeviceAttestation } from './oidcDeviceBinding.js'
+import { isCertificateAttestation, type IdentityAttestation } from './identityAttestation.js'
 
 export type SignedControl<T> = {
   kind: string
@@ -10,7 +10,7 @@ export type SignedControl<T> = {
   ts: number
   nonce: string
   payload: T
-  attestation?: OidcDeviceAttestation
+  attestation?: IdentityAttestation
   sig: string
 }
 
@@ -36,7 +36,7 @@ export async function signControl<T>(
   kind: string,
   userId: string,
   payload: T,
-  options?: { now?: number; attestation?: OidcDeviceAttestation }
+  options?: { now?: number; attestation?: IdentityAttestation }
 ): Promise<SignedControl<T>> {
   const body = {
     kind,
@@ -68,7 +68,8 @@ export async function verifySignedControl<T>(
   if (!('payload' in message)) return null
   if (message.attestation !== undefined) {
     if (!message.attestation || typeof message.attestation !== 'object') return null
-    if (typeof message.attestation.providerId !== 'string' || typeof message.attestation.idToken !== 'string') return null
+    if (!isCertificateAttestation(message.attestation) && (!('providerId' in message.attestation) ||
+      typeof message.attestation.providerId !== 'string' || typeof message.attestation.idToken !== 'string')) return null
   }
   const normalized = message as SignedControl<T>
   const valid = await verifyWithDeviceKeyId(

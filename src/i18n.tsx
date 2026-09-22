@@ -14,6 +14,7 @@ const pl: Record<string, string> = {
 }
 
 const plByEnglish: Record<string, string> = {
+  'Cancel retry': 'Anuluj ponawianie',
   'Profile & preferences': 'Profil i preferencje',
   'These preferences apply across Peerly, not to a single workspace.': 'Te preferencje dotyczą całego Peerly, a nie jednej przestrzeni.',
   'Theme and language are stored on this device.': 'Motyw i język są zapisane na tym urządzeniu.',

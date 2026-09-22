@@ -1,3 +1,4 @@
+import { createIdentityRoutes } from '../packages/core/worker/identity.mjs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   clearOidcJwksCache,
@@ -101,7 +102,7 @@ describe('network credential worker', () => {
     const decoded = Buffer.from(certificate.split('.')[0], 'base64url').toString()
     expect(decoded).not.toContain('user@example.com')
     expect(decoded).not.toContain(token)
-    expect(Object.keys(JSON.parse(decoded)).sort()).toEqual(['deviceKeyId', 'expiresAt', 'rendezvousId', 'userId'])
+    expect(Object.keys(JSON.parse(decoded)).sort()).toEqual(['deviceKeyId', 'expiresAt', 'issuedAt', 'rendezvousId', 'userId'])
     const verify = (body = certificate, origin = 'https://app.example') => verifyLobbyIdentity(
       new Request(`${origin}/api/rendezvous/verify`, { method: 'POST', body }), env)
     expect(await (await verify()).json()).toEqual(identity)
@@ -112,6 +113,34 @@ describe('network credential worker', () => {
     expect((await verify('a'.repeat(2049))).status).toBe(413)
     vi.spyOn(Date, 'now').mockReturnValue(identity.expiresAt + 1)
     expect((await verify()).status).toBe(401)
+  })
+
+  it('issues minimal app certificates and verifies signed history without allowing expired live identity', async () => {
+    const { rsaJwk, headers, devicePrivateKey, token } = await fixture()
+    const routes = createIdentityRoutes({ fetcher: async () => Response.json({ keys: [rsaJwk] }) })
+    const proof = new TextEncoder().encode(['peerly-app-identity-v1', 'google', headers['x-peerly-device-key'],
+      headers['x-peerly-request-ts'], headers['x-peerly-request-nonce']].join('\n'))
+    const signature = b64url(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, devicePrivateKey, proof))
+    const env = { VITE_GOOGLE_CLIENT_ID: 'client-id', IDENTITY_SECRET: 'synthetic-identity-secret',
+      IDENTITY_RATE_LIMITER: { limit: async () => ({ success: true }) } }
+    const response = await routes.issue(new Request('https://app.example/api/identity/issue', { method: 'POST',
+      headers: { ...headers, 'x-peerly-request-signature': signature } }), env)
+    expect(response.status).toBe(200)
+    const identity = await response.json()
+    const payload = JSON.parse(Buffer.from(identity.certificate.split('.')[0], 'base64url').toString())
+    expect(Object.keys(payload).sort()).toEqual(['deviceKeyId', 'expiresAt', 'issuedAt', 'userId'])
+    expect(JSON.stringify(identity)).not.toContain(token)
+    expect(JSON.stringify(identity)).not.toContain('user@example.com')
+    const verify = (atTime, certificate = identity.certificate, origin = 'https://app.example') => routes.verify(
+      new Request(`${origin}/api/identity/verify`, { method: 'POST', body: certificate,
+        headers: atTime === undefined ? {} : { 'x-peerly-at-time': String(atTime) } }), env)
+    expect((await verify()).status).toBe(200)
+    expect((await verify(undefined, identity.certificate, 'https://other.example')).status).toBe(401)
+    vi.spyOn(Date, 'now').mockReturnValue(identity.expiresAt + 1000)
+    expect((await verify()).status).toBe(401)
+    expect((await verify(identity.issuedAt)).status).toBe(200)
+    expect((await verify(identity.issuedAt - 31_000)).status).toBe(401)
+    expect((await verify(identity.issuedAt, identity.certificate + 'x')).status).toBe(401)
   })
 
   it('refuses to mint discovery identity for a stolen token without its device signature', async () => {

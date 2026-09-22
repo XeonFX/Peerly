@@ -152,7 +152,7 @@ test.describe('durable objects control plane', () => {
         expect(frame.data.attestation).toBeUndefined()
         expect(JSON.stringify(frame)).not.toMatch(/alice@e2e\.test|bob@e2e\.test|idToken/)
         const claims = JSON.parse(Buffer.from(frame.data.payload.certificate.split('.')[0], 'base64url').toString())
-        expect(Object.keys(claims).sort()).toEqual(['deviceKeyId', 'expiresAt', 'rendezvousId', 'userId'])
+        expect(Object.keys(claims).sort()).toEqual(['deviceKeyId', 'expiresAt', 'issuedAt', 'rendezvousId', 'userId'])
         expect(claims.deviceKeyId).toBe(frame.data.deviceKeyId)
         expect(claims.userId).toBe(frame.data.userId)
       }

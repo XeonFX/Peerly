@@ -31,7 +31,7 @@ export type TextChatHistoryEnvelope = {
 export type TextChatHistoryStore = {
   storageKey: (roomCode: string) => string
   load: (roomCode: string) => { wires: TextChatWire[]; reactions: TextReactionWire[] }
-  save: (roomCode: string, wires: TextChatWire[], reactions?: TextReactionWire[]) => void
+  save: (roomCode: string, wires: TextChatWire[], reactions?: TextReactionWire[]) => boolean
   mergeMessages: (existing: TextChatWire[], incoming: TextChatWire[]) => TextChatWire[]
   mergeReactions: (existing: TextReactionWire[], incoming: TextReactionWire[]) => TextReactionWire[]
   parseEnvelope: (raw: unknown) => TextChatHistoryEnvelope
@@ -158,11 +158,14 @@ export function createTextChatHistoryStore(
   const maxAgeMs = config.maxAgeMs ?? 0
   const prefix = config.storagePrefix
 
+  const unsaved = new Map<string, { wires: TextChatWire[]; reactions: TextReactionWire[] }>()
   const storageKey = (roomCode: string) =>
     `${prefix}${roomCode.trim().toLowerCase()}`
 
   const load = (roomCode: string) => {
     if (!roomCode.trim()) return { wires: [] as TextChatWire[], reactions: [] as TextReactionWire[] }
+    const pending = unsaved.get(storageKey(roomCode))
+    if (pending) return pending
     try {
       const raw = localStorage.getItem(storageKey(roomCode))
       if (!raw) return { wires: [], reactions: [] }
@@ -205,13 +208,14 @@ export function createTextChatHistoryStore(
     wires: TextChatWire[],
     reactions: TextReactionWire[] = []
   ) => {
-    if (!roomCode.trim()) return
+    if (!roomCode.trim()) return false
     const signedWires = mergeTextChatWires([], wires, messageCap)
     const signedReactions = mergeTextReactionWires([], reactions, reactionCap)
     try {
       if (signedWires.length === 0 && signedReactions.length === 0) {
         localStorage.removeItem(storageKey(roomCode))
-        return
+        unsaved.delete(storageKey(roomCode))
+        return true
       }
       const payload: StoredTextChatHistory = {
         v: 2,
@@ -220,8 +224,12 @@ export function createTextChatHistoryStore(
         reactions: signedReactions,
       }
       localStorage.setItem(storageKey(roomCode), JSON.stringify(payload))
+      unsaved.delete(storageKey(roomCode))
+      return true
     } catch {
-      // quota / private mode
+      // Keep the only local copy available for retry/export during this session.
+      unsaved.set(storageKey(roomCode), { wires: signedWires, reactions: signedReactions })
+      return false
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "@peerly/core",
-  "version": "1.15.1",
+  "version": "1.16.0",
   "description": "Reusable encrypted realtime core with authenticated Durable Objects, P2P rooms, device identity, signing, media, and presence",
   "license": "MIT",
   "repository": {
@@ -74,6 +74,9 @@
     },
     "./worker/realtime/ephemeral-channel": {
       "default": "./worker/realtime/gateway/ephemeralChannel.mjs"
+    },
+    "./worker/identity": {
+      "default": "./worker/identity.mjs"
     }
   },
   "files": [
