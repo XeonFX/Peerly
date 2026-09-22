@@ -1,6 +1,6 @@
 /** Single source for the Trystero peer id (must match the room connection id). */
 export { selfId } from '@trystero-p2p/core'
-export type { Env } from './env.js'
+export { requireAppId, type Env } from './env.js'
 export { generateRoomCode } from './roomCode.js'
 export {
   resolveSignalingStrategy,
@@ -24,6 +24,7 @@ export {
   clearRuntimeNetworkCredentials,
   configureRuntimeAuthCredentialProvider,
   configureRuntimeAuthTokenProvider,
+  getRuntimeAuthCredential,
   getRuntimeNetworkCredentials,
   lookupRendezvousId,
   type RuntimeAuthCredential,
@@ -42,7 +43,33 @@ export { isReplaceOnlyUpgrade, planTrackOps, type TrackOp } from './mediaTracks.
 export { createRelayHealth, type RelayHealth } from './relayHealth.js'
 export { probeNostrRelay, probeNostrRelays, type RelayProbeResult } from './relayProbe.js'
 export { probeP2pCapability, type P2pCapability } from './p2pCapability.js'
-export { probeTurnCapability, type TurnCapability } from './turnCapability.js'
+export {
+  p2pIndicatorState,
+  p2pIndicatorTone,
+  p2pProbeIsUnproven,
+  type P2pIndicatorInput,
+  type P2pIndicatorState,
+  type P2pIndicatorTone,
+} from './p2pIndicator.js'
+export { probeTurnCapability, resolveProbeIceServers, type TurnCapability } from './turnCapability.js'
+export {
+  allocateRequest,
+  attributeText,
+  authenticatedAllocateRequest,
+  decodeStun,
+  encodeStun,
+  errorCode,
+  randomTransactionId,
+  readChallenge,
+  STUN_ATTR,
+  STUN_CLASS,
+  STUN_METHOD,
+  turnRestCredential,
+  xorRelayedAddress,
+  type AuthChallenge,
+  type StunAttributes,
+  type StunMessage,
+} from './turnAllocate.js'
 export {
   canonicalizePublicKey,
   DeviceIdentity,
@@ -73,11 +100,30 @@ export {
   type OidcIdTokenClaims,
   type VerifyOidcIdTokenOptions,
 } from './oidcIdToken.js'
-export { renderGoogleSignInButton } from './googleSignIn.js'
+export { renderGoogleSignInButton, requestGoogleCredentialSilently } from './googleSignIn.js'
 export {
+  createGoogleSignInClient,
   normalizeGoogleAuthBridgeOrigin,
+  requestGoogleCredentialSilentlyFromBridge,
   renderGoogleSignInBridgeButton,
+  type GoogleSignInClient,
+  type GoogleSignInClientOptions,
 } from './googleAuthBridge.js'
+export {
+  googleIdentityMatchesRemembered,
+  renewGoogleCredentialSilently,
+  type RememberedGoogleIdentity,
+  type RenewedGoogleCredential,
+  type RenewGoogleCredentialOptions,
+} from './googleCredentialRenewal.js'
+export {
+  credentialNeedsRenewal,
+  credentialRenewalDelay,
+  credentialRetryDelay,
+  DEFAULT_CREDENTIAL_RENEW_BEFORE_MS,
+  DEFAULT_CREDENTIAL_RETRY_MS,
+  type CredentialRenewalPolicy,
+} from './credentialRenewal.js'
 export {
   coordinationMemberId,
   coordinationScope,
@@ -97,6 +143,11 @@ export {
   type RelayChannelRoom,
 } from './relayChannel.js'
 export {
+  openDurableChannel,
+  type DurableChannelAuthorization,
+  type DurableChannelOptions,
+} from './durableChannel.js'
+export {
   GOOGLE_ISSUERS,
   GOOGLE_JWKS_URL,
   GOOGLE_JWKS_PROXY_PATH,
@@ -106,7 +157,41 @@ export {
   type VerifyGoogleIdTokenOptions,
 } from './googleIdToken.js'
 export { avatarInitial, getPeerColor, PEER_COLORS } from './identicon.js'
-export { formatClockTime } from './format.js'
+export {
+  ALLOWED_REACTIONS,
+  buildReplyMessage,
+  QUICK_REACTIONS,
+  REACTION_CATEGORIES,
+  searchReactionCategories,
+  type ReactionCategory,
+  type ReactionEmoji,
+} from './reactions.js'
+export {
+  firstSafeLink,
+  splitSafeLinks,
+  type SafeTextPart,
+} from './safeLinks.js'
+export {
+  clockFormatPreferenceKey,
+  dateFormatPreferenceKey,
+  DEFAULT_CLOCK_FORMAT,
+  DEFAULT_DATE_FORMAT,
+  formatClockTime,
+  formatMessageTimestamp,
+  loadClockFormat,
+  loadDateFormat,
+  saveClockFormat,
+  saveDateFormat,
+  type ClockFormat,
+  type DateFormat,
+  type TimestampFormatOptions,
+} from './format.js'
+export {
+  DEFAULT_MESSAGE_GROUP_WINDOW_MS,
+  groupConsecutiveMessages,
+  type ConsecutiveMessageGroup,
+  type GroupConsecutiveMessagesOptions,
+} from './messagePresentation.js'
 export {
   applyDocumentLocaleMetadata,
   type DocumentLocaleMetadata,
@@ -117,14 +202,56 @@ export {
   type RoomMediaDeviceIds,
   type RoomMediaState,
 } from './roomMedia.js'
+export {
+  isExpectedActionSendError,
+  sendActionInBackground,
+  sendActionSafely,
+} from './safeActionSend.js'
+export {
+  createLegalConsent,
+  type LegalConsent,
+  type LegalConsentConfig,
+} from './legalConsent.js'
 export { createKvStore, type KvStore } from './kvStore.js'
 export { createBlobStore } from './blobStore.js'
+export { createAvatarStore, type AvatarStore } from './avatarStore.js'
+export {
+  createFriendsStore,
+  type AddFriendInput, type Friend, type FriendsStore, type FriendsStoreConfig,
+} from './friendsStore.js'
+export { createDeviceSelection, type DeviceSelection } from './deviceSelection.js'
+export {
+  createDeviceSync,
+  type ArrayMergeRule,
+  type CopyRule,
+  type DeviceSync,
+  type DeviceSyncConfig,
+  type DeviceSyncSnapshot,
+  type EnvelopeMergeRule,
+  type MergeRule,
+  type ObjectMergeRule,
+} from './deviceSync.js'
+export {
+  createDeviceAuthorization,
+  deviceFingerprint,
+  grantAuthorizes,
+  type ApprovedDevice,
+  type DeviceAuthorization,
+  type DeviceAuthorizationConfig,
+  type DeviceGrant,
+} from './deviceAuthorization.js'
 export { openIndexedDb } from './idb.js'
 export {
   isAllowedGoogleAvatarUrl,
+  isRenderableAvatarUrl,
   isSafeAvatarUrl,
   safeAvatarUrl,
 } from './avatarSafety.js'
+export {
+  createAvatarService,
+  type AvatarService,
+  type AvatarUpload,
+} from './avatarService.js'
 export { processAvatarBlob, processAvatarImage } from './avatarImage.js'
 export {
   base64UrlToBytes,
@@ -200,13 +327,13 @@ export {
   type DmCredentialStore,
 } from './dmCredentials.js'
 export {
+  createDmRing,
   decideDmRingToast,
-  dmRingBytes,
   DM_RING_TOAST_COOLDOWN_MS,
   isValidDmRoomCode,
   parseDmRingPayload,
-  signDmRing,
-  verifyDmRing,
+  type DmRing,
+  type DmRingConfig,
   type DmRingPayload,
   type DmRingReason,
   type DmRingToastDecision,
@@ -277,6 +404,7 @@ export {
   CONSECUTIVE_FLAGS_REQUIRED,
   createInferencePool,
   INITIAL_NSFW_SCAN_STATE,
+  LIVE_VIDEO_CADENCE,
   NSFW_CANVAS_MAX_EDGE,
   NSFW_EXPLICIT_THRESHOLD,
   NSFW_MAX_CONCURRENT_INFERENCES,
@@ -287,5 +415,35 @@ export {
   type InferencePool,
   type NsfwPrediction,
   type NsfwScreenScanState,
+  type VideoScreeningCadence,
   type VisualSource,
 } from './nsfwPolicy.js'
+export {
+  createNsfwScreen,
+  type NsfwClassifier,
+  type NsfwScreen,
+  type NsfwScreenConfig,
+} from './nsfwScreen.js'
+export { RealtimeClient } from './app/realtimeClient.js'
+export { deriveChannelCapability } from './channelCapability.js'
+export type { RealtimeClientConfig } from './realtime/transport.js'
+export { selectDurableObjectsTransport, type CoordinationTransport } from './realtime/transport.js'
+export {
+  ensureDurableObjectsSession,
+  sendRealtimeCommand,
+} from './realtime/runtime.js'
+export { revokeRealtimeDevice } from './realtime/runtime.js'
+export {
+  type DeviceSignerLike,
+  type ErrorCode,
+  type OidcCredentialProvider,
+  type RealtimeDeltaEvent,
+  type RealtimeFrame,
+  type RoomEntry,
+  type RoomPage,
+  type ScopeHandle,
+  type ScopeKind,
+  type SeekOptions,
+  type TransportDiagnostics,
+  type TransportState,
+} from './realtime/types.js'

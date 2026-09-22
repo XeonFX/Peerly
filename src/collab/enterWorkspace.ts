@@ -1,5 +1,6 @@
 import { isEmailAllowed } from './allowList'
 import type { WorkspaceAccess } from './inviteLink'
+import { ensureWorkspaceRouteId } from './workspaceRouteId'
 import { verifyInviteAllowList } from './workspaceAuth'
 import { rememberWorkspace, snapshotWorkspace, type StoredWorkspace } from './workspaceStore'
 import {
@@ -18,14 +19,15 @@ import {
  * identically. It does NOT verify the allow-list signature or membership; use
  * enterStoredWorkspace() when those still need checking.
  */
-export function persistWorkspaceSession(
+export async function persistWorkspaceSession(
   access: WorkspaceAccess & { workspaceAvatarId?: string },
   identity: StoredIdentity,
   displayName?: string
-): Session {
+): Promise<Session> {
+  const workspaceRouteId = await ensureWorkspaceRouteId(access)
   saveIdCredentials(identity.token, identity.providerId, identity.email, identity.userId)
   const session = createSessionFromInvite(
-    access,
+    { ...access, workspaceRouteId },
     identity.email,
     identity.providerId,
     displayName,
@@ -36,6 +38,7 @@ export function persistWorkspaceSession(
   rememberWorkspace(
     snapshotWorkspace({
       workspaceId: access.workspaceId,
+      workspaceRouteId,
       workspaceName: access.workspaceName,
       creatorKeyId: access.creatorKeyId,
       allowList: access.allowList,

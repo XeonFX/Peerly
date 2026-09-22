@@ -1,54 +1,37 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { KvStore } from '../utils/kvStore'
-import { DeviceIdentity } from './deviceIdentity'
-import {
-  listApprovedDevices,
-  loadDeviceGrants,
-  revokeDevice,
-  saveDeviceGrant,
-  signDeviceGrant,
-  verifyDeviceGrant,
-} from './deviceAuthorization'
+import { describe, expect, it } from 'vitest'
+import { deviceGrantBytes, type DeviceGrant } from './deviceAuthorization'
 
-function memoryKeys(): KvStore<CryptoKeyPair> {
-  const values = new Map<string, CryptoKeyPair>()
-  return { get: async key => values.get(key) ?? null, set: async (key, value) => void values.set(key, value) }
+/**
+ * The mechanism is covered by core's own suite. What is app-owned — and what
+ * this pins — is the scheme baked into the signing input. Change it and every
+ * device pairing our users already hold stops verifying, silently: their
+ * second device simply stops being trusted, with no error anywhere.
+ *
+ * So this is a golden vector, not a round-trip. A round-trip would agree with
+ * itself no matter which scheme it was given.
+ */
+
+const body: Omit<DeviceGrant, 'sig'> = {
+  v: 1,
+  userId: 'user-alice',
+  issuerDeviceKeyId: 'P-256:issuer-x:issuer-y' as DeviceGrant['issuerDeviceKeyId'],
+  subjectDeviceKeyId: 'P-256:subject-x:subject-y' as DeviceGrant['subjectDeviceKeyId'],
+  createdAt: 1_700_000_000_000,
+  pairingId: 'pairing-id-1234567890',
 }
 
-beforeEach(() => {
-  const values = new Map<string, string>()
-  vi.stubGlobal('localStorage', {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => void values.set(key, value),
-    removeItem: (key: string) => void values.delete(key),
-    key: (index: number) => [...values.keys()][index] ?? null,
-    clear: () => values.clear(),
-    get length() { return values.size },
-  })
-})
-
-describe('device authorization', () => {
-  it('requires two valid reciprocal grants and revokes them locally', async () => {
-    const first = new DeviceIdentity(memoryKeys())
-    const second = new DeviceIdentity(memoryKeys())
-    const firstKey = await first.publicKeyId()
-    const secondKey = await second.publicKeyId()
-    const pairingId = 'pairing-id-1234567890'
-    const forward = await signDeviceGrant(first, 'user-1', secondKey, pairingId)
-    const backward = await signDeviceGrant(second, 'user-1', firstKey, pairingId)
-    expect(await verifyDeviceGrant(forward)).toBe(true)
-    expect(await saveDeviceGrant(forward)).toBe(true)
-    expect(await listApprovedDevices('user-1', firstKey)).toEqual([])
-    expect(await saveDeviceGrant(backward)).toBe(true)
-    expect((await listApprovedDevices('user-1', firstKey))[0]?.deviceKeyId).toBe(secondKey)
-    revokeDevice('user-1', firstKey, secondKey)
-    expect(await loadDeviceGrants('user-1')).toEqual([])
-  })
-
-  it('rejects a tampered grant', async () => {
-    const first = new DeviceIdentity(memoryKeys())
-    const second = new DeviceIdentity(memoryKeys())
-    const grant = await signDeviceGrant(first, 'user-1', await second.publicKeyId(), 'pairing-id-1234567890')
-    expect(await verifyDeviceGrant({ ...grant, userId: 'user-2' })).toBe(false)
+describe('device grant signing input', () => {
+  it('encodes the frozen scheme and field order', () => {
+    expect(new TextDecoder().decode(deviceGrantBytes(body))).toBe(
+      [
+        'peerly-device-grant-v1',
+        '1',
+        'user-alice',
+        'P-256:issuer-x:issuer-y',
+        'P-256:subject-x:subject-y',
+        '1700000000000',
+        'pairing-id-1234567890',
+      ].join('\n')
+    )
   })
 })

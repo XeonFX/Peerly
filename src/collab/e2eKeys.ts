@@ -1,6 +1,12 @@
 import { utf8ToBase64Url, bytesToBase64Url } from '../utils/base64url'
 import type { JwkWithKid } from './oidcIdToken'
 import { E2E_GOOGLE_CLIENT_ID } from './e2eConstants'
+// Imported, not restated. The browser E2E harness serves the same file as a
+// real JWKS endpoint so the worker can verify what this module mints; two
+// copies of a public key would drift and the failure would look like a
+// signature bug. It rides in this module's dropped chunk, which is why the
+// bundle guard still finds nothing in a production build.
+import E2E_JWKS from '../../e2e/fixtures/oidcJwks.json'
 
 /**
  * Key material for the E2E fake identity provider. NEVER import this module
@@ -17,15 +23,7 @@ import { E2E_GOOGLE_CLIENT_ID } from './e2eConstants'
  * The keypair is fixed rather than generated because both peers in an E2E run
  * are separate browser contexts that must agree on the same issuer key.
  */
-const E2E_GOOGLE_PUBLIC_JWK: JwkWithKid = {
-  key_ops: ['verify'],
-  ext: true,
-  alg: 'RS256',
-  kty: 'RSA',
-  n: 'zrpA9xwzeaU2ZndxJNk7I3wH8scLSOW5UVgYqEl478G1MyGLsk0A6aQtZrJVky1uwbocZEDeYcRA48YM1W6wv8WOucjkd05yWse2uB2Tf2cm5zn2xtxGxvPsVm8LVS63br_jaV_ai6a6zfZhD46wBjmHVJ0DpGqWM3Py7jmoDcik2w8ZA1E79KqtYYkEYr9Uf4kVzn_en_4_AGoLBOFieS_4XjQ8gU4MM5IAxGv-IgVyJJaW4qX_F8mzRVf0iXRH1V6aO_UlsKKJYoJfFnyJ9TVkqYjCPFBGZlqpza_IVqIsfbo06HvZIkAC-3lQ0JFxr0vmCuxO8zbcNGP4QVVKWw',
-  e: 'AQAB',
-  kid: 'e2e-google',
-}
+const E2E_GOOGLE_PUBLIC_JWK = E2E_JWKS.keys[0] as JwkWithKid
 
 const E2E_GOOGLE_PRIVATE_JWK: JsonWebKey = {
   key_ops: ['sign'],

@@ -8,6 +8,7 @@ export type IconName =
   | 'broom'
   | 'check'
   | 'chevron-down'
+  | 'copy'
   | 'download'
   | 'file'
   | 'file-text'
@@ -16,9 +17,11 @@ export type IconName =
   | 'gauge'
   | 'hash'
   | 'image'
+  | 'link'
   | 'log-out'
   | 'menu'
   | 'message-circle'
+  | 'more-horizontal'
   | 'mic'
   | 'mic-off'
   | 'moon'
@@ -29,8 +32,10 @@ export type IconName =
   | 'phone-off'
   | 'plus'
   | 'refresh'
+  | 'reply'
   | 'screen-share'
   | 'search'
+  | 'smile'
   | 'shield'
   | 'sun'
   | 'trash'
@@ -61,6 +66,8 @@ export function Icon({ name, size = 18, className = '', ...props }: Props) {
         return <path d="m5 12 4 4L19 6"/>
       case 'chevron-down':
         return <path d="m6 9 6 6 6-6"/>
+      case 'copy':
+        return <><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></>
       case 'download':
         return <><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></>
       case 'file':
@@ -77,12 +84,16 @@ export function Icon({ name, size = 18, className = '', ...props }: Props) {
         return <><path d="M10 3 8 21M16 3l-2 18M4 9h16M3 15h16"/></>
       case 'image':
         return <><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></>
+      case 'link':
+        return <><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></>
       case 'log-out':
         return <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></>
       case 'menu':
         return <><path d="M4 6h16M4 12h16M4 18h16"/></>
       case 'message-circle':
         return <path d="M21 15a4 4 0 0 1-4 4H8l-5 3 1.7-5A8 8 0 1 1 21 15Z"/>
+      case 'more-horizontal':
+        return <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>
       case 'mic':
         return <><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></>
       case 'mic-off':
@@ -103,10 +114,14 @@ export function Icon({ name, size = 18, className = '', ...props }: Props) {
         return <><path d="M12 5v14M5 12h14"/></>
       case 'refresh':
         return <><path d="M20 7h-5V2"/><path d="M20 7a9 9 0 1 0 1 8"/></>
+      case 'reply':
+        return <><path d="m9 17-5-5 5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></>
       case 'screen-share':
         return <><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4M8 10l4-4 4 4M12 6v7"/></>
       case 'search':
         return <><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></>
+      case 'smile':
+        return <><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></>
       case 'shield':
         return <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></>
       case 'sun':

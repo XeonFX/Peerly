@@ -1,5 +1,9 @@
 import { isEmailAllowed, newerAllowList } from './allowList'
 import type { WorkspaceAccess } from './inviteLink'
+import {
+  ensureWorkspaceRouteId,
+  isWorkspaceRouteId,
+} from './workspaceRouteId'
 
 /**
  * A workspace this browser has joined, kept so the user can switch between them
@@ -26,6 +30,7 @@ function isStoredWorkspace(value: unknown): value is StoredWorkspace {
   return (
     typeof w.workspaceId === 'string' &&
     !!w.workspaceId &&
+    (w.workspaceRouteId === undefined || isWorkspaceRouteId(w.workspaceRouteId)) &&
     typeof w.workspaceName === 'string' &&
     typeof w.creatorKeyId === 'string' &&
     typeof w.lastOpenedAt === 'number' &&
@@ -45,6 +50,7 @@ export function snapshotWorkspace(
 ): Omit<StoredWorkspace, 'lastOpenedAt'> {
   return {
     workspaceId: workspace.workspaceId,
+    workspaceRouteId: workspace.workspaceRouteId,
     workspaceName: workspace.workspaceName,
     creatorKeyId: workspace.creatorKeyId,
     allowList: workspace.allowList,
@@ -65,12 +71,37 @@ export function loadWorkspaces(): StoredWorkspace[] {
   }
 }
 
+/** Add stable public route IDs to remembered workspaces from older releases. */
+export async function migrateWorkspaceRouteIds(): Promise<void> {
+  const workspaces = loadWorkspaces()
+  const missing = workspaces.filter(workspace => !workspace.workspaceRouteId)
+  if (missing.length === 0) return
+  const routeIds = new Map(
+    await Promise.all(missing.map(async workspace => [
+      workspace.workspaceId,
+      await ensureWorkspaceRouteId(workspace),
+    ] as const))
+  )
+  save(workspaces.map(workspace => ({
+    ...workspace,
+    workspaceRouteId:
+      workspace.workspaceRouteId ?? routeIds.get(workspace.workspaceId),
+  })))
+}
+
+/** Announced after any change, so screens showing this list can re-read it. */
+export const WORKSPACES_CHANGED_EVENT = 'peerly-workspaces-changed'
+
 function save(workspaces: StoredWorkspace[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(workspaces))
   } catch {
     // Quota exceeded — the active session still works, only the picker suffers.
   }
+  // The rail reads this list during render and nothing re-renders on a
+  // localStorage write, so forgetting a workspace left it on screen until
+  // some unrelated state change happened to repaint.
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(WORKSPACES_CHANGED_EVENT))
 }
 
 /**
@@ -88,6 +119,7 @@ export function rememberWorkspace(workspace: Omit<StoredWorkspace, 'lastOpenedAt
 
   const next: StoredWorkspace = {
     ...workspace,
+    workspaceRouteId: workspace.workspaceRouteId ?? previous?.workspaceRouteId,
     allowList: previous ? newerAllowList(previous.allowList, workspace.allowList) : workspace.allowList,
     workspaceAvatarId: workspace.workspaceAvatarId ?? previous?.workspaceAvatarId,
     lastOpenedAt: Date.now(),

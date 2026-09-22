@@ -45,7 +45,7 @@ TLS 5349. Its certificate must cover the Peerly DNS names. The firewall permits:
 - TCP 5349
 - UDP 49152–65535 for relay allocations
 
-The browser configuration includes the full fallback ladder:
+The browser configuration should include the full fallback ladder:
 
 ```text
 turn:turn.example:3478?transport=udp
@@ -55,6 +55,11 @@ turns:turn.example:443?transport=tcp
 ```
 
 `@peerly/core` adds this ladder automatically for conventional TURN URLs.
+The Durable Objects credential path intentionally preserves explicit URLs, so
+deployments must list each transport in `TURN_URLS`. Do not advertise TLS/443
+until the allocation probe below returns a public relayed address: an SNI proxy
+to coturn's loopback listener can authenticate successfully while incorrectly
+returning `127.0.0.1`, which is unusable by remote peers.
 Validate TLS 443 with a browser `RTCPeerConnection` using
 `iceTransportPolicy: "relay"`; success requires at least one candidate whose
 type is `relay`. A TLS handshake alone proves SNI routing and certificates, but

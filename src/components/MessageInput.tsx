@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { buildReplyMessage } from '@peerly/core'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import { filesFromClipboard } from '../utils/composerFiles'
 import { useI18n } from '../i18n'
@@ -9,6 +10,8 @@ type Props = {
   onSend: (text: string) => void
   onFiles: (files: File[]) => void
   disabled?: boolean
+  replyTarget?: { id: string; author: string; text: string } | null
+  onCancelReply?: () => void
 }
 
 export function MessageInput({
@@ -17,19 +20,27 @@ export function MessageInput({
   onSend,
   onFiles,
   disabled,
+  replyTarget,
+  onCancelReply,
 }: Props) {
   const { tr } = useI18n()
   const [text, setText] = useState('')
   const [dragging, setDragging] = useState(false)
   const dragDepthRef = useRef(0)
   const fileRef = useRef<HTMLInputElement>(null)
+  const textRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (replyTarget) textRef.current?.focus()
+  }, [replyTarget])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = text.trim()
     if (!trimmed) return
-    onSend(trimmed)
+    onSend(replyTarget ? buildReplyMessage(replyTarget.author, replyTarget.text, trimmed) : trimmed)
     setText('')
+    onCancelReply?.()
   }
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,6 +84,19 @@ export function MessageInput({
           {tr('Drop files to share')}
         </div>
       )}
+      {replyTarget && (
+        <div className="mb-1 flex items-center gap-2 rounded-xl border border-base-300 bg-base-200/80 px-3 py-1.5 text-xs">
+          <Icon name="reply" size={14} className="text-primary" />
+          <span className="min-w-0 flex-1 truncate">
+            <strong>{tr('Replying to {name}', { name: replyTarget.author })}</strong>
+            {' · '}
+            <span className="text-base-content/60">{replyTarget.text}</span>
+          </span>
+          <button type="button" className="btn btn-ghost btn-xs btn-square" onClick={onCancelReply} aria-label={tr('Cancel reply')}>
+            <Icon name="x" size={13} />
+          </button>
+        </div>
+      )}
       <div className="flex items-center gap-1.5 rounded-2xl border border-base-300 bg-base-200/80 p-1.5 backdrop-blur transition-colors focus-within:border-primary/60">
         <input
           id="message-file-attachments"
@@ -96,6 +120,7 @@ export function MessageInput({
           <Icon name="paperclip" />
         </button>
         <input
+          ref={textRef}
           id="message-text"
           name="messageText"
           type="text"

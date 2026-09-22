@@ -4,11 +4,19 @@ import {
   getTurnConfig as coreTurnConfig,
   resolveRelayPort as corePort,
   resolveRelayUrls as coreUrls,
+  requireAppId,
   type TurnServer as CoreTurnServer,
   type Env,
 } from '@peerly/core'
 
 export const APP_NAME = 'Peerly'
+
+/**
+ * Prefix for this app's browser-local storage: IndexedDB databases,
+ * localStorage keys and DOM event names. Shared factories in @peerly/core take
+ * it as a parameter so two products in one browser never collide.
+ */
+export const APP_STORAGE_SCOPE = 'peerly'
 
 /**
  * Build identity, injected by vite.config.ts. Version alone does not move on
@@ -29,6 +37,7 @@ export const APP_ID = 'peerly-collab-v1'
 
 /** Explicit public allowlist: never embed the complete hosting environment. */
 export const PUBLIC_NETWORK_ENV: Env = {
+  VITE_APP_ID: import.meta.env.VITE_APP_ID,
   VITE_SIGNALING: import.meta.env.VITE_SIGNALING,
   VITE_RELAY_HOST: import.meta.env.VITE_RELAY_HOST,
   VITE_RELAY_HOSTS: import.meta.env.VITE_RELAY_HOSTS,
@@ -38,6 +47,18 @@ export const PUBLIC_NETWORK_ENV: Env = {
   VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
   VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
 }
+export const NETWORK_APP_ID = requireAppId(PUBLIC_NETWORK_ENV)
+
+export type ContentBackend = 'durable-objects' | 'p2p'
+
+/** Production remains P2P until cutover; the preview build explicitly enables DO. */
+export function resolveContentBackend(
+  value: string | undefined = import.meta.env.VITE_CONTENT_BACKEND
+): ContentBackend {
+  return value === 'durable-objects' ? 'durable-objects' : 'p2p'
+}
+
+export const CONTENT_BACKEND = resolveContentBackend()
 
 export const DEFAULT_USER_COLOR = '#36c5f0'
 

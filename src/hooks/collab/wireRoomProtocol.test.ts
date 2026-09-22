@@ -41,6 +41,9 @@ function noopHandlers(): RoomProtocolHandlers {
     onPeerStream: vi.fn(),
     onPeerCallEnd: vi.fn(),
     onInitialPeers: vi.fn(),
+    onContentPeerJoin: vi.fn(),
+    onContentPeerLeave: vi.fn(),
+    onInitialContentPeers: vi.fn(),
     onChannel: vi.fn(),
     onReaction: vi.fn(),
   }
@@ -85,6 +88,10 @@ describe('wireRoomProtocol identity handling', () => {
     expect(handlers.onChat).toHaveBeenCalledTimes(1)
     const received = (handlers.onChat as ReturnType<typeof vi.fn>).mock.calls[0][0] as ChatPayload
     expect(received.senderId).toBe('mallory-peer-id')
+    expect(handlers.onChat).toHaveBeenCalledWith(
+      expect.anything(),
+      { peerId: 'mallory-peer-id' }
+    )
   })
 
   it('stamps the authenticated peer id over spoofed file metadata', () => {

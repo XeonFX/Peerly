@@ -23,6 +23,10 @@ export function useRelayWorkspacePresence(options: {
   const { enabled, workspaceId, workspaceSecret, selfUserId, profile } = options
   const [peers, setPeers] = useState<Peer[]>([])
   useEffect(() => {
+    if (PUBLIC_NETWORK_ENV.VITE_SIGNALING === 'durable-objects') {
+      setPeers([])
+      return
+    }
     if (!enabled || !workspaceSecret || !selfUserId) {
       setPeers([])
       return

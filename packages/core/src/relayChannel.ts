@@ -1,11 +1,19 @@
 import type { RelayCoordinator } from './coordination.js'
 
-export type RelayChannelPeer = { memberId: string }
+export type RelayChannelPeer = {
+  memberId: string
+  userId?: string
+  deviceKeyId?: string
+}
 export type RelayChannelPeers = Record<string, RelayChannelPeer>
 
 export type RelayChannelAction<T> = {
   send(value: T, options?: { target?: string }): Promise<void>
-  onMessage: ((value: T, meta: { peerId: string }) => void) | null
+  onMessage: ((value: T, meta: {
+    peerId: string
+    userId?: string
+    deviceKeyId?: string
+  }) => void) | null
 }
 
 export type RelayChannelRoom = {

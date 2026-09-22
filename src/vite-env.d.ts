@@ -25,4 +25,5 @@ interface ImportMetaEnv {
   readonly VITE_OIDC_ISSUER: string
   readonly VITE_OIDC_LABEL: string
   readonly VITE_E2E_AUTH_BYPASS: string
+  readonly VITE_CONTENT_BACKEND?: 'durable-objects' | 'p2p'
 }

@@ -1,4 +1,5 @@
 import type { joinRoom } from '@trystero-p2p/nostr'
+import type { RelayChannelAction, RelayChannelRoom } from '@peerly/core'
 import { ACTION_IDS } from '../../protocol/types'
 import type {
   ChannelPayload,
@@ -14,9 +15,15 @@ import type { UserProfile } from '../../types'
 
 type Room = ReturnType<typeof joinRoom>
 
+export type TransportIdentity = {
+  peerId: string
+  userId?: string
+  deviceKeyId?: string
+}
+
 export type RoomProtocolHandlers = {
-  onProfile: (profile: UserProfile, peerId: string) => void
-  onChat: (payload: ChatPayload) => void
+  onProfile: (profile: UserProfile, peerId: string, identity?: TransportIdentity) => void
+  onChat: (payload: ChatPayload, identity?: TransportIdentity) => void
   onFileProgress: (percent: number, peerId: string, meta: FileMetaPayload) => void
   onFile: (data: ArrayBuffer, meta: FileMetaPayload) => void
   onFileMeta: (meta: FileMetaPayload, peerId: string) => void
@@ -27,8 +34,15 @@ export type RoomProtocolHandlers = {
   onPeerStream: (stream: MediaStream, peerId: string) => void
   onPeerCallEnd: (peerId: string) => void
   onInitialPeers: (peerIds: string[]) => void
+  onContentPeerJoin: (peerId: string) => void
+  onContentPeerLeave: (peerId: string) => void
+  onInitialContentPeers: (peerIds: string[]) => void
   onChannel: (payload: ChannelPayload, peerId: string) => void
-  onReaction: (payload: ReactionPayload, peerId: string) => void
+  onReaction: (
+    payload: ReactionPayload,
+    peerId: string,
+    identity?: TransportIdentity
+  ) => void
 }
 
 export type RoomProtocolBindings = {
@@ -80,19 +94,29 @@ export type RoomProtocolBindings = {
 export function wireRoomProtocol(
   room: Room,
   handlers: RoomProtocolHandlers,
-  bindings: RoomProtocolBindings
+  bindings: RoomProtocolBindings,
+  options?: { contentRoom?: RelayChannelRoom }
 ) {
-  const chatAction = room.makeAction<ChatPayload>(ACTION_IDS.chat)
-  const profileAction = room.makeAction<UserProfile>(ACTION_IDS.profile)
+  const contentRoom = options?.contentRoom
+  const chatAction: RelayChannelAction<ChatPayload> = contentRoom
+    ? contentRoom.makeAction<ChatPayload>(ACTION_IDS.chat)
+    : room.makeAction<ChatPayload>(ACTION_IDS.chat)
+  const profileAction: RelayChannelAction<UserProfile> = contentRoom
+    ? contentRoom.makeAction<UserProfile>(ACTION_IDS.profile)
+    : room.makeAction<UserProfile>(ACTION_IDS.profile)
   const fileAction = room.makeAction<ArrayBuffer>(ACTION_IDS.file)
   const fileMetaAction = room.makeAction<FileMetaPayload>(ACTION_IDS.fileMeta)
   const historyAction = room.makeAction<HistoryRequest, HistoryEntry[]>(ACTION_IDS.historySync, {
     kind: 'request',
     onRequest: data => handlers.onHistoryRequest(data.channelId),
   })
-  const channelAction = room.makeAction<ChannelPayload>(ACTION_IDS.channelSync)
+  const channelAction: RelayChannelAction<ChannelPayload> = contentRoom
+    ? contentRoom.makeAction<ChannelPayload>(ACTION_IDS.channelSync)
+    : room.makeAction<ChannelPayload>(ACTION_IDS.channelSync)
   const fileRequestAction = room.makeAction<string[]>(ACTION_IDS.fileRequest)
-  const reactionAction = room.makeAction<ReactionPayload>(ACTION_IDS.reaction)
+  const reactionAction: RelayChannelAction<ReactionPayload> = contentRoom
+    ? contentRoom.makeAction<ReactionPayload>(ACTION_IDS.reaction)
+    : room.makeAction<ReactionPayload>(ACTION_IDS.reaction)
   const callEndAction = room.makeAction<true>(ACTION_IDS.callEnd)
 
   bindings.bindChatAction(chatAction)
@@ -105,16 +129,16 @@ export function wireRoomProtocol(
   bindings.bindReactionAction(reactionAction)
   bindings.bindCallEndAction(callEndAction)
 
-  profileAction.onMessage = (peerProfile, { peerId }) => {
-    handlers.onProfile(peerProfile, peerId)
+  profileAction.onMessage = (peerProfile, meta) => {
+    handlers.onProfile(peerProfile, meta.peerId, meta)
   }
 
   // `peerId` is authenticated by the transport; anything in the payload is
   // attacker-controlled. Stamp the real sender over whatever was claimed so a
   // peer cannot post as someone else. Honest peers already send senderId ===
   // their own selfId, so this is a no-op for them.
-  chatAction.onMessage = (payload, { peerId }) => {
-    handlers.onChat({ ...payload, senderId: peerId })
+  chatAction.onMessage = (payload, meta) => {
+    handlers.onChat({ ...payload, senderId: meta.peerId }, meta)
   }
 
   fileAction.onReceiveProgress = (percent, { peerId, metadata }) => {
@@ -139,8 +163,8 @@ export function wireRoomProtocol(
     handlers.onFileRequest(fileIds, peerId)
   }
 
-  reactionAction.onMessage = (payload, { peerId }) => {
-    handlers.onReaction({ ...payload, actorId: peerId }, peerId)
+  reactionAction.onMessage = (payload, meta) => {
+    handlers.onReaction({ ...payload, actorId: meta.peerId }, meta.peerId, meta)
   }
 
   // The payload carries nothing; the transport-authenticated peerId is the
@@ -151,7 +175,7 @@ export function wireRoomProtocol(
   }
 
   room.onPeerJoin = peerId => {
-    bindings.broadcastProfile(peerId)
+    if (!contentRoom) bindings.broadcastProfile(peerId)
     handlers.onPeerJoin(peerId)
   }
 
@@ -167,6 +191,18 @@ export function wireRoomProtocol(
 
   const peerIds = Object.keys(room.getPeers())
   handlers.onInitialPeers(peerIds)
+  if (contentRoom) {
+    contentRoom.onPeerJoin = peerId => {
+      bindings.broadcastProfile(peerId)
+      handlers.onContentPeerJoin(peerId)
+    }
+    contentRoom.onPeerLeave = peerId => {
+      handlers.onContentPeerLeave(peerId)
+    }
+    handlers.onInitialContentPeers(Object.keys(contentRoom.getPeers()))
+  } else {
+    handlers.onInitialContentPeers([])
+  }
 
   return () => {
     profileAction.onMessage = null
@@ -182,6 +218,10 @@ export function wireRoomProtocol(
     room.onPeerJoin = null
     room.onPeerLeave = null
     room.onPeerStream = null
+    if (contentRoom) {
+      contentRoom.onPeerJoin = null
+      contentRoom.onPeerLeave = null
+    }
   }
 }
 

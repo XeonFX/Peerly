@@ -1,51 +1,32 @@
-import {
-  addPeopleEntry,
-  createDmCredentialStore,
-  createPeopleAttestation,
-  emptyPeopleList,
-  isSubjectListed,
-  loadPeopleList,
-  ownEntriesNewestFirst,
-  removePeopleEntry,
-  savePeopleList,
-  type PeopleAttestation,
-  type PeopleList,
-} from '@peerly/core'
-import type { DeviceIdentity } from './deviceIdentity'
-
 /**
- * Personal friends list for Peerly. Built on `@peerly/core` peopleList with
- * scheme `peerly-friend-v1`. Entries capture a verified email from the
- * workspace identity handshake so the workspace creator can invite them
- * without retyping.
+ * This app's friends list.
+ *
+ * The store itself lives in `@peerly/core`; what stays here is what is
+ * genuinely this product's: the attestation scheme and storage keys (which
+ * must differ from the other app's, or entries would cross-verify), and the
+ * verified email an entry carries so a workspace invite needs no retyping.
  */
+import { createFriendsStore, type Friend, type PeopleList } from '@peerly/core'
+import type { DeviceIdentity } from './deviceIdentity'
+import { APP_STORAGE_SCOPE } from '../config'
 
-const SCHEME = 'peerly-friend-v1'
-const STORAGE_KEY = 'peerly-friends-v1'
-const SUBS_KEY = 'peerly-friends-subs-v1'
-const dmCredentials = createDmCredentialStore('peerly-dm-credentials-v1')
+export type { Friend }
 
-export type Friend = PeopleAttestation
+const store = createFriendsStore({
+  scheme: `${APP_STORAGE_SCOPE}-friend-v1`,
+  storageKey: `${APP_STORAGE_SCOPE}-friends-v1`,
+  subscriptionsKey: `${APP_STORAGE_SCOPE}-friends-subs-v1`,
+  credentialsKey: `${APP_STORAGE_SCOPE}-dm-credentials-v1`,
+})
 
-export function loadFriends(): PeopleList {
-  return loadPeopleList(STORAGE_KEY, SUBS_KEY)
-}
-
-export function saveFriends(list: PeopleList): void {
-  savePeopleList(list, STORAGE_KEY, SUBS_KEY)
-}
-
-export function emptyFriends(): PeopleList {
-  return emptyPeopleList()
-}
-
-export function listFriends(list: PeopleList): Friend[] {
-  return ownEntriesNewestFirst(list)
-}
-
-export function isFriend(list: PeopleList, userId: string | undefined): boolean {
-  return isSubjectListed(list, userId)
-}
+export const loadFriends = store.load
+export const saveFriends = store.save
+export const emptyFriends = store.empty
+export const listFriends = store.list
+export const isFriend = store.has
+export const removeFriend = store.remove
+export const dmSecretForFriend = store.dmSecretFor
+export const dmDeviceKeyForFriend = store.deviceKeyFor
 
 export async function addFriend(
   list: PeopleList,
@@ -58,48 +39,25 @@ export async function addFriend(
     dmSecret?: string
     subjectDeviceKeyId?: string
   }
-): Promise<Friend> {
-  const entry = await createPeopleAttestation(identity, SCHEME, {
-    kind: 'friend',
+): Promise<Friend | null> {
+  return store.add(list, identity, {
     ownerUserId: input.ownerUserId,
     subjectUserId: input.subjectUserId,
     subjectName: input.subjectName,
-    subjectEmail: input.subjectEmail,
+    // Signed alongside the rest of the entry, so the address cannot be edited
+    // after the fact without invalidating the attestation.
+    extraFields: { subjectEmail: input.subjectEmail },
+    ...(input.dmSecret ? { dmSecret: input.dmSecret } : {}),
+    ...(input.subjectDeviceKeyId ? { subjectDeviceKeyId: input.subjectDeviceKeyId } : {}),
   })
-  if (input.dmSecret && input.subjectDeviceKeyId) {
-    dmCredentials.set(input.subjectUserId, {
-      secret: input.dmSecret,
-      deviceKeyId: input.subjectDeviceKeyId,
-    })
-  }
-  addPeopleEntry(list, entry)
-  saveFriends(list)
-  return entry
 }
 
 export function friendDmSecret(friend: Friend | undefined): string | undefined {
-  return friend ? dmCredentials.get(friend.subjectUserId)?.secret : undefined
+  return friend ? dmSecretForFriend(loadFriends(), friend.subjectUserId) : undefined
 }
 
 export function friendDmDeviceKey(friend: Friend | null | undefined): string | undefined {
-  return friend ? dmCredentials.get(friend.subjectUserId)?.deviceKeyId : undefined
-}
-
-export function dmSecretForFriend(list: PeopleList, userId: string): string | undefined {
-  return isFriend(list, userId) ? dmCredentials.get(userId)?.secret : undefined
-}
-
-export function dmDeviceKeyForFriend(list: PeopleList, userId: string): string | undefined {
-  return isFriend(list, userId) ? dmCredentials.get(userId)?.deviceKeyId : undefined
-}
-
-export function removeFriend(list: PeopleList, subjectUserId: string): boolean {
-  const changed = removePeopleEntry(list, subjectUserId)
-  if (changed) {
-    dmCredentials.remove(subjectUserId)
-    saveFriends(list)
-  }
-  return changed
+  return friend ? dmDeviceKeyForFriend(loadFriends(), friend.subjectUserId) : undefined
 }
 
 /** Friends that carry an email and are not already on the allow-list. */
@@ -110,6 +68,6 @@ export function inviteableFriendEmails(
   const invited = new Set(alreadyInvited.map(email => email.trim().toLowerCase()))
   return listFriends(list).filter(friend => {
     const email = friend.subjectEmail?.trim().toLowerCase()
-    return !!email && email.includes('@') && !invited.has(email)
+    return Boolean(email) && email!.includes('@') && !invited.has(email!)
   })
 }

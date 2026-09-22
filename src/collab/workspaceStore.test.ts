@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   forgetWorkspace,
   loadWorkspaces,
+  migrateWorkspaceRouteIds,
   mostRecentlyOpenedWorkspace,
   rememberWorkspace,
   workspacesForEmail,
@@ -61,6 +62,17 @@ describe('workspaceStore', () => {
     rememberWorkspace(workspace('ws1', ['alice@example.com']))
 
     expect(loadWorkspaces()).toHaveLength(1)
+  })
+
+  it('backfills stable route identities for remembered legacy workspaces', async () => {
+    rememberWorkspace(workspace('legacy', ['alice@example.com']))
+
+    await migrateWorkspaceRouteIds()
+    const first = loadWorkspaces()[0].workspaceRouteId
+    await migrateWorkspaceRouteIds()
+
+    expect(first).toMatch(/^[a-f0-9]{32}$/)
+    expect(loadWorkspaces()[0].workspaceRouteId).toBe(first)
   })
 
   it('keeps workspace order stable while tracking the most recently opened one', () => {

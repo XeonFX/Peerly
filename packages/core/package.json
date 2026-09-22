@@ -1,7 +1,7 @@
 {
   "name": "@peerly/core",
-  "version": "1.13.1",
-  "description": "Peerly's P2P room core — join encrypted Trystero rooms by high-entropy room codes, with device identity, signing, media, attention, and signed people lists",
+  "version": "1.15.0",
+  "description": "Reusable encrypted realtime core with authenticated Durable Objects, P2P rooms, device identity, signing, media, and presence",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -33,8 +33,44 @@
     "./worker/google-auth": {
       "default": "./worker/googleAuth.mjs"
     },
+    "./worker/realtime": {
+      "default": "./worker/realtime/index.mjs"
+    },
     "./server/coordination": {
       "default": "./server/coordination.mjs"
+    },
+    "./realtime/protocol": {
+      "types": "./dist/protocol/index.d.ts",
+      "default": "./dist/protocol/index.js"
+    },
+    "./realtime/domain": {
+      "types": "./dist/domain/index.d.ts",
+      "default": "./dist/domain/index.js"
+    },
+    "./realtime/ports": {
+      "types": "./dist/ports/index.d.ts",
+      "default": "./dist/ports/index.js"
+    },
+    "./realtime/gateway": {
+      "types": "./dist/adapters/durableObject/gatewayRuntime.d.ts",
+      "default": "./dist/adapters/durableObject/gatewayRuntime.js"
+    },
+    "./realtime/gateway-storage": {
+      "types": "./dist/adapters/durableObject/sqlGatewayStorage.d.ts",
+      "default": "./dist/adapters/durableObject/sqlGatewayStorage.js"
+    },
+    "./realtime/app": {
+      "types": "./dist/app/index.d.ts",
+      "default": "./dist/app/index.js"
+    },
+    "./worker/realtime/gateway": {
+      "default": "./worker/realtime/gateway/userGateway.mjs"
+    },
+    "./worker/realtime/channel": {
+      "default": "./worker/realtime/gateway/authorizedChannel.mjs"
+    },
+    "./worker/realtime/ephemeral-channel": {
+      "default": "./worker/realtime/gateway/ephemeralChannel.mjs"
     }
   },
   "files": [
@@ -42,6 +78,7 @@
     "server",
     "worker",
     "scripts/check-vite-bundle.mjs",
+    "scripts/turn-smoke.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -77,6 +114,7 @@
     "webrtc",
     "p2p",
     "trystero",
+    "durable-objects",
     "peerly",
     "room",
     "nostr"

@@ -1,21 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getGoogleAuthBridgeOrigin } from './googleAuthBridge'
 
-describe('getGoogleAuthBridgeOrigin', () => {
-  afterEach(() => vi.unstubAllEnvs())
+async function client() {
+  const module = await import('./googleAuth')
+  return module.googleSignInClient
+}
 
-  it('uses the configured build origin', () => {
+describe('googleSignInClient', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  it('uses the configured build origin', async () => {
     vi.stubEnv('VITE_GOOGLE_AUTH_BRIDGE_ORIGIN', 'https://auth.example.test')
-    expect(getGoogleAuthBridgeOrigin()).toBe('https://auth.example.test')
+    expect((await client()).bridgeOrigin()).toBe('https://auth.example.test')
   })
 
-  it('keeps direct sign-in when no bridge is configured', () => {
+  it('keeps direct sign-in when no bridge is configured', async () => {
     vi.stubEnv('VITE_GOOGLE_AUTH_BRIDGE_ORIGIN', '')
-    expect(getGoogleAuthBridgeOrigin()).toBeUndefined()
+    expect((await client()).bridgeOrigin()).toBeUndefined()
   })
 
-  it('keeps production sign-in direct when the configured bridge is the current origin', () => {
+  it('keeps production sign-in direct when the configured bridge is the current origin', async () => {
     vi.stubEnv('VITE_GOOGLE_AUTH_BRIDGE_ORIGIN', 'https://peerly.cc')
-    expect(getGoogleAuthBridgeOrigin('https://peerly.cc')).toBeUndefined()
+    expect((await client()).bridgeOrigin('https://peerly.cc')).toBeUndefined()
   })
 })

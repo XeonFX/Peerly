@@ -22,6 +22,7 @@ export type IdentityHandshakeDeps = {
   identity: DeviceIdentity
   getAttestation: () => Promise<Attestation>
   creatorKeyId: DeviceKeyId
+  workspaceSecret?: string
   /** Injectable for tests — resolves provider config by id. */
   resolveProvider?: (providerId: string) => IdentityProvider | undefined
   /** Injectable for tests; overrides JWKS fetch for the google provider. */
@@ -152,7 +153,7 @@ export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandsh
       )
     }
 
-    if (!(await verifyAllowList(theirs.allowList, deps.creatorKeyId))) {
+    if (!(await verifyAllowList(theirs.allowList, deps.creatorKeyId, deps.workspaceSecret))) {
       deny('allow-list signature does not match this workspace')
     }
     const known = deps.getKnownAllowList?.()

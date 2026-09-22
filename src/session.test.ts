@@ -7,6 +7,7 @@ import {
   loadIdToken,
   loadPersistedSession,
   loadSession,
+  migrateSessionWorkspaceRouteId,
   saveIdCredentials,
   saveSession,
 } from './session'
@@ -24,6 +25,7 @@ const ID_TOKEN_KEY = 'peerly-id-token'
 
 const TEST_INVITE = {
   workspaceId: 'abc123workspaceid000000000001',
+  workspaceRouteId: '0123456789abcdef0123456789abcdef',
   workspaceName: 'My Team',
   creatorKeyId: 'P-256:x:y',
   allowList: { emails: ['alice@example.com'], signedAt: 1, signature: 'sig' },
@@ -106,6 +108,7 @@ describe('session persistence', () => {
 
     expect(loadSession()).toEqual({
       workspaceId: TEST_INVITE.workspaceId,
+      workspaceRouteId: TEST_INVITE.workspaceRouteId,
       workspaceName: TEST_INVITE.workspaceName,
       creatorKeyId: TEST_INVITE.creatorKeyId,
       allowList: TEST_INVITE.allowList,
@@ -116,6 +119,18 @@ describe('session persistence', () => {
       avatarId: undefined,
     })
     expect(loadIdentityProvider()).toBe('google')
+  })
+
+  it('backfills a stable public route id without exposing the workspace secret', async () => {
+    const legacy = { ...createSessionFromInvite(TEST_INVITE, 'alice@e2e.test', 'google') }
+    delete legacy.workspaceRouteId
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(legacy))
+
+    await migrateSessionWorkspaceRouteId()
+
+    const migrated = loadPersistedSession()
+    expect(migrated?.workspaceRouteId).toMatch(/^[a-f0-9]{32}$/)
+    expect(migrated?.workspaceRouteId).not.toContain(TEST_INVITE.workspaceId)
   })
 })
 

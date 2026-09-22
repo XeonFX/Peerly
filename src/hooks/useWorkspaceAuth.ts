@@ -65,6 +65,13 @@ export function useWorkspaceAuth(
 
   useEffect(() => {
     manager?.setAllowList(session?.allowList ?? manager.getAllowList())
+    let cancelled = false
+    if (manager && !manager.getAllowList().scope) {
+      void manager.ensureScopedAllowList().then(list => {
+        if (!cancelled && list.scope) onAllowListUpdatedRef.current?.(list)
+      }).catch(() => { /* Leave the legacy policy intact if signing is unavailable. */ })
+    }
+    return () => { cancelled = true }
   }, [manager, session?.allowList])
 
   const peerUserIdsRef = useRef(new Map<string, string>())

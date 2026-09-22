@@ -4,7 +4,7 @@ import {
   useMediaSlice,
   useProfileSlice,
 } from '../../context/useCollabSlices'
-import type { Channel } from '../../types'
+import type { Channel, Message, Peer } from '../../types'
 import { Avatar } from '../Avatar'
 import { MessageInput } from '../MessageInput'
 import { MessageList } from '../MessageList'
@@ -13,8 +13,10 @@ import { SyncStatusBar } from '../SyncStatusBar'
 import { Icon } from '../Icon'
 import { RELAY_OFFLINE_ERROR } from '../../collab/constants'
 import { startIncomingCallRingtone } from '../../collab/attentionSound'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useI18n } from '../../i18n'
+import type { SenderInfo } from '../../utils/senderDirectory'
+import type { WorkspaceMemberSelection } from '../WorkspaceMemberPopover'
 
 type Props = {
   channel: Channel
@@ -24,6 +26,12 @@ type Props = {
   onOpenSidebar?: () => void
   /** Opens workspace-wide message search. */
   onOpenSearch: () => void
+  resolvePeerContact?: (
+    peerId: string
+  ) => { userId: string; email: string; name: string } | undefined
+  isFriend: (userId: string | undefined) => boolean
+  canMessageUser: (userId: string | undefined) => boolean
+  onOpenMember: (member: WorkspaceMemberSelection) => void
 }
 
 export function ChannelPanel({
@@ -32,8 +40,13 @@ export function ChannelPanel({
   showFiles,
   onOpenSidebar,
   onOpenSearch,
+  resolvePeerContact,
+  isFriend,
+  canMessageUser,
+  onOpenMember,
 }: Props) {
   const { tr } = useI18n()
+  const [replyTarget, setReplyTarget] = useState<{ id: string; author: string; text: string } | null>(null)
   const { connectionError, connectionNotice, isReady } = useConnectionSlice()
   const { messages, transfers, sendMessage, editMessage, deleteMessage, toggleReaction, sendFiles, requestFile, markFileNsfw, syncProgress, fileError, soundsEnabled } = useChatSlice()
   const {
@@ -78,6 +91,36 @@ export function ChannelPanel({
     !!peerStreams[incomingCallPeerId] &&
     !peerStreams[incomingCallPeerId]!.getVideoTracks().some(track => track.readyState !== 'ended')
 
+  const selectionForPeer = (peer: Peer): WorkspaceMemberSelection => {
+    const contact = resolvePeerContact?.(peer.id)
+    return {
+      kind: 'peer',
+      peer,
+      contact,
+      friend: contact ? isFriend(contact.userId) : false,
+      canMessage: contact ? canMessageUser(contact.userId) : false,
+    }
+  }
+
+  const openMessageAuthor = (message: Message, sender: SenderInfo, ownMessage: boolean) => {
+    if (ownMessage) {
+      onOpenMember({ kind: 'self', profile })
+      return
+    }
+    const peer = peers.find(candidate =>
+      candidate.id === message.senderId ||
+      Boolean(message.senderUserId && candidate.userId === message.senderUserId)
+    ) ?? {
+      id: message.senderId,
+      userId: message.senderUserId,
+      name: sender.name,
+      color: sender.color,
+      avatar: sender.avatar,
+      presenceOnly: true,
+    }
+    onOpenMember(selectionForPeer(peer))
+  }
+
   useEffect(() => {
     if (!soundsEnabled || !incomingCallPeerId || inCall) return
     return startIncomingCallRingtone()
@@ -105,12 +148,20 @@ export function ChannelPanel({
           >
             {channel.kind === 'dm' ? (
               <>
-                <Avatar
-                  name={title}
-                  color={dmPeer?.color ?? '#ababad'}
-                  avatar={dmAvatar}
-                  size="md"
-                />
+                <button
+                  type="button"
+                  className="h-10 w-10 shrink-0 rounded-lg outline-none ring-primary/45 focus-visible:ring-2"
+                  onClick={() => dmPeer && onOpenMember(selectionForPeer(dmPeer))}
+                  aria-label={tr('Open {name} profile', { name: title })}
+                  disabled={!dmPeer}
+                >
+                  <Avatar
+                    name={title}
+                    color={dmPeer?.color ?? '#ababad'}
+                    avatar={dmAvatar}
+                    size="md"
+                  />
+                </button>
                 <span className="dm-title truncate">{title}</span>
               </>
             ) : (
@@ -293,6 +344,8 @@ export function ChannelPanel({
         onEditMessage={editMessage}
         onDeleteMessage={deleteMessage}
         onToggleReaction={toggleReaction}
+        onReplyMessage={setReplyTarget}
+        onOpenAuthor={openMessageAuthor}
       />
       <MessageInput
         channelName={title}
@@ -300,6 +353,8 @@ export function ChannelPanel({
         onSend={sendMessage}
         onFiles={sendFiles}
         disabled={!isReady}
+        replyTarget={replyTarget}
+        onCancelReply={() => setReplyTarget(null)}
       />
     </>
   )
