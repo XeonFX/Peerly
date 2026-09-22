@@ -68,8 +68,9 @@ try {
     throw new Error('Served CSP does not match public/_headers')
   }
 
-  // Wait for the actual React shell; third-party auth requests may stay open.
-  await page.getByTestId('identity-login').waitFor({ state: 'visible' })
+  // Wait for the rendered auth state, including builds without an OIDC provider.
+  // Third-party auth requests may stay open, so network idleness is not readiness.
+  await page.getByTestId(/^(identity-login|no-identity-provider)$/).waitFor({ state: 'visible' })
   const startupViolations = await page.evaluate(() => window.__peerlyCspViolations)
   if (startupViolations.length > 0) {
     throw new Error(`Application violates CSP: ${JSON.stringify(startupViolations)}`)
@@ -97,10 +98,10 @@ try {
   // still boots with the network disabled.
   await page.evaluate(() => navigator.serviceWorker.ready)
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.getByTestId('identity-login').waitFor({ state: 'visible' })
+  await page.getByTestId(/^(identity-login|no-identity-provider)$/).waitFor({ state: 'visible' })
   await page.context().setOffline(true)
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.getByTestId('identity-login').waitFor({ state: 'visible' })
+  await page.getByTestId(/^(identity-login|no-identity-provider)$/).waitFor({ state: 'visible' })
   if (!(await page.getByText('Peerly', { exact: true }).first().isVisible())) {
     throw new Error('PWA offline shell did not render Peerly')
   }
