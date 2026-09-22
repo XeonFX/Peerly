@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useMessageOutbox } from './useMessageOutbox'
 import {
   ALLOWED_REACTIONS,
   DEFAULT_HISTORY_CAP,
@@ -78,6 +79,7 @@ export function useGlobalDmChat({
   const friendUserIdRef = useLatest(friendUserId)
   const friendDeviceKeyIdRef = useLatest(friendDeviceKeyId)
   const friendNameRef = useLatest(friendName)
+  const roomCodeRef = useLatest(roomCode)
 
   const [messages, setMessages] = useState<GlobalDmMessage[]>([])
   const [reactions, setReactions] = useState<GlobalDmReaction[]>([])
@@ -265,7 +267,7 @@ export function useGlobalDmChat({
   }, [roomCode, messages, reactions])
 
   const sendersRef = useRef<{
-    chat: (msg: GlobalDmMessage, to?: string) => Promise<void>
+    chat: (msg: GlobalDmMessage, to?: string, messageId?: string) => Promise<void>
     reaction: (reaction: GlobalDmReaction, to?: string) => Promise<void>
     file: (data: ArrayBuffer, attachment: NonNullable<GlobalDmMessage['attachment']>, to?: string) => Promise<void>
     fileReq: (id: string, to: string) => void
@@ -349,7 +351,7 @@ export function useGlobalDmChat({
     }
 
     sendersRef.current = {
-      chat: (msg, to) => chatAction.send(msg, to ? { target: to } : undefined),
+      chat: (msg, to, messageId) => chatAction.send(msg, { ...(messageId ? { messageId } : {}), ...(to ? { target: to } : {}) }),
       reaction: (reaction, to) =>
         reactionAction.send(reaction, to ? { target: to } : undefined),
       file: (data, attachment, to) =>
@@ -513,12 +515,31 @@ export function useGlobalDmChat({
     }
   }, [contentRoom, durableRoom, room, roomCode, ringFriendRef, profileRef, friendUserIdRef, friendNameRef, verifyWire, verifyReaction, materializeAttachment])
 
+  const outboxScope = profile?.userId && roomCode ? `dm:${profile.userId}:${roomCode}` : null
+  const outbox = useMessageOutbox<GlobalDmMessage>(outboxScope, Boolean(contentRoom && roomCode), async wire => {
+    const sender = sendersRef.current
+    if (!sender || !roomCode) throw new Error('Conversation is connecting')
+    await sender.chat(wire, undefined, wire.id)
+    // A send may finish after navigation. Persist its original conversation;
+    // never merge the currently open conversation into that history.
+    const stillCurrent = roomCodeRef.current === roomCode
+    const nextMessages = upsertGlobalDmMessage(mergeGlobalDmMessages(loadGlobalDmHistory(roomCode), stillCurrent ? messagesRef.current : []), wire)
+    saveGlobalDmHistory(roomCode, nextMessages, stillCurrent ? reactionsRef.current : loadGlobalDmReactions(roomCode))
+    if (!loadGlobalDmHistory(roomCode).some(message => message.id === wire.id)) throw new Error('Could not save local history')
+    if (!stillCurrent) return
+    messagesRef.current = nextMessages
+    setMessages(nextMessages)
+    recordSyncActivity({ direction: 'sent', kind: 'message',
+      peer: { userId: friendUserIdRef.current ?? undefined, name: friendNameRef.current ?? undefined, relationship: 'friend' },
+      itemCount: 1, bytes: syncPayloadBytes(wire), summary: 'Direct message' })
+  })
+  const enqueueMessage = outbox.enqueue
   const sendMessage = useCallback(
     async (text: string) => {
       const me = profileRef.current
       const id = identityRef.current
       const code = roomCode
-      if (!me || !id || !code) return
+      if (!me || !id || !code) throw new Error('Conversation is not ready')
       const trimmed = text.trim().slice(0, MAX_TEXT)
       if (!trimmed) return
       try {
@@ -534,36 +555,15 @@ export function useGlobalDmChat({
         })
         const wire: GlobalDmMessage = signed
         wire.deviceGrant = findAuthorizingDeviceGrant(me.userId, wire.deviceKeyId)
-        if (sendersRef.current) {
-          await sendersRef.current.chat(wire)
-        } else {
-          if (pendingOutboundRoomRef.current !== code) {
-            pendingOutboundRoomRef.current = code
-            pendingOutboundRef.current = []
-          }
-          pendingOutboundRef.current = upsertGlobalDmMessage(
-            pendingOutboundRef.current,
-            wire
-          )
-        }
-        const nextMessages = upsertGlobalDmMessage(messagesRef.current, wire)
-        messagesRef.current = nextMessages
-        setMessages(nextMessages)
-        // The server-backed path reaches local history only after its durable
-        // ack. The pre-room popup path is held in the scoped outbound queue.
-        saveGlobalDmHistory(code, nextMessages, reactionsRef.current)
-        recordSyncActivity({
-          direction: 'sent', kind: 'message',
-          peer: { userId: friendUserIdRef.current ?? undefined, name: friendNameRef.current ?? undefined, relationship: 'friend' },
-          itemCount: 1, bytes: syncPayloadBytes(wire), summary: 'Direct message',
-        })
+        await enqueueMessage(wire)
         ringFriendRef.current?.('message', trimmed)
       } catch (err) {
         console.error('Failed to send DM:', err)
         setError('Could not send message.')
+        throw err
       }
     },
-    [profileRef, identityRef, roomCode, ringFriendRef, friendUserIdRef, friendNameRef]
+    [profileRef, identityRef, roomCode, ringFriendRef, enqueueMessage]
   )
 
   const sendFiles = useCallback(async (files: File[]) => {
@@ -719,11 +719,13 @@ export function useGlobalDmChat({
     messages,
     peerCount,
     partnerInRoom: peerCount > 0,
-    error,
+    error: outbox.error ?? error,
     reactions,
     attachmentUrls,
     transfers,
     sendMessage,
+    pendingMessages: outbox.entries.map(entry => ({ id: entry.id, text: entry.payload.text, failed: entry.failed })),
+    retryPendingMessages: outbox.retry,
     sendFiles,
     toggleReaction,
     editMessage: (messageId: string, text: string) => reviseMessage(messageId, text),

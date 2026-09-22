@@ -1,12 +1,15 @@
 import { useCallback, useMemo, useRef } from 'react'
+import type { RelayChannelAction } from '@peerly/core'
+
+type SendOptions = Parameters<RelayChannelAction<unknown>['send']>[1]
 
 type SendableAction<T> = {
-  send: (data: T, options?: { target?: string }) => Promise<void>
+  send: (data: T, options?: SendOptions) => Promise<void>
 }
 
 type PendingAction<T> = {
   data: T
-  options?: { target?: string }
+  options?: SendOptions
   resolve: () => void
   reject: (error: unknown) => void
 }
@@ -46,7 +49,7 @@ export function useRoomAction<T>(options?: { queueWhenUnbound?: boolean }) {
   }, [])
 
   const send = useCallback(
-    async (data: T, options?: { target?: string }) => {
+    async (data: T, options?: SendOptions) => {
       if (!actionRef.current) {
         if (!queueWhenUnbound) return
         return new Promise<void>((resolve, reject) => {

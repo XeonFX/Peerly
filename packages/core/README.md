@@ -91,6 +91,32 @@ command and Durable Object route; passing a high-entropy `encryptionSecret`
 encrypts every action payload with browser-side AES-GCM before storage. Product
 schemas and Durable Object classes remain in the consumer repository.
 
+Use `send(payload, { messageId })` to retry the same logical message after a
+lost acknowledgement; use a new transport ID for each edit. For encrypted
+durable metadata, a channel factory can declare `stateEvents`, and callers
+send `{ state: { key, revision, deleted } }`. The transport hides entity keys
+with a workspace-secret-derived digest. Current state and tombstones are kept
+outside rolling event retention; the 1,000-entity limit rejects additions
+instead of evicting existing state. Existing encrypted metadata is migrated
+without needing its plaintext.
+
+Both channel factories now require authenticated `x-realtime-uid` and
+`x-realtime-sid` headers, `APP_ID`, and `USER_GATEWAYS` with the current gateway
+implementation. The content/lobby bindings are `CONTENT_CHANNELS` and
+`LOBBY_CHANNELS`. They register session subscribers with the account gateway
+so a revocation closes existing sockets before ACK. Deploy the channel and
+gateway implementations together; clients with old socket attachments must
+reconnect.
+
+For public discovery, `createLobbyIdentityClient()` uses same-origin
+`/api/rendezvous/presence` and `/api/rendezvous/verify` endpoints. Mount
+`issueLobbyIdentity` and `verifyLobbyIdentity` from
+`@peerly/core/worker/lobby-identity` with the existing OIDC configuration,
+`RENDEZVOUS_SECRET`, and `RENDEZVOUS_RATE_LIMITER`. The short-lived certificate
+contains only pseudonymous user/device/discovery IDs and expiry. Its issuer
+is trusted to verify the provider token; keep full provider attestations
+inside recipient-encrypted invitations, never public presence.
+
 The hook carries Peerly's hard-won teardown handling: `leave()` is async and
 Nostr batches relay subscriptions across rooms, so a leave landing after the
 next join silently kills that room's signaling. The hook serializes them —

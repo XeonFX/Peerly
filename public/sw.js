@@ -1,5 +1,13 @@
-const CACHE = 'peerly-shell-v2'
+const CACHE = 'peerly-shell-v3'
 const SHELL = ['/', '/site.webmanifest', '/icon-192.png', '/icon-512.png']
+const MAX_RUNTIME_ASSETS = 60
+
+async function cacheAsset(request, response) {
+  const cache = await caches.open(CACHE)
+  await cache.put(request, response)
+  const assets = (await cache.keys()).filter(key => new URL(key.url).pathname.startsWith('/assets/'))
+  await Promise.all(assets.slice(0, Math.max(0, assets.length - MAX_RUNTIME_ASSETS)).map(key => cache.delete(key)))
+}
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)))
@@ -20,6 +28,7 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
+  if (url.pathname.startsWith('/api/')) return
 
   // SPA navigations (including deep links like /workspace/channel/…) fall back
   // to the cached shell when the network is away. The `?? Response.error()`
@@ -28,9 +37,13 @@ self.addEventListener('fetch', event => {
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
-        .then(response => {
-          const copy = response.clone()
-          void caches.open(CACHE).then(cache => cache.put('/', copy))
+        .then(async response => {
+          if (response.ok && response.headers.get('content-type')?.includes('text/html')) {
+            event.waitUntil(caches.open(CACHE).then(cache => cache.put('/', response.clone())).catch(() => {}))
+          } else if (response.status >= 500) {
+            const shell = await caches.match('/')
+            if (shell) return shell
+          }
           return response
         })
         .catch(async () => {
@@ -48,14 +61,17 @@ self.addEventListener('fetch', event => {
     return
   }
 
+  // Only versioned build assets and explicit public shell files belong in
+  // this cache. Never turn arbitrary same-origin GETs into persistent data.
+  if (!url.pathname.startsWith('/assets/') && !SHELL.includes(url.pathname)) return
+
   event.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached
       return fetch(request)
         .then(response => {
           if (response.ok) {
-            const copy = response.clone()
-            void caches.open(CACHE).then(cache => cache.put(request, copy))
+            event.waitUntil(cacheAsset(request, response.clone()).catch(() => {}))
           }
           return response
         })

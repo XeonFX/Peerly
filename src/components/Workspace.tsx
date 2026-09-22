@@ -6,6 +6,7 @@ import {
   getChannelById,
   loadAllWorkspaceChannels,
   moveWorkspaceChannel,
+  nextChannelRevision,
   removeWorkspaceChannel,
   renameWorkspaceChannel,
 } from '../collab/channelStore'
@@ -209,7 +210,7 @@ function WorkspaceShell({
   }
 
   const handleDeleteChannel = async (channelId: string) => {
-    const deletedAt = Date.now()
+    const deletedAt = nextChannelRevision(session.workspaceId, channelId)
     if (!removeWorkspaceChannel(session.workspaceId, channelId, deletedAt)) return
     onChannelsUpdated()
     if (activeChannel === channelId) onChannelSelect(GENERAL_CHANNEL.id)

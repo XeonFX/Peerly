@@ -126,6 +126,23 @@ describe('GatewayRuntime', () => {
   })
 
   describe('session validation', () => {
+    it.each(['revoke', 'expire'])('blocks inbound commands and outbound account events after %s, including after hibernation', async reason => {
+      const runtime = build()
+      const { sid } = runtime.registerSession({ deviceKeyId: DEVICE_A, nowMs, ttlMs: 60_000, uid: ACCOUNT }) as { sid: string }
+      const socket = fakeSocket()
+      await runtime.accept(socket, { uid: ACCOUNT, deviceKeyId: DEVICE_A, sid })
+      const sentBefore = socket.sent.length
+      if (reason === 'revoke') storage.sessions.deleteForDevice(DEVICE_A as DeviceKeyId)
+      else nowMs += 60_001
+      // Only persisted session and attachment data survive a new runtime.
+      const resumed = build()
+      await resumed.onMessage(socket, JSON.stringify({ v: 1, id: 'hello', type: 'hello', sentAt: nowMs, payload: { version: 1 } }))
+      await resumed.emit([{ kind: 'ring', body: { from: 'someone' } }])
+      await runFlushes()
+      expect(socket.sent).toHaveLength(sentBefore)
+      expect(socket.closed).toContainEqual({ code: CLOSE.AUTH_REQUIRED })
+    })
+
     it('accepts a live session and rejects it after the epoch is bumped', () => {
       const runtime = build()
       const { sid, epoch } = runtime.registerSession({

@@ -11,6 +11,7 @@ import { Icon } from './Icon'
 import { Avatar } from './Avatar'
 import { SafeMessageText } from './SafeMessageText'
 import { formatBytes } from '../utils/format'
+import { PendingMessages } from './PendingMessages'
 import type { UserProfile } from '../types'
 import { MessageActions } from './MessageActions'
 import { scrollToLinkedMessage } from '../utils/messageLink'
@@ -34,6 +35,8 @@ type Props = {
   attachmentUrls: Record<string, string>
   transfers: GlobalDmTransfer[]
   onSend: (text: string) => Promise<void>
+  pendingMessages: { id: string; text: string; failed: boolean }[]
+  onRetryPendingMessages: () => Promise<void>
   onFiles: (files: File[]) => Promise<void>
   onToggleReaction: (messageId: string, emoji: string) => Promise<void>
   onEdit: (messageId: string, text: string) => void
@@ -62,6 +65,8 @@ export function GlobalDmChat({
   attachmentUrls,
   transfers,
   onSend,
+  pendingMessages,
+  onRetryPendingMessages,
   onFiles,
   onToggleReaction,
   onEdit,
@@ -75,6 +80,7 @@ export function GlobalDmChat({
   const { clockFormat, dateFormat } = useClockFormat()
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
   const [replyTarget, setReplyTarget] = useState<{ id: string; author: string; text: string } | null>(null)
   const [openActionsId, setOpenActionsId] = useState<string | null>(null)
   const [selectedMember, setSelectedMember] = useState<WorkspaceMemberSelection | null>(null)
@@ -116,9 +122,12 @@ export function GlobalDmChat({
     const message = pendingMessage?.trim()
     if (!message || consumedMessageRef.current === message) return
     consumedMessageRef.current = message
-    onPendingMessageConsumed()
-    void onSend(message)
-  }, [pendingMessage, onPendingMessageConsumed, onSend])
+    void onSend(message).then(onPendingMessageConsumed).catch(() => {
+      setDraft(message)
+      setSendError(tr('Could not save this message for sending. Your draft is still here.'))
+      consumedMessageRef.current = null
+    })
+  }, [pendingMessage, onPendingMessageConsumed, onSend, tr])
 
   const status = partnerInRoom
     ? tr('In chat')
@@ -150,6 +159,9 @@ export function GlobalDmChat({
       await onSend(replyTarget ? buildReplyMessage(replyTarget.author, replyTarget.text, draft) : draft)
       setDraft('')
       setReplyTarget(null)
+      setSendError(null)
+    } catch {
+      setSendError(tr('Could not save this message for sending. Your draft is still here.'))
     } finally {
       setBusy(false)
     }
@@ -368,6 +380,8 @@ export function GlobalDmChat({
         <div ref={bottomRef} />
       </div>
 
+      <PendingMessages entries={pendingMessages} onRetry={onRetryPendingMessages} />
+      {sendError && <p className="px-3 text-sm text-warning" role="alert">{sendError}</p>}
       <form
         className="shrink-0 border-t border-base-300/70 p-3"
         onSubmit={e => void submit(e)}

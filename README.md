@@ -1,6 +1,6 @@
 # Peerly
 
-Encrypted hybrid team collaboration — reliable channels and chat through Cloudflare Durable Objects, with progressive file sharing and video calls over WebRTC. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), [Cloudflare Workers](https://workers.cloudflare.com/), and [Trystero](https://github.com/dmotz/trystero). Durable Objects retain only client-encrypted event envelopes; file bodies and media stay P2P. A deployment-level P2P content backend remains available as an explicit rollback.
+Encrypted hybrid team collaboration. Production currently uses relay coordination and P2P chat; `preview.peerly.cc` runs the Durable Objects backend for encrypted channel state and recent chat history. File bodies and video calls use WebRTC in both modes. Built with [React](https://react.dev/), [Vite](https://vite.dev/), [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/), [Cloudflare Workers](https://workers.cloudflare.com/), and [Trystero](https://github.com/dmotz/trystero). See the [production cutover runbook](docs/DURABLE_OBJECTS_CUTOVER.md) for rollout and rollback requirements.
 
 Highlights: the reusable P2P and Durable Objects primitives ship as the npm package [`@peerly/core`](packages/core), while Peerly owns its product-specific authorization and event policies. The app also includes messenger attention, signed message actions, rich file/call workflows, channel management, an installable offline shell, URL routing, complete English/Polish UI, and accessibility hardening. The running app always shows its exact version and commit in the UI.
 
@@ -84,7 +84,7 @@ Storage actions are local:
 - **Free local space** removes reclaimable cached originals while retaining messages, previews, and the metadata needed to request files again.
 - **Clear local history** removes that workspace's messages, previews, read state, and cached bodies that no other local workspace references while retaining workspace access.
 
-Neither action deletes content from other members. Re-sync requires at least one peer with the relevant history or file body to be online; Peerly has no global cloud archive.
+Neither action deletes content from other members. In production P2P mode, re-sync requires a peer holding the relevant history or file body. DO preview can replay recent encrypted history without an online peer: up to 1,000 chat/reaction events per workspace or DM object for 30 days. Channel definitions and deletion records have separate durable storage. File originals still require a peer. Pending outgoing messages are kept in a local IndexedDB outbox until delivery and local persistence succeed.
 
 **Export backup** in workspace settings saves the newest 500 messages from each workspace channel together with channel structure and signed workspace access. Protect the JSON like an invite link. Imports verify the creator-signed allow-list and message signatures, bound untrusted data, and merge without overwriting local messages. DMs and full-size file bodies are excluded.
 

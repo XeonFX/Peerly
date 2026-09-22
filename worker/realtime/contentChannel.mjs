@@ -17,5 +17,6 @@ export const ContentChannelDO = defineAuthorizedChannel({
     'gdm',
     'gdmreact',
   ],
-  persistedEvents: ['chat', 'reaction', 'channel-sync', 'gdm', 'gdmreact'],
+  persistedEvents: ['chat', 'reaction', 'gdm', 'gdmreact'],
+  stateEvents: ['channel-sync'],
 })

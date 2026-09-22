@@ -407,6 +407,8 @@ export function HomeView({
               error={chat.error}
               searchQuery={query}
               onSend={chat.sendMessage}
+              pendingMessages={chat.pendingMessages}
+              onRetryPendingMessages={chat.retryPendingMessages}
               onFiles={chat.sendFiles}
               onToggleReaction={chat.toggleReaction}
               reactions={chat.reactions}

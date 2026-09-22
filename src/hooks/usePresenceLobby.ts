@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   createPresenceIndex,
+  createLobbyIdentityClient,
   lookupRendezvousId,
   PRESENCE_INTERVAL_MS,
   signControl,
@@ -107,7 +108,7 @@ export type PresenceLobbyOptions = {
 /**
  * Relay-forwarded public lobby for friend presence + email invites.
  *
- * Presence carries only Worker-issued opaque rendezvous capabilities. Invites are signed with the device key
+ * Presence carries a short-lived Worker-certified identity without OIDC tokens or emails. Invites are signed with the device key
  * and delivered directed when a matching peer is online. Offline targets stay
  * in the local outgoing queue until they show up (no server mailbox).
  */
@@ -214,7 +215,9 @@ export function usePresenceLobby({
     }
 
     const privateActions = createPrivateLobbyActions(room)
-    const presenceAction = room.makeAction<SignedControl<PresencePayload & { invitationKey: string }>>('pres')
+    const lobbyIdentity = createLobbyIdentityClient()
+    let disposed = false
+    const presenceAction = room.makeAction<SignedControl<PresencePayload & { invitationKey: string; certificate: string }>>('pres')
     const inviteAction = privateActions.makeAction<FriendInvitePayload>('finv')
     const inviteRespAction = privateActions.makeAction<FriendInviteResponsePayload>('finvr')
     const dmRingAction = privateActions.makeAction<DmRingPayload>('dmring')
@@ -222,20 +225,19 @@ export function usePresenceLobby({
 
     const announcePresence = (to?: string) => {
       const me = profileRef.current
-      const rendezvousId = myRendezvousIdRef.current
       const id = identityRef.current
-      const proof = attestationRef.current
-      if (!me || !rendezvousId || !id || !proof) return
-      const payload: PresencePayload = {
-        userId: me.userId,
-        name: me.name,
-        rendezvousId,
-      }
-      void privateActions.publicKey().then(invitationKey =>
-        signControl(id, PRESENCE_SCHEME, 'presence', me.userId, { ...payload, invitationKey }, {
-          attestation: proof,
+      if (!me || !id) return
+      void (async () => {
+        const certificate = await lobbyIdentity.issue()
+        if (disposed || !certificate || certificate.userId !== me.userId ||
+          certificate.deviceKeyId !== await id.publicKeyId()) return
+        myRendezvousIdRef.current = certificate.rendezvousId
+        const message = await signControl(id, PRESENCE_SCHEME, 'presence', me.userId, {
+          userId: me.userId, name: me.name, rendezvousId: certificate.rendezvousId,
+          invitationKey: await privateActions.publicKey(), certificate: certificate.certificate,
         })
-      ).then(message => presenceAction.send(message, to ? { target: to } : undefined)).catch(() => {})
+        if (!disposed) await presenceAction.send(message, to ? { target: to } : undefined)
+      })().catch(() => {})
     }
 
     const recordPresence = (peerId: string, parsed: PresencePayload) => {
@@ -311,20 +313,19 @@ export function usePresenceLobby({
 
     presenceAction.onMessage = (raw, { peerId }) => {
       void (async () => {
-        const message = await verifySignedControl<PresencePayload & { invitationKey?: string }>(
+        const message = await verifySignedControl<PresencePayload & { invitationKey?: string; certificate?: string }>(
           raw,
           PRESENCE_SCHEME,
           'presence'
         )
-        if (!message || !message.attestation) return
+        // Old clients must upgrade; accepting token-bearing presence would
+        // preserve the privacy leak and bypass the new identity boundary.
+        if (!message || message.attestation) return
         const parsed = parsePresencePayload(message.payload)
         if (!parsed || parsed.userId !== message.userId) return
-        const binding = await verifyAttestedPeer({
-          attestation: message.attestation,
-          deviceKeyId: message.deviceKeyId,
-          fromUserId: message.userId,
-        })
-        if (!binding || await lookupRendezvousId(binding.claims.email) !== parsed.rendezvousId) return
+        const binding = await lobbyIdentity.verify(message.payload.certificate)
+        if (disposed || !binding || binding.userId !== message.userId ||
+          binding.deviceKeyId !== message.deviceKeyId || binding.rendezvousId !== parsed.rendezvousId) return
         if (!(await privateActions.rememberVerifiedPeer(peerId, message.deviceKeyId, message.payload.invitationKey))) return
         recordPresence(peerId, parsed)
         // New verified peer might match a pending invite.
@@ -502,6 +503,7 @@ export function usePresenceLobby({
     }, PRESENCE_INTERVAL_MS)
 
     return () => {
+      disposed = true
       clearInterval(presenceTimer)
       presenceAction.onMessage = null
       inviteAction.onMessage = null

@@ -1,6 +1,7 @@
 import { handleGoogleAuthRoute } from '../packages/core/worker/googleAuth.mjs'
 import { issueNetworkCredentials } from '../packages/core/worker/networkCredentials.mjs'
 import { lookupRendezvous } from '../packages/core/worker/rendezvous.mjs'
+import { issueLobbyIdentity, verifyLobbyIdentity } from '../packages/core/worker/lobbyIdentity.mjs'
 import { handleRealtimeRoute } from '../packages/core/worker/realtime/index.mjs'
 import { prepareAuthenticatedRealtimeUpgrade } from '../packages/core/worker/realtime/index.mjs'
 import { ContentChannelDO } from './realtime/contentChannel.mjs'
@@ -60,6 +61,8 @@ export default {
     const url = new URL(request.url)
     if (url.pathname === NETWORK_CREDENTIALS_PATH) return issueNetworkCredentials(request, env)
     if (url.pathname === RENDEZVOUS_LOOKUP_PATH) return lookupRendezvous(request, env)
+    if (url.pathname === '/api/rendezvous/presence') return issueLobbyIdentity(request, env)
+    if (url.pathname === '/api/rendezvous/verify') return verifyLobbyIdentity(request, env)
     const realtimeConfig = {
       app: 'peerly',
       allowedOrigin: originAllowedBy(env),

@@ -44,6 +44,25 @@ async function joinAlice(browser: Browser) {
 // wiped per test) and each worker has its own workspace/room (e2eWorkspaceId),
 // so they parallelize safely — serial mode was pinning the suite to 1 worker.
 test.describe('Peerly P2P collaboration', () => {
+  test('failed history writes are visible and unsaved messages remain exportable', async ({ browser }) => {
+    await withTwoUsers(browser, async (alice, bob) => {
+      await bob.evaluate(() => {
+        const original = Storage.prototype.setItem
+        Storage.prototype.setItem = function (key, value) {
+          if (key.startsWith('peerly-history-')) throw new DOMException('Full', 'QuotaExceededError')
+          original.call(this, key, value)
+        }
+      })
+      await sendMessage(alice, 'recover this unsaved history')
+      await expectMessage(bob, 'recover this unsaved history')
+      await expect(bob.getByText('Recent messages could not be saved on this device.', { exact: false })).toBeVisible()
+      await bob.getByTestId('workspace-settings-open').click()
+      const downloadPromise = bob.waitForEvent('download')
+      await bob.getByTestId('export-backup').click()
+      const download = await downloadPromise
+      expect(fs.readFileSync((await download.path())!, 'utf8')).toContain('recover this unsaved history')
+    })
+  })
   test('first visit shows legal consent banner; Accept dismisses it', async ({ page }) => {
     await installFreshSession(page, { acceptLegal: false })
     await page.goto('/')

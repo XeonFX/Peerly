@@ -24,6 +24,10 @@ import { useConnectionHealth } from './collab/useConnectionHealth'
 import { useFileTransfer } from './collab/useFileTransfer'
 import { useHistorySync } from './collab/useHistorySync'
 import { useMultiChannelStore } from './collab/useMultiChannelStore'
+import { useMessageOutbox } from './useMessageOutbox'
+import { loadLocalHistory, saveLocalHistory } from '../utils/historyStorage'
+import { mergeHistoryEntries } from '../utils/historyMerge'
+import { MAX_HISTORY_ENTRIES } from '../collab/constants'
 import { usePeerProfiles } from './collab/usePeerProfiles'
 import { useRelayWorkspacePresence } from './collab/useRelayWorkspacePresence'
 import { useProfileManager } from './collab/useProfileManager'
@@ -189,7 +193,7 @@ export function useCollab({
     broadcastProfile,
   } = peers
   const channelSync = useChannelSync(workspaceId, onChannelsChange)
-  const { bindChannelAction, unbindChannelAction } = channelSync
+  const { bindChannelAction, unbindChannelAction, broadcastAllToPeer } = channelSync
   const channelStore = useMultiChannelStore(workspaceId, activeChannelId, fileCache, channelIds)
   const {
     resetWorkspace,
@@ -571,6 +575,11 @@ export function useCollab({
       broadcastProfile,
     }, { contentRoom: contentRoom ?? undefined })
 
+    // Seed durable state even when this browser is the only online member.
+    if (contentRoom) void broadcastAllToPeer().catch(() => {
+      setErrorRef.current('Could not save channel definitions. Reconnect to retry.')
+    })
+
     return () => {
       cleanup()
       unbindChatAction()
@@ -605,16 +614,40 @@ export function useCollab({
     bindCallEndAction,
     unbindCallEndAction,
     broadcastProfile,
+    broadcastAllToPeer,
   ])
 
+  const outboxScope = identity?.selfUserId ? `workspace:${identity.selfUserId}:${workspaceId}` : null
+  const outboxScopeRef = useLatest(outboxScope)
+  const outbox = useMessageOutbox<ChatPayload>(outboxScope,
+    Boolean(room && (CONTENT_BACKEND === 'p2p' || contentRoom)), async signed => {
+      const route = routeDmChannel(signed.channelId, selfId)
+      if (route.kind === 'foreign-dm') throw new Error('Conversation is unavailable')
+      const target = route.kind === 'dm' ? route.peerId : undefined
+      await sendChatPayload(signed, { messageId: signed.id, ...(target ? { target } : {}) })
+      const message = chatPayloadToMessage(signed)
+      const saved = mergeHistoryEntries([message], loadLocalHistory(workspaceId, signed.channelId))
+      // Keep the outbox entry until the sender's history is durable too.
+      // A retry must preserve edits/reactions received since the original send.
+      if (!saveLocalHistory(workspaceId, signed.channelId,
+        saved.slice(-MAX_HISTORY_ENTRIES))) throw new Error('Could not save local history')
+      if (outboxScopeRef.current !== outboxScope) return
+      appendMessage(message, senderDirectoryRef.current)
+      for (const peer of target ? peersRef.current.filter(peer => peer.id === target) : peersRef.current) recordSyncActivity({
+        direction: 'sent', kind: 'message',
+        peer: { peerId: peer.id, userId: peer.userId, name: peer.name, avatar: peer.avatar, relationship: 'workspace-member' },
+        itemCount: 1, bytes: syncPayloadBytes(signed), summary: `${signed.channelId} · message`,
+      })
+    })
+  const enqueueMessage = outbox.enqueue
   const sendMessage = useCallback(
-    (rawText: string) => {
+    async (rawText: string) => {
       const text = clampMessageText(rawText)
       if (!text) return
       const channelId = activeChannelRef.current
       const route = routeDmChannel(channelId, selfId)
       // Never broadcast a message meant for a DM we can't resolve a peer for.
-      if (route.kind === 'foreign-dm') return
+      if (route.kind === 'foreign-dm') throw new Error('Conversation is unavailable')
 
       const payload = createChatPayload(
         text,
@@ -623,45 +656,27 @@ export function useCollab({
         channelId,
         identityRef.current?.selfUserId
       )
-      const target = route.kind === 'dm' ? route.peerId : undefined
-
-      // Sign before anything leaves or persists, so our local copy is the same
-      // relayable artifact peers will verify (~1–2 ms; see messageSigning).
-      void (async () => {
-        try {
-          const signer = identityRef.current?.signMessage
-          const signed = signer
-            ? {
-                ...payload,
-                ...(await signer({
-                  id: payload.id,
-                  type: 'text',
-                  text: payload.text,
-                  senderUserId: payload.senderUserId,
-                  timestamp: payload.timestamp,
-                  channelId: payload.channelId,
-                })),
-              }
-            : payload
-          await sendChatPayload(signed, target ? { target } : undefined)
-          const targets = target
-            ? peersRef.current.filter(peer => peer.id === target)
-            : peersRef.current
-          for (const peer of targets) recordSyncActivity({
-            direction: 'sent', kind: 'message',
-            peer: { peerId: peer.id, userId: peer.userId, name: peer.name, avatar: peer.avatar, relationship: 'workspace-member' },
-            itemCount: 1, bytes: syncPayloadBytes(signed), summary: `${channelId} · message`,
-          })
-          appendMessage(chatPayloadToMessage(signed), senderDirectoryRef.current)
-        } catch {
-          setErrorRef.current('Could not send message.')
-        }
-      })()
+      // The composer clears only after this exact signed payload is durable.
+      const signer = identityRef.current?.signMessage
+      const signed = signer
+        ? {
+            ...payload,
+            ...(await signer({
+              id: payload.id,
+              type: 'text',
+              text: payload.text,
+              senderUserId: payload.senderUserId,
+              timestamp: payload.timestamp,
+              channelId: payload.channelId,
+            })),
+          }
+        : payload
+      await enqueueMessage(signed)
     },
     // The narrow deps are the point: `channelStore` and `chatAction` are fresh
     // objects every render, and depending on them made sendMessage — and with
     // it the whole ChatSlice — churn per render.
-    [sendChatPayload, appendMessage, profileRef, senderDirectoryRef, peersRef]
+    [enqueueMessage, profileRef, identityRef]
   )
 
   const reviseMessage = useCallback(
@@ -871,7 +886,7 @@ export function useCollab({
       durableContentOnline
         ? 'connected'
         : connection.connectionStatus,
-    connectionError: connection.connectionError,
+    connectionError: outbox.error ?? channelStore.persistenceError ?? connection.connectionError,
     connectionNotice: connection.connectionNotice,
     // The primary message path is healthy once its authenticated content
     // socket is open. P2P signaling remains independently visible through the
@@ -901,6 +916,10 @@ export function useCollab({
     selectedAudioOutput: video.selectedAudioOutput,
     mediaError: video.mediaError,
     sendMessage,
+    pendingMessages: outbox.entries.filter(entry => entry.payload.channelId === activeChannelId)
+      .map(entry => ({ id: entry.id, text: entry.payload.text, failed: entry.failed })),
+    retryPendingMessages: outbox.retry,
+    draftScope: outboxScope ?? workspaceId,
     editMessage,
     deleteMessage,
     toggleReaction,

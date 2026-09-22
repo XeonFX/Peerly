@@ -17,6 +17,7 @@ import { useIdentityRenewal } from './hooks/useIdentityRenewal'
 import { useSessionBootstrap } from './hooks/useSessionBootstrap'
 import { useWorkspaceNavigation } from './hooks/useWorkspaceNavigation'
 import { usePresenceLobby } from './hooks/usePresenceLobby'
+import { useDeviceRevocations } from './hooks/useDeviceRevocations'
 import { useWorkspaceAuth } from './hooks/useWorkspaceAuth'
 import {
   rememberWorkspace,
@@ -71,6 +72,7 @@ function AppContent() {
 
   // Friends outlive the open workspace — use durable identity userId on home too.
   const ownerUserId = session?.identityUserId ?? loadIdentityUserId() ?? undefined
+  useDeviceRevocations(deviceIdentity, ownerUserId)
   // App-wide, not inside the workspace: a token expiring on the friends or DM
   // screen used to have nothing offering to renew it.
   useIdentityRenewal(deviceIdentity, hasRememberedIdentity)

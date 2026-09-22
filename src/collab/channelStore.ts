@@ -46,7 +46,7 @@ function tombstoneKey(workspaceId: string): string {
   return `${TOMBSTONE_PREFIX}${normalizeWorkspaceId(workspaceId)}`
 }
 
-function loadTombstones(workspaceId: string): Record<string, number> {
+export function loadTombstones(workspaceId: string): Record<string, number> {
   try {
     const parsed = JSON.parse(localStorage.getItem(tombstoneKey(workspaceId)) ?? '{}')
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
@@ -92,6 +92,11 @@ function saveCustomChannels(workspaceId: string, channels: Channel[]) {
 
 export function getCustomChannels(workspaceId: string): Channel[] {
   return loadCustomChannels(workspaceId)
+}
+
+export function nextChannelRevision(workspaceId: string, channelId: string): number {
+  const channel = getCustomChannels(workspaceId).find(item => item.id === channelId)
+  return Math.max(Date.now(), (channel?.updatedAt ?? 0) + 1, (loadTombstones(workspaceId)[channelId] ?? 0) + 1)
 }
 
 export function loadWorkspaceChannels(workspaceId: string): Channel[] {
@@ -170,7 +175,7 @@ export function addWorkspaceChannel(workspaceId: string, rawName: string): Chann
     name,
     description: '',
     kind: 'channel',
-    updatedAt: Date.now(),
+    updatedAt: Math.max(Date.now(), (loadTombstones(workspaceId)[id] ?? 0) + 1),
     order: custom.length,
   }
   saveCustomChannels(workspaceId, [...custom, channel])
@@ -187,7 +192,7 @@ export function renameWorkspaceChannel(
   const custom = loadCustomChannels(workspaceId)
   const index = custom.findIndex(channel => channel.id === channelId)
   if (index === -1) return null
-  const updated = { ...custom[index], name, updatedAt: Date.now() }
+  const updated = { ...custom[index], name, updatedAt: Math.max(Date.now(), (custom[index].updatedAt ?? 0) + 1) }
   const next = [...custom]
   next[index] = updated
   saveCustomChannels(workspaceId, next)
@@ -206,7 +211,7 @@ export function moveWorkspaceChannel(
   const target = index + direction
   if (index === -1 || target < 0 || target >= custom.length) return custom
   ;[custom[index], custom[target]] = [custom[target], custom[index]]
-  const now = Date.now()
+  const now = Math.max(Date.now(), ...custom.map(channel => (channel.updatedAt ?? 0) + 1))
   const reordered = custom.map((channel, order) => ({ ...channel, order, updatedAt: now }))
   saveCustomChannels(workspaceId, reordered)
   return reordered
@@ -215,10 +220,11 @@ export function moveWorkspaceChannel(
 export function removeWorkspaceChannel(
   workspaceId: string,
   channelId: string,
-  deletedAt = Date.now()
+  deletedAt = nextChannelRevision(workspaceId, channelId)
 ): boolean {
   if (channelId === GENERAL_CHANNEL.id || !isValidChannelId(channelId)) return false
   const custom = loadCustomChannels(workspaceId)
+  if ((custom.find(channel => channel.id === channelId)?.updatedAt ?? 0) > deletedAt) return false
   const exists = custom.some(channel => channel.id === channelId)
   const tombstones = loadTombstones(workspaceId)
   if ((tombstones[channelId] ?? 0) >= deletedAt) return false

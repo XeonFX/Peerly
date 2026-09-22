@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-09-22_
 
 > This is the English reference copy. The authoritative, localized text is the
 > in-app page at `/privacy` (rendered from `src/legal/legalContent.ts`). Edit
@@ -23,8 +23,9 @@ Messages, reactions, and channel definitions are encrypted in your browser
 before transmission. Our Cloudflare Durable Objects infrastructure stores only
 encrypted event envelopes and does not receive the workspace or conversation
 key needed to read their content. Files and call audio/video are not stored in
-Durable Objects: they remain local and transfer P2P. P2P can also be selected
-as an alternative message transport at deployment level.
+Durable Objects: they remain local and transfer P2P. Production currently uses
+P2P message delivery; the Durable Objects backend runs on preview until the
+production cutover is completed.
 
 ## 3. What data is processed
 
@@ -37,17 +38,24 @@ as an alternative message transport at deployment level.
   addresses permitted to join, which members can see. The Worker processes the
   list during authorization, verifies its signature, and gives the Durable
   Object only pseudonymous member identifiers rather than raw addresses.
-- **Lobby and friend invitations** — an authenticated, non-persistent Durable
-  Object channel forwards signed presence, invitation, and DM-notification
-  data. This can include the invitation sender's email, but it is not stored as
-  server history or a mailbox.
+- **Lobby and friend invitations** — a non-persistent relay or Durable Object
+  channel forwards signed public presence and encrypted, directed invitations.
+  Public presence includes a display name, pseudonymous user/device identifiers,
+  an invitation public key, and a short-lived Worker-certified discovery proof.
+  It contains no OIDC token or email claim. Recipients trust our Worker to verify
+  that public identity proof. A directed invitation can include its sender's
+  email and OIDC attestation inside the recipient-encrypted payload; these are
+  not stored as server history or a mailbox.
 - **IP address** — connecting to another participant means your browsers
   exchange IP addresses; they are also visible to relay/TURN operators.
 - **Content and metadata** — Durable Objects receive encrypted messages,
   reactions, and channel definitions plus infrastructure-visible pseudonymous
-  user/device identifiers, event type, and time. Names and avatars are encrypted
-  in transit. Files and call audio/video go directly to participants P2P.
-- **On-device data** — history and files (IndexedDB), preferences, a device
+  user/device identifiers, event type, and time. Workspace names and avatars are
+  encrypted in content traffic; public lobby display names are visible to lobby
+  participants. Current channel state and deletion records have separate
+  retention from recent chat events. Files and calls transfer P2P.
+- **On-device data** — history and preferences (localStorage), pending messages
+  and files (IndexedDB), a device
   cryptographic key, remembered workspaces, and consents. Optional pairing
   syncs selected data directly between mutually approved devices while both
   are online; login sessions, identity tokens, and private keys are not copied.
@@ -77,9 +85,11 @@ data outside the EEA under GDPR transfer mechanisms.
 
 ## 7. Retention and deletion
 
-Encrypted events are retained for at most 30 days and are capped at the latest
-1,000 events per workspace or conversation; older events are removed
-automatically. You can delete local data at any time (sign out, leave/clear a
+In Durable Objects mode, encrypted chat events are retained for at most 30 days
+and capped at the latest 1,000 events per workspace or conversation; older
+events are removed automatically. Encrypted current channel state and deletion
+records are retained separately without that time limit so devices can
+reconcile after a long absence. You can delete local data at any time (sign out, leave/clear a
 workspace, clear site data). Copies sent to others remain on their devices.
 Contact us below about a server-held copy.
 
