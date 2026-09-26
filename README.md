@@ -188,7 +188,7 @@ A fourth signaling mode moves *coordination* — device enrollment, session cook
 
 `VITE_SIGNALING=durable-objects` only works against a Worker that was itself deployed with `COORDINATION_BACKEND=durable-objects`, the Durable Object bindings/migrations, and its own secrets (`NETWORK_SESSION_SECRET`, `OPAQUE_USER_ID_SECRET`, `TURN_AUTH_SECRET`, …). A client pointed at an unconfigured Worker fails closed with `503`, and a stale/invalid capability fails with `400`/`401` rather than degrading silently. Production (`peerly.cc`) still runs `COORDINATION_BACKEND=legacy-relay`; only the stable preview deployment (`preview.peerly.cc`, via [`wrangler.preview.jsonc`](wrangler.preview.jsonc)) runs the Durable Objects path today, ahead of a full production cutover.
 
-For the security protocol changes, existing-preview history limitations, and the exact preview deployment command, see [PR #92 security fixes and preview rollout](docs/PR92_SECURITY_FIXES.md).
+`npm run deploy:preview` deploys `peerly-preview` through [`wrangler.preview.jsonc`](wrangler.preview.jsonc), whose build enables both DO signaling and DO content and writes `dist-preview/`, so a preview deploy never touches production's `dist/`.
 
 This control plane is shared code in [`packages/core/worker/realtime`](packages/core/worker/realtime) and [`packages/core/src/realtime`](packages/core/src/realtime): Peerly and HeyHubs each deploy their own Worker and Durable Object namespaces from it, with independent secrets and data. See [docs/DURABLE_OBJECTS_ARCHITECTURE.md](docs/DURABLE_OBJECTS_ARCHITECTURE.md) for the full design, or [docs/RELAY_VS_DURABLE_OBJECTS.md](docs/RELAY_VS_DURABLE_OBJECTS.md) for a comparison against the relay stack production still runs.
 

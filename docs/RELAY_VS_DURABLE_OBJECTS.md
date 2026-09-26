@@ -5,8 +5,7 @@ Applies to: Peerly (`peerly.cc` vs `preview.peerly.cc`); the shared code paths
 also back HeyHubs' own deployment  
 Companion docs: [DURABLE_OBJECTS_ARCHITECTURE.md](./DURABLE_OBJECTS_ARCHITECTURE.md)
 (the design decision and rollout plan this document assumes),
-[DURABLE_OBJECTS_IMPLEMENTATION.md](./DURABLE_OBJECTS_IMPLEMENTATION.md) (exact
-wire/file specifics), [relay-deployment.md](./relay-deployment.md) /
+[relay-deployment.md](./relay-deployment.md) /
 [production-rollout.md](./production-rollout.md) (today's relay ops)
 
 This document primarily compares the two *coordination* backends Peerly can run against —
@@ -254,9 +253,8 @@ flowchart LR
   to trigger a move to Workers Paid, not silent degradation.
 - **New topology to get right.** Object keying, sharding constants, alarm
   scheduling, and cross-DO reservation/compensation logic are new surface
-  area that a single in-memory `Map` simply didn't have. The
-  [audit doc](./CONTROL_PLANE_AUDIT_2026-08-02.md) already found and fixed several
-  issues in this new code, and a [client-side capability-caching bug](../packages/core/src/realtime/client.ts)
+  area that a single in-memory `Map` simply didn't have. An audit
+  already found and fixed several issues in this new code, and a [client-side capability-caching bug](../packages/core/src/realtime/client.ts)
   (an empty-string "cleared" marker being resent forever instead of
   triggering re-enrollment) was found and fixed after this document's
   predecessor work — new coordination logic keeps surfacing new correctness
