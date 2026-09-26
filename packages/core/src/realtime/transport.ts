@@ -134,7 +134,7 @@ class DurableObjectTransport implements CoordinationTransport {
  * app's own runtime-config plumbing), otherwise `null` so the caller keeps
  * using its existing legacy-relay code path unchanged. Nothing above this
  * function should import `DurableObjectTransport` or `RealtimeClient`
- * directly — see docs/DURABLE_OBJECTS_IMPLEMENTATION.md section 12.4.
+ * directly.
  */
 export function selectDurableObjectsTransport(
   backend: string | undefined,

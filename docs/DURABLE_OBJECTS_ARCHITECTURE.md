@@ -11,11 +11,8 @@ lives in its own repo.
 Date: 2026-07-29
 Applies to: Peerly and `@peerly/core`; other apps consume the generic core primitives through their own adapters
 
-This document decides what to build and why. The exact file map, wire
-schemas, SQL DDL, crypto recipes, endpoint contracts, algorithms, tests, and
-PR-by-PR sequence live in the companion
-[implementation guide](./DURABLE_OBJECTS_IMPLEMENTATION.md); implementers
-follow that guide and treat this document as the authority on intent. See
+This document decides what to build and why; the code in `packages/core`
+is the reference for exact wire formats and storage. See
 [RELAY_VS_DURABLE_OBJECTS.md](./RELAY_VS_DURABLE_OBJECTS.md) for a detailed,
 dimension-by-dimension comparison against the relay stack production still
 runs.
