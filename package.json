@@ -79,6 +79,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@cloudflare/vitest-plugin": "^1.2.1",
+    "@codefusion-cc/console": "^0.11.1",
     "@emnapi/core": "^1.11.2",
     "@emnapi/runtime": "^1.11.2",
     "@playwright/test": "^1.52.0",

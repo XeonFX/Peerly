@@ -8,9 +8,11 @@ export default defineConfig({
     alias: [
       { find: '@peerly/core/react', replacement: fileURLToPath(new URL('./packages/core/src/react.ts', import.meta.url)) },
       { find: '@peerly/core', replacement: fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)) },
-      // worker/index.test.mjs runs in plain Node, not the Workers runtime;
-      // see scripts/cloudflareWorkersStub.mjs for why this alias is safe.
-      { find: 'cloudflare:workers', replacement: fileURLToPath(new URL('./scripts/cloudflareWorkersStub.mjs', import.meta.url)) },
+      // worker/index.test.mjs runs in plain Node, not the Workers runtime, so
+      // the Durable Object classes it reaches get `DurableObject` from the
+      // console package's stand-in. Real behavior is covered by
+      // npm run test:workers.
+      { find: 'cloudflare:workers', replacement: fileURLToPath(import.meta.resolve('@codefusion-cc/console/testing/cloudflare-workers')) },
     ],
   },
   test: {
