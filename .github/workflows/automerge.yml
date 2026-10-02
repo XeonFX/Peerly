@@ -10,9 +10,6 @@ on:
   workflow_run:
     workflows: [CI, Security]
     types: [completed]
-  # Workers Builds reports from outside Actions.
-  check_suite:
-    types: [completed]
 
 permissions: {}
 
@@ -34,14 +31,11 @@ jobs:
         && github.event.workflow_run.event == 'pull_request'
         && github.event.workflow_run.conclusion == 'success'
         && github.event.workflow_run.head_repository.full_name == github.repository)
-      || (github.event_name == 'check_suite'
-        && github.event.check_suite.conclusion == 'success'
-        && github.event.check_suite.head_branch != github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # One run per pull request (its branch) at a time; a newer event waits and replaces any older one waiting.
     concurrency:
-      group: automerge-${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch || github.event.check_suite.head_branch }}
+      group: automerge-${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch }}
       cancel-in-progress: false
     steps:
       - id: source
@@ -74,4 +68,3 @@ jobs:
       - uses: ./codefusion/automerge
         with:
           token: ${{ steps.token.outputs.token }}
-          required-checks: 'Workers Builds: peerly'

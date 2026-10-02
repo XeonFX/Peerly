@@ -182,7 +182,7 @@ flowchart LR
    `TURN_AUTH_SECRET`, …), and `head_sampling_rate: 1` observability — kept in
    a separate config file from production specifically because Cloudflare
    rejects a Durable Object migration on the `wrangler versions upload` path
-   that Workers Builds uses for every non-production branch.
+   that Workers Builds used for every non-production branch.
 
 ## Side-by-side detail
 

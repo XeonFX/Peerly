@@ -231,29 +231,23 @@ Output goes to `dist/`. The build runs a bundle guard that fails if E2E test key
 
 The committed [`wrangler.jsonc`](wrangler.jsonc) deploys `dist/` with an SPA fallback and runs `worker/index.mjs` first for `/api/*` requests. All other requests keep the static-assets-first path.
 
-| Setting | Value |
-|---------|--------|
-| Build command | `npm run build` |
-| Deploy command | `npx wrangler deploy` (default) |
-| Non-production deploy | `npx wrangler versions upload` (default) |
-| Root directory | *(repo root)* |
-| Node version | `24` via `.nvmrc` (any 24.x the builder has) |
+GitHub Actions deploys it: every push to `main` that passes the `test` job runs
+the `deploy` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+(environment `production`, one deploy at a time, never cancelled). It runs
+`npm run build` with production's build-time variables, which the workflow
+lists (the Google client ID, `VITE_SIGNALING=ws-relay` with `relay.peerly.cc:443`,
+and the TURN hosts), then `npx wrangler deploy`, then waits until peerly.cc
+serves the new entry script. Branches are not deployed; test them on
+preview.peerly.cc (below). The build shows `GITHUB_SHA` in the UI as
+`v<version> · <commit>`.
 
-The connected Worker must be named `peerly`, matching `wrangler.jsonc`. The default deploy commands obtain Wrangler through `npx`; it is intentionally not installed as an application dependency.
-
-Cloudflare may print its image-default `npm@10.9.2` during initial tool detection. Installing the `.nvmrc` Node 24 override then exposes that runtime's bundled npm 11.x, which is what runs `npm clean-install`. `devEngines` still hard-fails any non-24/non-11 pair before it can touch the lockfile.
-
-**Environment variables** (Production → Settings → Environment variables):
-
-```
-VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-```
-
-Add TURN, signaling overrides, or other providers as needed (see `.env.example`).
+The deploy needs a `CLOUDFLARE_API_TOKEN` secret in the GitHub environment
+`production` (Settings → Environments) with Workers Scripts Edit on the account
+that holds the `peerly` Worker. Cloudflare Workers Builds, still configured on
+the Worker, lost its GitHub connection when the repository moved to
+codefusion-cc and deploys nothing.
 
 Register the production origin (`https://peerly.cc`) in each OAuth provider's allowed JavaScript origins / redirect URIs.
-
-Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v<version> · <commit>`.
 
 Cloudflare Pages also works: use `npm run build`, publish `dist/`, and set the same build-time environment variables.
 

@@ -166,11 +166,11 @@ above exists only on preview. Ordered by risk carried, not by effort.
 | --- | --- | --- |
 Written up step by step, with verification and rollback, in
 **`DURABLE_OBJECTS_CUTOVER.md`**. It is a runbook rather than a prepared
-commit for a concrete reason: a branch carrying DO migrations fails to build
-from the moment it is pushed, because Workers Builds deploys non-production
-branches with `versions upload` and Cloudflare rejects versions containing a
-migration (10211). So B1 is applied in its own PR and merged promptly, never
-staged ahead of time.
+commit for a concrete reason: when Workers Builds deployed non-production
+branches with `versions upload`, a branch carrying DO migrations failed to build
+from the moment it was pushed, because Cloudflare rejects versions containing a
+migration (10211). CI now deploys only `main`, with a full deploy, but B1 is
+still applied in its own PR and merged promptly, never staged ahead of time.
 
 | | Work | Note |
 | --- | --- | --- |
