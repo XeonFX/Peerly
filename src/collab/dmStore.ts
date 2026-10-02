@@ -49,6 +49,16 @@ export function routeDmChannel(channelId: string, selfId: string): DmRouting {
   return peerId ? { kind: 'dm', peerId } : { kind: 'foreign-dm' }
 }
 
+/**
+ * Whether this device may exchange `channelId`'s content (history, files, reactions) with `peerId`: any member, for an
+ * ordinary channel; for a DM only its other participant. A DM's id is derived from its two peer ids, so a third member
+ * can name it; naming it gets them nothing, and neither does a DM this device is not in.
+ */
+export function mayExchangeChannel(channelId: string, selfId: string, peerId: string): boolean {
+  const route = routeDmChannel(channelId, selfId)
+  return route.kind === 'channel' || (route.kind === 'dm' && route.peerId === peerId)
+}
+
 function loadDmChannels(workspaceId: string): Channel[] {
   try {
     const raw = localStorage.getItem(storageKey(workspaceId))

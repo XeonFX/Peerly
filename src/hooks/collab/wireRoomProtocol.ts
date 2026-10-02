@@ -15,6 +15,9 @@ import type { UserProfile } from '../../types'
 
 type Room = ReturnType<typeof joinRoom>
 
+/** The longest channel id a history request may name (a DM's: two peer ids and a separator). */
+const MAX_CHANNEL_ID = 512
+
 export type TransportIdentity = {
   peerId: string
   userId?: string
@@ -27,7 +30,8 @@ export type RoomProtocolHandlers = {
   onFileProgress: (percent: number, peerId: string, meta: FileMetaPayload) => void
   onFile: (data: ArrayBuffer, meta: FileMetaPayload) => void
   onFileMeta: (meta: FileMetaPayload, peerId: string) => void
-  onHistoryRequest: (channelId: string) => HistoryEntry[]
+  /** `peerId`: the peer that asked, as the transport authenticated it – history goes only where it may (DMs). */
+  onHistoryRequest: (channelId: string, peerId: string) => HistoryEntry[]
   onFileRequest: (fileIds: string[], peerId: string) => void
   onPeerJoin: (peerId: string) => void
   onPeerLeave: (peerId: string) => void
@@ -108,7 +112,12 @@ export function wireRoomProtocol(
   const fileMetaAction = room.makeAction<FileMetaPayload>(ACTION_IDS.fileMeta)
   const historyAction = room.makeAction<HistoryRequest, HistoryEntry[]>(ACTION_IDS.historySync, {
     kind: 'request',
-    onRequest: data => handlers.onHistoryRequest(data.channelId),
+    onRequest: (data, { peerId }) => {
+      const channelId = (data as Partial<HistoryRequest> | null)?.channelId
+      return typeof channelId === 'string' && channelId.length > 0 && channelId.length <= MAX_CHANNEL_ID
+        ? handlers.onHistoryRequest(channelId, peerId)
+        : []
+    },
   })
   const channelAction: RelayChannelAction<ChannelPayload> = contentRoom
     ? contentRoom.makeAction<ChannelPayload>(ACTION_IDS.channelSync)

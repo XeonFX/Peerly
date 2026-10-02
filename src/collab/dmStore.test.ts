@@ -4,6 +4,7 @@ import {
   createDmChannel,
   ensureDmChannel,
   getDmPeerId,
+  mayExchangeChannel,
   mergeDmChannel,
   removeDmChannel,
   routeDmChannel,
@@ -68,5 +69,45 @@ describe('dmStore', () => {
     expect(ensureDmChannel('team', peer, 'alice').id).toBe(channel.id)
     expect(removeDmChannel('team', channel.id)).toBe(true)
     expect(removeDmChannel('team', channel.id)).toBe(false)
+  })
+
+  describe('who may exchange a channel\'s content', () => {
+    // Alice, Bob and Carol are all admitted to the workspace; Alice and Bob have a DM.
+    const dm = buildDmChannelId('alice', 'bob')
+
+    it('a DM goes only to its other participant, never to a third member who derived its id', () => {
+      expect(mayExchangeChannel(dm, 'alice', 'bob')).toBe(true)
+      expect(mayExchangeChannel(dm, 'bob', 'alice')).toBe(true)
+      expect(mayExchangeChannel(dm, 'alice', 'carol')).toBe(false)
+      expect(mayExchangeChannel(dm, 'bob', 'carol')).toBe(false)
+    })
+
+    it('a DM this device is not in goes to nobody, its participants included', () => {
+      const theirs = buildDmChannelId('bob', 'carol')
+      expect(mayExchangeChannel(theirs, 'alice', 'bob')).toBe(false)
+      expect(mayExchangeChannel(theirs, 'alice', 'carol')).toBe(false)
+    })
+
+    it('a malformed DM id goes to nobody', () => {
+      for (const id of ['dm-', 'dm-alice', 'dm-alice::', 'dm-::bob', 'dm-alice:bob'])
+        expect(mayExchangeChannel(id, 'alice', 'bob'), id).toBe(false)
+    })
+
+    it('for any three distinct peers, a DM is exchanged only between its two participants', () => {
+      // Ids that differ by case, prefix or a lookalike `dm-` start, so a loose comparison would let one stand in for another.
+      const ids = ['alice', 'bob', 'Bob', 'bo', 'bobby', 'dm-x', '0', 'A'.repeat(20)]
+      for (const a of ids) for (const b of ids) for (const c of ids) {
+        if (a === b || b === c || a === c) continue
+        const dm = buildDmChannelId(a, b)
+        expect(mayExchangeChannel(dm, a, b), `${dm} ${a}→${b}`).toBe(true)
+        expect(mayExchangeChannel(dm, a, c), `${dm} ${a}→${c}`).toBe(false)
+        expect(mayExchangeChannel(dm, c, a), `${dm} ${c}→${a}`).toBe(false)
+      }
+    })
+
+    it('an ordinary channel goes to any member', () => {
+      expect(mayExchangeChannel('general', 'alice', 'carol')).toBe(true)
+      expect(mayExchangeChannel('random', 'bob', 'alice')).toBe(true)
+    })
   })
 })
