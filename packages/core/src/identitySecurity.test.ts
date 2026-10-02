@@ -4,7 +4,7 @@ import { bytesToBase64Url, utf8ToBase64Url } from './base64url.js'
 import { DeviceIdentity, verifyWithDeviceKeyId } from './deviceIdentity.js'
 import { resetOidcJwksCache } from './oidcIdToken.js'
 import { parseOidcDeviceAttestation, verifyGoogleDeviceBinding, verifyOidcDeviceBinding } from './oidcDeviceBinding.js'
-import { createPeerIdentityHandshake } from './peerIdentityHandshake.js'
+import { createPeerIdentityHandshake, handshakeProofBytes } from './peerIdentityHandshake.js'
 import { deriveUserId } from './userId.js'
 
 function identity() {
@@ -91,7 +91,9 @@ describe('OIDC device binding', () => {
   })
 })
 
-async function handshakeFixture(isInitiator = true, fault?: 'attestation' | 'binding' | 'challenge' | 'proof' | 'replay') {
+type Fault = 'attestation' | 'binding' | 'challenge' | 'proof' | 'replay' | 'raw' | 'other-peer' | 'reflected' | 'older' | 'self'
+
+async function handshakeFixture(isInitiator = true, fault?: Fault) {
   const local = identity()
   const remote = identity()
   const theirs = { providerId: 'google', idToken: 'verified-by-host', deviceKeyId: await remote.publicKeyId(), userId: 'remote-account' }
@@ -100,18 +102,32 @@ async function handshakeFixture(isInitiator = true, fault?: 'attestation' | 'bin
   const onPeerVerified = vi.fn()
   const verifyAttestation = vi.fn(async () => fault === 'binding' ? null : verified)
   const sent: DataPayload[] = []
-  const remoteChallenge = 'remote-challenge-'.repeat(3)
+  const remoteChallenge = 'R'.repeat(43)
+  const myChallenge = () => (sent.find(value => typeof value === 'object' && value !== null && 'nonce' in value) as { nonce: string }).nonce
   let step = 0
   const receive = async () => {
     step += 1
     let data: unknown
-    if (step === 1) data = fault === 'attestation' ? { ...theirs, userId: '' } : theirs
-    if (step === 2) data = { nonce: fault === 'challenge' ? 'short' : remoteChallenge }
+    // 'self': a replayed token of this very device, presenting its key.
+    if (step === 1) data = fault === 'attestation' ? { ...theirs, userId: '' } : fault === 'self' ? mine : theirs
+    if (step === 2) {
+      data = fault === 'challenge' ? { v: 2, nonce: 'short' }
+        : fault === 'older' ? { nonce: remoteChallenge }
+        // Sends this side's own challenge back, hoping to get a proof it can return.
+        : fault === 'reflected' ? { v: 2, nonce: myChallenge() }
+        : { v: 2, nonce: remoteChallenge }
+    }
     if (step === 3) {
-      const challenge = sent.find(value => typeof value === 'object' && value !== null && 'nonce' in value) as { nonce: string }
-      data = fault === 'proof' ? { signature: '' } : {
-        signature: await remote.sign(new TextEncoder().encode(fault === 'replay' ? 'an-old-challenge' : challenge.nonce)),
+      const proof = {
+        context: '', signerKeyId: theirs.deviceKeyId, verifierKeyId: mine.deviceKeyId,
+        verifierChallenge: myChallenge(), signerChallenge: fault === 'reflected' ? myChallenge() : remoteChallenge,
       }
+      const bytes = fault === 'raw' ? new TextEncoder().encode(myChallenge())
+        : fault === 'replay' ? handshakeProofBytes({ ...proof, verifierChallenge: 'P'.repeat(43) })
+        // A proof the remote made for a third device, relayed here.
+        : fault === 'other-peer' ? handshakeProofBytes({ ...proof, verifierKeyId: await identity().publicKeyId() })
+        : handshakeProofBytes(proof)
+      data = fault === 'proof' ? { signature: '' } : { signature: await remote.sign(bytes) }
     }
     return { data: data as DataPayload }
   }
@@ -119,7 +135,7 @@ async function handshakeFixture(isInitiator = true, fault?: 'attestation' | 'bin
     signer: local, getAttestation: async () => mine, verifyAttestation, onPeerVerified,
   })
   const run = () => handshake('remote-peer', async data => { sent.push(data) }, receive, isInitiator)
-  return { run, onPeerVerified, verifyAttestation, verified, theirs, mine, sent, remoteChallenge }
+  return { run, onPeerVerified, verifyAttestation, verified, theirs, mine, sent, remoteChallenge, myChallenge }
 }
 
 describe('peer identity proof of possession', () => {
@@ -130,10 +146,18 @@ describe('peer identity proof of possession', () => {
     expect(f.onPeerVerified).toHaveBeenCalledWith('remote-peer', f.verified, f.theirs)
     expect(f.sent[0]).toEqual(f.mine)
     const proof = f.sent[2] as { signature: string }
-    await expect(verifyWithDeviceKeyId(f.mine.deviceKeyId, new TextEncoder().encode(f.remoteChallenge), proof.signature)).resolves.toBe(true)
+    // The proof signs this session's transcript, bound to both devices – never the bare challenge.
+    const transcript = handshakeProofBytes({
+      context: '', signerKeyId: f.mine.deviceKeyId, verifierKeyId: f.theirs.deviceKeyId,
+      verifierChallenge: f.remoteChallenge, signerChallenge: f.myChallenge(),
+    })
+    await expect(verifyWithDeviceKeyId(f.mine.deviceKeyId, transcript, proof.signature)).resolves.toBe(true)
+    await expect(verifyWithDeviceKeyId(f.mine.deviceKeyId, new TextEncoder().encode(f.remoteChallenge), proof.signature)).resolves.toBe(false)
+    expect(f.sent[1]).toEqual({ v: 2, nonce: f.myChallenge() })
+    expect(f.myChallenge()).toMatch(/^[A-Za-z0-9_-]{43}$/)
   })
 
-  it.each(['attestation', 'binding', 'challenge', 'proof', 'replay'] as const)('fails closed for invalid %s', async fault => {
+  it.each(['attestation', 'binding', 'challenge', 'proof', 'replay', 'raw', 'other-peer', 'reflected', 'older', 'self'] as const)('fails closed for invalid %s', async fault => {
     const f = await handshakeFixture(true, fault)
     await expect(f.run()).rejects.toThrow('identity verification failed')
     expect(f.onPeerVerified).not.toHaveBeenCalled()
