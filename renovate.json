@@ -1,0 +1,4 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["local>codefusion-cc/codefusion//renovate/apps-after-canary"]
+}
