@@ -1,9 +1,9 @@
 name: Automerge
 
 # Merges a pull request labeled `automerge` with a merge commit once every check is green, as the
-# codefusion-automerge GitHub App (XeonFX/codefusion automerge/README.md). A public repository may not use the
-# private reusable workflow there, so this is its job, with the action checked out from XeonFX/codefusion by a
-# read-only token; keep it in step with XeonFX/codefusion .github/workflows/automerge.yml.
+# codefusion-automerge GitHub App (codefusion-cc/codefusion automerge/README.md). A public repository may not use the
+# private reusable workflow there, so this is its job, with the action checked out from codefusion-cc/codefusion by a
+# read-only token; keep it in step with codefusion-cc/codefusion .github/workflows/automerge.yml.
 on:
   pull_request_target:
     types: [labeled, ready_for_review, edited, closed]
@@ -53,7 +53,7 @@ jobs:
           permission-contents: read
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          repository: XeonFX/codefusion
+          repository: codefusion-cc/codefusion
           token: ${{ steps.source.outputs.token }}
           path: codefusion
           sparse-checkout: automerge

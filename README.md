@@ -47,7 +47,7 @@ Requires **Node 24.x and npm 11.x** — the majors that wrote the lockfile. Majo
 nvm install 24
 nvm use 24
 npm --version            # must print 11.x
-git clone https://github.com/XeonFX/Peerly.git
+git clone https://github.com/codefusion-cc/peerly.git
 cd Peerly
 npm ci
 cp .env.example .env   # add at least one identity provider (see below)
