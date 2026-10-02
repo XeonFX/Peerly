@@ -40,8 +40,11 @@ const PROOF_DOMAIN = 'peerly-peer-handshake-v2'
 /** A challenge: 32 random bytes, base64url without padding. */
 const CHALLENGE = /^[A-Za-z0-9_-]{43}$/
 
-const deny = (reason: string): never => {
-  throw new Error(`identity verification failed: ${reason}`)
+/** Every handshake refusal starts with this, so a UI can tell a denied peer from a network failure. */
+export const IDENTITY_DENIED_PREFIX = 'identity verification failed'
+
+function deny(reason: string): never {
+  throw new Error(`${IDENTITY_DENIED_PREFIX}: ${reason}`)
 }
 
 function parseChallenge(raw: unknown): string {
@@ -52,7 +55,7 @@ function parseChallenge(raw: unknown): string {
   if (message?.v !== PEER_HANDSHAKE_VERSION || typeof message.nonce !== 'string' || !CHALLENGE.test(message.nonce)) {
     deny('malformed challenge')
   }
-  return message!.nonce as string
+  return message.nonce
 }
 
 function parseProof(raw: unknown): string | null {
@@ -66,8 +69,10 @@ function parseProof(raw: unknown): string | null {
 /**
  * The bytes a handshake proof signs: the protocol, the `context` both peers share (the workspace), the signer's and the
  * verifier's device keys and both challenges, the verifier's first. A proof is bound to this session between these two
- * devices: it cannot be relayed to another peer, reflected back, or passed off as a member list, a chat message or any
- * other signature of this device key, whose payloads never start with this domain.
+ * devices: it cannot be replayed into another session, presented to a device other than the verifier it names, reflected
+ * back, or passed off as a member list, a chat message or any other signature of this device key, whose payloads never
+ * start with this domain. It is not bound to the WebRTC transport (no DTLS fingerprint), so a peer that relays
+ * attestations, challenges and proofs between two members in real time still sits in the middle of their channel.
  */
 export function handshakeProofBytes(proof: {
   context: string
@@ -83,7 +88,7 @@ export function handshakeProofBytes(proof: {
 }
 
 /** One step of the handshake: the initiator sends first, the responder answers. */
-async function exchange(send: Send, receive: Receive, isInitiator: boolean, message: DataPayload): Promise<unknown> {
+export async function exchangeHandshakeStep(send: Send, receive: Receive, isInitiator: boolean, message: DataPayload): Promise<unknown> {
   if (isInitiator) {
     await send(message)
     return (await receive()).data
@@ -115,13 +120,13 @@ export async function proveDeviceKeys(options: {
   if (theirKeyId === myKeyId) deny('the peer presents this device\'s own key')
   const myChallenge = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)))
   const theirChallenge = parseChallenge(
-    await exchange(send, receive, isInitiator, { v: PEER_HANDSHAKE_VERSION, nonce: myChallenge })
+    await exchangeHandshakeStep(send, receive, isInitiator, { v: PEER_HANDSHAKE_VERSION, nonce: myChallenge })
   )
   if (theirChallenge === myChallenge) deny('reflected challenge')
   const signature = await signer.sign(handshakeProofBytes({
     context, signerKeyId: myKeyId, verifierKeyId: theirKeyId, verifierChallenge: theirChallenge, signerChallenge: myChallenge,
   }))
-  const theirProof = parseProof(await exchange(send, receive, isInitiator, { signature }))
+  const theirProof = parseProof(await exchangeHandshakeStep(send, receive, isInitiator, { signature }))
   const expected = handshakeProofBytes({
     context, signerKeyId: theirKeyId, verifierKeyId: myKeyId, verifierChallenge: myChallenge, signerChallenge: theirChallenge,
   })
@@ -136,18 +141,10 @@ export function createPeerIdentityHandshake<TVerified>(
 ): PeerHandshake {
   return async (peerId, send, receive, isInitiator) => {
     const mine = await deps.getAttestation()
-    let rawTheirs: unknown
-    if (isInitiator) {
-      await send(mine)
-      ;({ data: rawTheirs } = await receive())
-    } else {
-      ;({ data: rawTheirs } = await receive())
-      await send(mine)
-    }
-    const theirs = parseAttestation(rawTheirs)
-    if (!theirs) throw new Error('identity verification failed: malformed attestation')
+    const theirs = parseAttestation(await exchangeHandshakeStep(send, receive, isInitiator, mine))
+    if (!theirs) deny('malformed attestation')
     const verified = await deps.verifyAttestation(theirs)
-    if (!verified) throw new Error('identity verification failed: invalid OIDC device binding')
+    if (!verified) deny('invalid OIDC device binding')
 
     await proveDeviceKeys({
       send, receive, isInitiator, signer: deps.signer,

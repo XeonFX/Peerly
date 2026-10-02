@@ -814,7 +814,7 @@ describe('the handshake is not a signing oracle for the creator key', () => {
     expect(signaturesIn(sentByCreator)).toEqual([])
   })
 
-  it('a proof for a well-formed challenge is no signature over the challenge, a member list or a chat message', async () => {
+  it('a proof for a well-formed challenge is no signature over the challenge or a member list', async () => {
     const nonce = 'Q'.repeat(43)
     const { outcome, sentByCreator, creatorKeyId, scope, signedAt } = await creatorAgainst({ v: 2, nonce })
     // The bogus proof sent back is refused; the creator had signed its proof first (it is the initiator).

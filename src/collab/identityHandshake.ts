@@ -1,5 +1,5 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
-import { proveDeviceKeys } from '@peerly/core'
+import { exchangeHandshakeStep, IDENTITY_DENIED_PREFIX, proveDeviceKeys } from '@peerly/core'
 import { base64UrlToUtf8 } from '../utils/base64url'
 import { DeviceIdentity, type DeviceKeyId } from './deviceIdentity'
 import {
@@ -10,7 +10,7 @@ import {
 import { verifyOidcIdToken, type JwksFetcher, type OidcIdTokenClaims } from './oidcIdToken'
 import { isEmailAllowed, newerAllowList, verifyAllowList, type SignedAllowList } from './allowList'
 
-export const IDENTITY_DENIED_PREFIX = 'identity verification failed'
+export { IDENTITY_DENIED_PREFIX }
 
 export type Attestation = {
   idToken: string
@@ -66,7 +66,6 @@ function isAttestationShape(data: unknown): data is Attestation {
   )
 }
 
-
 function deny(reason: string): never {
   throw new Error(`${IDENTITY_DENIED_PREFIX}: ${reason}`)
 }
@@ -101,15 +100,7 @@ function resolveProviderConfig(
 export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandshake {
   return async (_peerId, send, receive, isInitiator) => {
     const mine = await deps.getAttestation()
-
-    let theirsRaw: unknown
-    if (isInitiator) {
-      await send(mine)
-      ;({ data: theirsRaw } = await receive())
-    } else {
-      ;({ data: theirsRaw } = await receive())
-      await send(mine)
-    }
+    const theirsRaw = await exchangeHandshakeStep(send, receive, isInitiator, mine)
 
     if (!isAttestationShape(theirsRaw)) deny('malformed attestation')
     const theirs = theirsRaw

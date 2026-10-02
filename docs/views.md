@@ -304,7 +304,8 @@ Path: `/workspace/settings`
 [`collab/identityHandshake.ts`](../src/collab/identityHandshake.ts) —
 `createIdentityHandshake`:
 
-- Challenge-response with device key
+- Device-key proof of possession (`proveDeviceKeys` in `@peerly/core`): each side signs a transcript bound to the
+  workspace, both device keys and both fresh challenges — never a challenge the peer chose
 - Present ID token; peer verifies JWT + email on allow-list
 - Live **key → userId** bindings for message/reaction verification
 - Deny prefix for failed verification
