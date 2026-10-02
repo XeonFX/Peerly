@@ -35,6 +35,10 @@ const ERROR_TEXT = {
         const claimed = /peer claims to be ([^)]+)\)/.exec(raw)?.[1]
         return `A peer${claimed ? ` (${claimed})` : ''} could not join: their sign-in has expired. They need to sign in again on that device — your own connection is fine.`
       }
+      // Every tab of this browser holds the same device key, and a peer presenting this device's own key is refused.
+      if (raw.includes("this device's own key")) {
+        return 'Peerly is open in another tab or window of this browser — that copy cannot connect to this one. Use one tab per workspace.'
+      }
       return `A peer was not admitted: ${raw.slice(raw.indexOf(IDENTITY_DENIED_PREFIX) + IDENTITY_DENIED_PREFIX.length + 2)}`
     }
     return `Connection failed: ${raw}. Check your network or try again.`
