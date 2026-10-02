@@ -1,7 +1,7 @@
 name: Release @peerly/core
 
 # Publish @peerly/core via npm Trusted Publishing (OIDC).
-# npmjs.com → @peerly/core → Trusted publishing → XeonFX/Peerly / release-core.yml
+# npmjs.com → @peerly/core → Trusted publishing → codefusion-cc/peerly / release-core.yml
 #
 # Real release: dry_run=false, bump=patch|minor|major → tests → bump (lockstep
 # app + core) → publish to npm → open a PR (main is protected) → push tags.

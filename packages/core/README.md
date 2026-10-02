@@ -1,6 +1,6 @@
 # @peerly/core
 
-The P2P room core of [Peerly](https://github.com/XeonFX/Peerly) — join encrypted
+The P2P room core of [Peerly](https://github.com/codefusion-cc/peerly) — join encrypted
 [Trystero](https://github.com/dmotz/trystero) rooms by high-entropy room codes,
 with device identity, signing primitives, and signaling-strategy selection.
 No application server by default: signaling (Nostr by default) is used only so
@@ -140,7 +140,7 @@ Related helpers: `signalingLabel()`, `buildRelayUrls()`, `getNostrRelayConfig()`
 transport for presence/directory/DM notifications and WebRTC signaling
 (`SignalScopeDO`) — see [`worker/realtime`](worker/realtime) and
 [`src/realtime`](src/realtime), and the
-[Durable Objects architecture doc](https://github.com/XeonFX/Peerly/blob/main/docs/DURABLE_OBJECTS_ARCHITECTURE.md)
+[Durable Objects architecture doc](https://github.com/codefusion-cc/peerly/blob/main/docs/DURABLE_OBJECTS_ARCHITECTURE.md)
 for the full design. It currently backs only Peerly's stable preview
 deployment (`preview.peerly.cc`); production still runs the relay-based
 strategies above.

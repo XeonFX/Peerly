@@ -26,7 +26,7 @@ jobs:
     # Absent secret means the repo has not opted in. Skip rather than fail, so
     # a fork or an unconfigured clone does not show a permanently red job that
     # everyone learns to ignore.
-    if: github.repository == 'XeonFX/Peerly'
+    if: github.repository == 'codefusion-cc/peerly'
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 

@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/XeonFX/Peerly.git"
+    "url": "https://github.com/codefusion-cc/peerly.git"
   },
   "packageManager": "npm@11.16.0",
   "engines": {
