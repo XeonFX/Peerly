@@ -4,7 +4,7 @@ import { loadSelfIds, rememberSelfId } from '../collab/selfIdRegistry'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDurableChannel } from '@peerly/core/react'
 import { APP_ID, buildRoomId, CONTENT_BACKEND } from '../config'
-import { routeDmChannel } from '../collab/dmStore'
+import { mayShareHistory, routeDmChannel } from '../collab/dmStore'
 import { FileCache } from '../collab/fileCache'
 import type { ChatPayload, ReactionPayload } from '../protocol/types'
 import type { Message, SharedFile, UserProfile } from '../types'
@@ -419,7 +419,9 @@ export function useCollab({
         if (route.kind === 'dm') notifyDirectMessageRef.current(messageFromFileMeta(safeMeta, ''))
       })
     },
-    onHistoryRequest: channelId => {
+    onHistoryRequest: (channelId, peerId) => {
+      // A DM's history goes to its other participant only, like its live messages and files.
+      if (!mayShareHistory(channelId, selfId, peerId)) return []
       const entries = channelStore.getHistoryEntries(channelId)
       return CONTENT_BACKEND === 'durable-objects'
         ? entries.filter(entry => entry.type === 'file')
@@ -545,7 +547,7 @@ export function useCollab({
       onFileProgress: (...args) => handlersRef.current.onFileProgress(...args),
       onFile: (...args) => handlersRef.current.onFile(...args),
       onFileMeta: (...args) => handlersRef.current.onFileMeta(...args),
-      onHistoryRequest: channelId => handlersRef.current.onHistoryRequest(channelId),
+      onHistoryRequest: (...args) => handlersRef.current.onHistoryRequest(...args),
       onFileRequest: (...args) => handlersRef.current.onFileRequest(...args),
       onPeerJoin: (...args) => handlersRef.current.onPeerJoin(...args),
       onPeerLeave: (...args) => handlersRef.current.onPeerLeave(...args),

@@ -4,6 +4,7 @@ import {
   createDmChannel,
   ensureDmChannel,
   getDmPeerId,
+  mayShareHistory,
   mergeDmChannel,
   removeDmChannel,
   routeDmChannel,
@@ -68,5 +69,33 @@ describe('dmStore', () => {
     expect(ensureDmChannel('team', peer, 'alice').id).toBe(channel.id)
     expect(removeDmChannel('team', channel.id)).toBe(true)
     expect(removeDmChannel('team', channel.id)).toBe(false)
+  })
+
+  describe('who may receive a channel\'s history', () => {
+    // Alice, Bob and Carol are all admitted to the workspace; Alice and Bob have a DM.
+    const dm = buildDmChannelId('alice', 'bob')
+
+    it('a DM goes only to its other participant, never to a third member who derived its id', () => {
+      expect(mayShareHistory(dm, 'alice', 'bob')).toBe(true)
+      expect(mayShareHistory(dm, 'bob', 'alice')).toBe(true)
+      expect(mayShareHistory(dm, 'alice', 'carol')).toBe(false)
+      expect(mayShareHistory(dm, 'bob', 'carol')).toBe(false)
+    })
+
+    it('a DM this device is not in goes to nobody, its participants included', () => {
+      const theirs = buildDmChannelId('bob', 'carol')
+      expect(mayShareHistory(theirs, 'alice', 'bob')).toBe(false)
+      expect(mayShareHistory(theirs, 'alice', 'carol')).toBe(false)
+    })
+
+    it('a malformed DM id goes to nobody', () => {
+      for (const id of ['dm-', 'dm-alice', 'dm-alice::', 'dm-::bob', 'dm-alice:bob'])
+        expect(mayShareHistory(id, 'alice', 'bob'), id).toBe(false)
+    })
+
+    it('an ordinary channel goes to any member', () => {
+      expect(mayShareHistory('general', 'alice', 'carol')).toBe(true)
+      expect(mayShareHistory('random', 'bob', 'alice')).toBe(true)
+    })
   })
 })

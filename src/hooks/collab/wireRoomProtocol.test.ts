@@ -10,10 +10,11 @@ function createFakeRoom() {
   const actions = new Map<string, Listener>()
 
   const room = {
-    makeAction: (id: string) => {
+    makeAction: (id: string, config?: { onRequest?: unknown }) => {
       const action: Listener & { send: unknown; requestMany: unknown } = {
         send: vi.fn(async () => {}),
         requestMany: vi.fn(async () => []),
+        onRequest: config?.onRequest,
       }
       actions.set(id, action)
       return action
@@ -142,5 +143,33 @@ describe('wireRoomProtocol identity handling', () => {
     fileReq.onMessage(['f1'], { peerId: 'mallory-peer-id' })
 
     expect(handlers.onFileRequest).toHaveBeenCalledWith(['f1'], 'mallory-peer-id')
+  })
+
+  it('answers a history request for the peer that asked, so DM history can be scoped to its participants', () => {
+    const { room, actions } = createFakeRoom()
+    const handlers = noopHandlers()
+    const entries = [{ id: 'm1' }]
+    ;(handlers.onHistoryRequest as ReturnType<typeof vi.fn>).mockReturnValue(entries)
+    wireRoomProtocol(room as never, handlers, noopBindings() as never)
+
+    const history = actions.get('history-sync') as { onRequest: (data: unknown, context: unknown) => unknown }
+    expect(history.onRequest({ channelId: 'dm-alice::bob' }, { peerId: 'carol-peer-id' })).toBe(entries)
+    expect(handlers.onHistoryRequest).toHaveBeenCalledWith('dm-alice::bob', 'carol-peer-id')
+  })
+
+  it.each([
+    ['no request', null],
+    ['no channel', {}],
+    ['a channel id that is not text', { channelId: 7 }],
+    ['an empty channel id', { channelId: '' }],
+    ['a very long channel id', { channelId: 'c'.repeat(513) }],
+  ])('answers %s with no history, without asking the store', (_, data) => {
+    const { room, actions } = createFakeRoom()
+    const handlers = noopHandlers()
+    wireRoomProtocol(room as never, handlers, noopBindings() as never)
+
+    const history = actions.get('history-sync') as { onRequest: (data: unknown, context: unknown) => unknown }
+    expect(history.onRequest(data, { peerId: 'carol-peer-id' })).toEqual([])
+    expect(handlers.onHistoryRequest).not.toHaveBeenCalled()
   })
 })
