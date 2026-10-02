@@ -55,3 +55,71 @@ jobs:
       - run: npm run test:e2e
 
       - run: npm run test:e2e:do
+
+  # Every push to main that passes `test` goes to production (Worker `peerly`),
+  # as Workers Builds did before the repository moved to codefusion-cc: the
+  # same `npm run build` with the same build variables, then `wrangler deploy`
+  # (whose `build` block compiles packages/core). Peerly has no D1 database
+  # and no version endpoint;
+  # the last step waits for the new entry script instead.
+  deploy:
+    name: deploy production
+    needs: [test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    environment:
+      name: production
+      url: https://peerly.cc
+    # One deploy at a time, never cancelled once started. Pushes that land
+    # meanwhile wait; only the newest of them runs.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      # As in `test`; without the token, so no dependency ever sees it.
+      - run: npm ci --ignore-scripts
+
+      # Workers Builds' build variables for production (public values: the
+      # Google client, the relay and TURN hosts), as the bundle on peerly.cc
+      # was built with them.
+      - name: Build
+        run: npm run build
+        env:
+          VITE_GOOGLE_CLIENT_ID: 724645084534-eb9led5upjj8p46dr890tg3a0k3sonsk.apps.googleusercontent.com
+          VITE_SIGNALING: ws-relay
+          VITE_RELAY_HOST: relay.peerly.cc
+          VITE_RELAY_PORT: '443'
+          VITE_TURN_URLS: turn:turn.peerly.cc:3478,turns:turn.peerly.cc:5349
+
+      - name: Deploy the Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::The production environment's CLOUDFLARE_API_TOKEN secret is not set; see README.md (Deploy)"
+            exit 1
+          fi
+          npx wrangler deploy --message "${GITHUB_SHA::7} ${GITHUB_EVENT_NAME} by ${GITHUB_ACTOR}"
+
+      # No version endpoint: the page's entry script, whose name carries its
+      # content hash, says which build peerly.cc serves.
+      - name: peerly.cc serves this build
+        run: |
+          entry="$(grep -o '/assets/index-[^"]*\.js' dist/index.html)"
+          for attempt in $(seq 1 12); do
+            if curl -sf -H 'cache-control: no-cache' "https://peerly.cc/?$attempt" | grep -qF "$entry"; then
+              echo "Live: $entry"
+              exit 0
+            fi
+            echo "Not serving $entry yet; waiting"
+            sleep 5
+          done
+          echo "::error::peerly.cc does not serve $entry a minute after the deploy"
+          exit 1

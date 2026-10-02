@@ -21,8 +21,9 @@
     // docs/DURABLE_OBJECTS_ARCHITECTURE.md Phase 5).
     //
     // IMPORTANT: no `durable_objects`/`migrations` may appear in this file
-    // until that cutover PR. Workers Builds deploys every non-production
-    // branch with `wrangler versions upload`, and Cloudflare rejects any
+    // until that cutover PR. Workers Builds deployed every non-production
+    // branch with `wrangler versions upload` (CI now deploys only `main`, with
+    // a full deploy), and Cloudflare rejects any
     // version that carries a Durable Object migration (API error 10211) —
     // migrations only apply through a full deploy, which happens on merge to
     // main. The DO-enabled staging worker lives in wrangler.preview.jsonc.

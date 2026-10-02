@@ -8,7 +8,7 @@
   //
   // This is a separate config file (not an `env` inside wrangler.jsonc)
   // because the Durable Object `migrations` block cannot appear anywhere in
-  // the default config: Workers Builds deploys non-production branches with
+  // the default config: Workers Builds deployed non-production branches with
   // `wrangler versions upload`, and Cloudflare rejects versions that carry a
   // DO migration (API error 10211). Migrations move into wrangler.jsonc only
   // in the production cutover PR, where merge-to-main applies them via a
