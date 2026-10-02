@@ -75,8 +75,12 @@ jobs:
     concurrency:
       group: deploy-production
       cancel-in-progress: false
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -112,7 +116,11 @@ jobs:
       # content hash, says which build peerly.cc serves.
       - name: peerly.cc serves this build
         run: |
-          entry="$(grep -o '/assets/index-[^"]*\.js' dist/index.html)"
+          entry="$(grep -o '/assets/index-[^"]*\.js' dist/index.html || true)"
+          if [ -z "$entry" ]; then
+            echo "::error::dist/index.html names no /assets/index-*.js entry script to look for"
+            exit 1
+          fi
           for attempt in $(seq 1 12); do
             if curl -sf -H 'cache-control: no-cache' "https://peerly.cc/?$attempt" | grep -qF "$entry"; then
               echo "Live: $entry"

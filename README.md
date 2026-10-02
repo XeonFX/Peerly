@@ -249,8 +249,6 @@ codefusion-cc and deploys nothing.
 
 Register the production origin (`https://peerly.cc`) in each OAuth provider's allowed JavaScript origins / redirect URIs.
 
-Cloudflare injects `WORKERS_CI_COMMIT_SHA` at build time, which appears in the UI as `v<version> · <commit>`.
-
 Cloudflare Pages also works: use `npm run build`, publish `dist/`, and set the same build-time environment variables.
 
 ### Testing branches with Google sign-in
