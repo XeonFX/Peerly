@@ -178,7 +178,9 @@ export function useMultiChannelStore(
   )
 
   const getHistoryEntries = useCallback((channelId: string): HistoryEntry[] => {
-    const channelMessages = (messagesByChannelRef.current[channelId] ?? []).filter(
+    // `channelId` comes from a peer's request: an inherited key (`constructor`, `__proto__`) is not a channel.
+    const byChannel = messagesByChannelRef.current
+    const channelMessages = (Object.hasOwn(byChannel, channelId) ? byChannel[channelId] : []).filter(
       message => message.channelId === channelId
     )
     return capHistory(channelMessages).map(toHistoryEntry)
@@ -199,7 +201,8 @@ export function useMultiChannelStore(
       const missingFileIds: string[] = []
 
       for (const [channelId, channelEntries] of entriesByChannel) {
-        const current = messagesByChannelRef.current[channelId] ?? []
+        // The channel id comes from another peer: a name every object inherits (`constructor`) is no channel here.
+        const current = Object.hasOwn(messagesByChannelRef.current, channelId) ? messagesByChannelRef.current[channelId] : []
         const merged = capHistory(
           await entriesToMessages(channelEntries, fileCache, blobUrlsRef.current, current)
         )

@@ -1,5 +1,5 @@
 import { selfId } from '../../collab/identity'
-import { routeDmChannel } from '../../collab/dmStore'
+import { mayExchangeChannel, routeDmChannel } from '../../collab/dmStore'
 import { useCallback, useRef, useState, type RefObject } from 'react'
 import { recordSyncActivity, syncPayloadBytes } from '@peerly/core'
 import {
@@ -252,9 +252,7 @@ export function useFileTransfer(
         if (!cached) continue
 
         // Never hand a DM attachment to anyone but that conversation's peer.
-        const route = routeDmChannel(cached.meta.channelId, selfId)
-        if (route.kind === 'foreign-dm') continue
-        if (route.kind === 'dm' && route.peerId !== peerId) continue
+        if (!mayExchangeChannel(cached.meta.channelId, selfId, peerId)) continue
 
         try {
           await fileAction.send(cached.buffer, { metadata: cached.meta, target: peerId })

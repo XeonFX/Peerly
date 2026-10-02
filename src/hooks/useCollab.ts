@@ -4,7 +4,7 @@ import { loadSelfIds, rememberSelfId } from '../collab/selfIdRegistry'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDurableChannel } from '@peerly/core/react'
 import { APP_ID, buildRoomId, CONTENT_BACKEND } from '../config'
-import { mayShareHistory, routeDmChannel } from '../collab/dmStore'
+import { isDmChannelId, mayExchangeChannel, routeDmChannel } from '../collab/dmStore'
 import { FileCache } from '../collab/fileCache'
 import type { ChatPayload, ReactionPayload } from '../protocol/types'
 import type { Message, SharedFile, UserProfile } from '../types'
@@ -406,9 +406,7 @@ export function useCollab({
       })
     },
     onFileMeta: (meta, peerId) => {
-      const route = routeDmChannel(meta.channelId, selfId)
-      if (route.kind === 'foreign-dm') return
-      if (route.kind === 'dm' && peerId !== route.peerId) return
+      if (!mayExchangeChannel(meta.channelId, selfId, peerId)) return
       // Same rule as onChat: the durable id comes from the peer's verified
       // handshake or not at all — never from the payload.
       const safeMeta = {
@@ -416,12 +414,12 @@ export function useCollab({
         senderUserId: identityRef.current?.resolvePeerUserId?.(peerId),
       }
       void files.handleFileMeta(safeMeta, peerId).then(() => {
-        if (route.kind === 'dm') notifyDirectMessageRef.current(messageFromFileMeta(safeMeta, ''))
+        if (isDmChannelId(meta.channelId)) notifyDirectMessageRef.current(messageFromFileMeta(safeMeta, ''))
       })
     },
     onHistoryRequest: (channelId, peerId) => {
       // A DM's history goes to its other participant only, like its live messages and files.
-      if (!mayShareHistory(channelId, selfId, peerId)) return []
+      if (!mayExchangeChannel(channelId, selfId, peerId)) return []
       const entries = channelStore.getHistoryEntries(channelId)
       return CONTENT_BACKEND === 'durable-objects'
         ? entries.filter(entry => entry.type === 'file')
@@ -475,8 +473,7 @@ export function useCollab({
       channelSync.handleChannel(payload, peerId)
     },
     onReaction: (payload, peerId, transportIdentity) => {
-      const route = routeDmChannel(payload.channelId, selfId)
-      if (route.kind === 'foreign-dm' || (route.kind === 'dm' && route.peerId !== peerId)) return
+      if (!mayExchangeChannel(payload.channelId, selfId, peerId)) return
       const actorUserId =
         transportIdentity?.userId ??
         identityRef.current?.resolvePeerUserId?.(peerId)
