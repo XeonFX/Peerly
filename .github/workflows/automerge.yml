@@ -1,0 +1,77 @@
+name: Automerge
+
+# Merges a pull request labeled `automerge` with a merge commit once every check is green, as the
+# codefusion-automerge GitHub App (XeonFX/codefusion automerge/README.md). A public repository may not use the
+# private reusable workflow there, so this is its job, with the action checked out from XeonFX/codefusion by a
+# read-only token; keep it in step with XeonFX/codefusion .github/workflows/automerge.yml.
+on:
+  pull_request_target:
+    types: [labeled, ready_for_review, edited, closed]
+  workflow_run:
+    workflows: [CI, Security]
+    types: [completed]
+  # Workers Builds reports from outside Actions.
+  check_suite:
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  automerge:
+    name: merge when green
+    # Events that cannot lead to a merge end here, without taking a runner or making a token.
+    if: >-
+      (github.event_name == 'pull_request_target'
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && ((github.event.action == 'closed'
+            && github.event.pull_request.merged
+            && github.event.pull_request.merged_by.type != 'Bot')
+          || (github.event.action != 'closed'
+            && contains(github.event.pull_request.labels.*.name, 'automerge')
+            && (github.event.action != 'labeled' || github.event.label.name == 'automerge')
+            && (github.event.action != 'edited' || github.event.changes.base))))
+      || (github.event_name == 'workflow_run'
+        && github.event.workflow_run.event == 'pull_request'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.head_repository.full_name == github.repository)
+      || (github.event_name == 'check_suite'
+        && github.event.check_suite.conclusion == 'success'
+        && github.event.check_suite.head_branch != github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # One run per pull request (its branch) at a time; a newer event waits and replaces any older one waiting.
+    concurrency:
+      group: automerge-${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch || github.event.check_suite.head_branch }}
+      cancel-in-progress: false
+    steps:
+      - id: source
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTOMERGE_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_PRIVATE_KEY }}
+          repositories: codefusion
+          permission-contents: read
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: XeonFX/codefusion
+          token: ${{ steps.source.outputs.token }}
+          path: codefusion
+          sparse-checkout: automerge
+          persist-credentials: false
+      - id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTOMERGE_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_PRIVATE_KEY }}
+          # Merge and update branches (workflows: a pull request may change .github/workflows), retarget stacked
+          # pull requests, and read checks, statuses and workflow runs.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+          permission-checks: read
+          permission-statuses: read
+          permission-actions: read
+      - uses: ./codefusion/automerge
+        with:
+          token: ${{ steps.token.outputs.token }}
+          required-checks: 'Workers Builds: peerly'
