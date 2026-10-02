@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { DataPayload } from '@trystero-p2p/core'
 import type { KvStore } from '../utils/kvStore'
 import { utf8ToBase64Url, bytesToBase64Url } from '../utils/base64url'
-import { DeviceIdentity } from './deviceIdentity'
-import { signAllowList, type SignedAllowList } from './allowList'
+import { DeviceIdentity, verifyWithDeviceKeyId } from './deviceIdentity'
+import { signAllowList, verifyAllowList, workspaceAuthorityScope, type SignedAllowList } from './allowList'
 import { resetJwksCache, type JwkWithKid, type JwksFetcher } from './googleIdToken'
 import { createIdentityHandshake, IDENTITY_DENIED_PREFIX, type Attestation } from './identityHandshake'
 
@@ -411,29 +411,37 @@ describe('identity handshake', () => {
     expectHandshakeError({ a, b }, 'allow-list signature')
   })
 
-  it('denies a replayed Google token: attacker has the JWT but not the matching device key', async () => {
+  it.each([
+    ['to another member', 'bob', 'proof-of-possession failed'],
+    ['back to its owner', 'alice', "the peer presents this device's own key"],
+  ])('denies a replayed Google token %s: the attacker has the JWT but not the device key', async (_, target, reason) => {
     const google = await makeFakeGoogle()
     const creator = new DeviceIdentity(memoryStore())
     const creatorKeyId = await creator.publicKeyId()
-    const allowList = await signAllowList(creator, ['alice@example.com'])
+    const allowList = await signAllowList(creator, ['alice@example.com', 'bob@example.com'])
 
     const alice = new DeviceIdentity(memoryStore())
+    const bob = new DeviceIdentity(memoryStore())
     const mallory = new DeviceIdentity(memoryStore())
     const aliceKeyId = await alice.publicKeyId()
+    const bobKeyId = await bob.publicKeyId()
 
     // Mallory captured Alice's real, validly-signed, correctly-nonced token
     // (e.g. by being a peer in the same room earlier) and replays it verbatim
     // — but she signs the live challenge with HER OWN device key, since she
     // does not have Alice's private key.
     const aliceToken = await google.issueToken('alice@example.com', aliceKeyId)
+    const victim = target === 'bob'
+      ? { identity: bob, idToken: await google.issueToken('bob@example.com', bobKeyId), deviceKeyId: bobKeyId }
+      : { identity: alice, idToken: aliceToken, deviceKeyId: aliceKeyId }
 
     const { a, b } = await runHandshake(
       {
-        identity: alice,
+        identity: victim.identity,
         getAttestation: async () => ({
-          idToken: aliceToken,
+          idToken: victim.idToken,
           providerId: 'google',
-          deviceKeyId: aliceKeyId,
+          deviceKeyId: victim.deviceKeyId,
           allowList,
         }),
         resolveProvider: resolveFakeGoogle(google),
@@ -441,7 +449,7 @@ describe('identity handshake', () => {
         creatorKeyId,
       },
       {
-        identity: mallory, // Mallory's real device key does the signing in round 2/3
+        identity: mallory, // Mallory's real device key does the signing
         getAttestation: async () => ({
           idToken: aliceToken, // replayed, unmodified
           providerId: 'google',
@@ -455,7 +463,7 @@ describe('identity handshake', () => {
     )
 
     expect(a.ok).toBe(false)
-    expectHandshakeError({ a, b }, 'proof-of-possession failed')
+    expectHandshakeError({ a, b }, reason)
   })
 
   it('denies a peer whose email the provider has NOT verified', async () => {
@@ -685,5 +693,137 @@ describe('identity handshake', () => {
     expect(a.ok).toBe(true)
     expect(b.ok).toBe(true)
     expect(seenByAlice).toEqual(updatedList)
+  })
+})
+
+// ---- A member who is in the workspace attacks the creator's device through the handshake ----
+
+const SECRET = 'workspace-secret'
+
+/**
+ * The creator's real handshake against a member who drives the protocol by hand: a valid attestation, then
+ * `challenge` where a fresh random challenge belongs, then `proof` (if the creator gets that far). Returns what
+ * the creator sent and how its handshake ended.
+ */
+async function creatorAgainst(
+  challenge: unknown | ((workspace: { scope: string; signedAt: number }) => unknown),
+  { creatorIsInitiator = true, proof = { signature: 'AAAA' } } = {}
+) {
+  const google = await makeFakeGoogle()
+  const creator = new DeviceIdentity(memoryStore())
+  const creatorKeyId = await creator.publicKeyId()
+  const scope = await workspaceAuthorityScope(SECRET, creatorKeyId)
+  const allowList = await signAllowList(creator, ['creator@example.com', 'mallory@example.com'], scope)
+  const mallory = new DeviceIdentity(memoryStore())
+  const malloryKeyId = await mallory.publicKeyId()
+
+  const channel = createPeerChannel()
+  const sentByCreator: unknown[] = []
+  const handshake = createIdentityHandshake({
+    identity: creator,
+    getAttestation: async () => ({
+      idToken: await google.issueToken('creator@example.com', creatorKeyId),
+      providerId: 'google',
+      deviceKeyId: creatorKeyId,
+      allowList,
+    }),
+    resolveProvider: resolveFakeGoogle(google),
+    fetchJwks: google.fetchJwks,
+    creatorKeyId,
+    workspaceSecret: SECRET,
+  })
+  const outcome = handshake(
+    'mallory',
+    async data => {
+      sentByCreator.push(data)
+      await channel.sideA.send(data)
+    },
+    channel.sideA.receive,
+    creatorIsInitiator
+  ).then(
+    () => 'admitted',
+    (err: Error) => {
+      channel.closeBoth(new Error('creator denied'))
+      return err.message
+    }
+  )
+
+  const attestation = {
+    idToken: await google.issueToken('mallory@example.com', malloryKeyId),
+    providerId: 'google',
+    deviceKeyId: malloryKeyId,
+    allowList,
+  }
+  // Each phase: the initiator sends first, the responder answers.
+  const exchange = async (message: unknown) => {
+    if (creatorIsInitiator) {
+      await channel.sideB.receive()
+      await channel.sideB.send(message as DataPayload)
+    } else {
+      await channel.sideB.send(message as DataPayload)
+      await channel.sideB.receive()
+    }
+  }
+  try {
+    await exchange(attestation)
+    await exchange(typeof challenge === 'function' ? challenge({ scope, signedAt: allowList.signedAt }) : challenge)
+    await exchange(proof)
+  } catch {
+    // The creator stopped talking: what it sent so far is the evidence.
+  }
+  return { outcome: await outcome, sentByCreator, creatorKeyId, scope, signedAt: allowList.signedAt }
+}
+
+const signaturesIn = (sent: unknown[]) =>
+  sent.flatMap(m => (m && typeof m === 'object' && 'signature' in m ? [(m as { signature: string }).signature] : []))
+
+describe('the handshake is not a signing oracle for the creator key', () => {
+  it.each([true, false])(
+    'refuses to sign a newer allow-list sent as the challenge (creator initiator=%s)',
+    async creatorIsInitiator => {
+      // The exact bytes the creator signs for a newer member list, adding an account of the attacker's choice.
+      const forged = ({ scope, signedAt }: { scope: string; signedAt: number }) => ({
+        v: 2,
+        nonce: JSON.stringify(['peerly-workspace-members-v2', scope, ['creator@example.com', 'eve@example.com', 'mallory@example.com'], signedAt + 1]),
+      })
+      const attack = await creatorAgainst(forged, { creatorIsInitiator })
+      expect(attack.outcome).toContain(`${IDENTITY_DENIED_PREFIX}: malformed challenge`)
+      expect(signaturesIn(attack.sentByCreator)).toEqual([])
+    }
+  )
+
+  it.each([
+    ['the legacy member list', { v: 2, nonce: 'eve@example.com,mallory@example.com|1790000000000' }],
+    ['a 42-character challenge', { v: 2, nonce: 'A'.repeat(42) }],
+    ['a 44-character challenge', { v: 2, nonce: 'A'.repeat(44) }],
+    ['a challenge with characters outside base64url', { v: 2, nonce: `${'A'.repeat(42)}+` }],
+    ['a padded challenge', { v: 2, nonce: `${'A'.repeat(42)}=` }],
+    ['a very long challenge', { v: 2, nonce: 'A'.repeat(100_000) }],
+    ['a number', { v: 2, nonce: 123 }],
+    ['no challenge', { v: 2 }],
+    ['a challenge from another protocol version', { v: 3, nonce: 'A'.repeat(43) }],
+  ])('refuses %s before signing anything', async (_, challenge) => {
+    const { outcome, sentByCreator } = await creatorAgainst(challenge)
+    expect(outcome).toContain(IDENTITY_DENIED_PREFIX)
+    expect(signaturesIn(sentByCreator)).toEqual([])
+  })
+
+  it('tells an older peer (no protocol version) to reload, without signing its challenge', async () => {
+    const { outcome, sentByCreator } = await creatorAgainst({ nonce: 'A'.repeat(43) })
+    expect(outcome).toContain('older version of Peerly')
+    expect(signaturesIn(sentByCreator)).toEqual([])
+  })
+
+  it('a proof for a well-formed challenge is no signature over the challenge, a member list or a chat message', async () => {
+    const nonce = 'Q'.repeat(43)
+    const { outcome, sentByCreator, creatorKeyId, scope, signedAt } = await creatorAgainst({ v: 2, nonce })
+    // The bogus proof sent back is refused; the creator had signed its proof first (it is the initiator).
+    expect(outcome).toContain('proof-of-possession failed')
+    const [signature] = signaturesIn(sentByCreator)
+    expect(signature).toBeTruthy()
+    const encode = (text: string) => new TextEncoder().encode(text)
+    expect(await verifyWithDeviceKeyId(creatorKeyId, encode(nonce), signature)).toBe(false)
+    const list = { emails: [nonce], signedAt, scope, signature }
+    expect(await verifyAllowList(list, creatorKeyId, SECRET)).toBe(false)
   })
 })

@@ -1,6 +1,7 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
-import { base64UrlToUtf8, bytesToBase64Url } from '../utils/base64url'
-import { DeviceIdentity, verifyWithDeviceKeyId, type DeviceKeyId } from './deviceIdentity'
+import { proveDeviceKeys } from '@peerly/core'
+import { base64UrlToUtf8 } from '../utils/base64url'
+import { DeviceIdentity, type DeviceKeyId } from './deviceIdentity'
 import {
   defaultJwksFetcher,
   getIdentityProvider,
@@ -65,19 +66,6 @@ function isAttestationShape(data: unknown): data is Attestation {
   )
 }
 
-function isNonceMessage(data: unknown): data is { nonce: string } {
-  return !!data && typeof data === 'object' && typeof (data as { nonce?: unknown }).nonce === 'string'
-}
-
-function isSignatureMessage(data: unknown): data is { signature: string } {
-  return (
-    !!data && typeof data === 'object' && typeof (data as { signature?: unknown }).signature === 'string'
-  )
-}
-
-function randomChallenge(): string {
-  return bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)))
-}
 
 function deny(reason: string): never {
   throw new Error(`${IDENTITY_DENIED_PREFIX}: ${reason}`)
@@ -162,37 +150,11 @@ export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandsh
       deny(`${claims.email} is not on this workspace's invite list`)
     }
 
-    const myChallenge = randomChallenge()
-    let theirChallengeRaw: unknown
-    if (isInitiator) {
-      await send({ nonce: myChallenge })
-      ;({ data: theirChallengeRaw } = await receive())
-    } else {
-      ;({ data: theirChallengeRaw } = await receive())
-      await send({ nonce: myChallenge })
-    }
-    if (!isNonceMessage(theirChallengeRaw)) deny('malformed challenge')
-
-    const myProof = await deps.identity.sign(new TextEncoder().encode(theirChallengeRaw.nonce))
-
-    let theirProofRaw: unknown
-    if (isInitiator) {
-      await send({ signature: myProof })
-      ;({ data: theirProofRaw } = await receive())
-    } else {
-      ;({ data: theirProofRaw } = await receive())
-      await send({ signature: myProof })
-    }
-    if (!isSignatureMessage(theirProofRaw)) deny('malformed proof')
-
-    const possessesKey = await verifyWithDeviceKeyId(
-      theirs.deviceKeyId,
-      new TextEncoder().encode(myChallenge),
-      theirProofRaw.signature
-    )
-    if (!possessesKey) {
-      deny('device key proof-of-possession failed (likely a replayed ID token)')
-    }
+    // Bound to this workspace, both devices and both challenges: the creator's key signs nothing a peer chose.
+    await proveDeviceKeys({
+      send, receive, isInitiator, signer: deps.identity,
+      myKeyId: mine.deviceKeyId, theirKeyId: theirs.deviceKeyId, context: `workspace:${deps.creatorKeyId}`,
+    })
 
     deps.onPeerVerified?.(_peerId, claims, theirs.deviceKeyId)
     deps.onAllowListSeen?.(theirs.allowList)

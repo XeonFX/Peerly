@@ -87,6 +87,9 @@ export {
 } from './oidcDeviceBinding.js'
 export {
   createPeerIdentityHandshake,
+  handshakeProofBytes,
+  PEER_HANDSHAKE_VERSION,
+  proveDeviceKeys,
   type PeerIdentityAttestation,
   type PeerIdentityHandshakeDeps,
 } from './peerIdentityHandshake.js'
