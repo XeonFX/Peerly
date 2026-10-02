@@ -87,6 +87,9 @@ export function handshakeProofBytes(proof: {
   )
 }
 
+type Send = Parameters<PeerHandshake>[1]
+type Receive = Parameters<PeerHandshake>[2]
+
 /** One step of the handshake: the initiator sends first, the responder answers. */
 export async function exchangeHandshakeStep(send: Send, receive: Receive, isInitiator: boolean, message: DataPayload): Promise<unknown> {
   if (isInitiator) {
@@ -97,9 +100,6 @@ export async function exchangeHandshakeStep(send: Send, receive: Receive, isInit
   await send(message)
   return data
 }
-
-type Send = Parameters<PeerHandshake>[1]
-type Receive = Parameters<PeerHandshake>[2]
 
 /**
  * Live proof of possession, once both attestations are verified: each side sends a fresh challenge and signs the
