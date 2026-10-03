@@ -6,6 +6,7 @@ on:
   pull_request:
   schedule:
     - cron: '31 4 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -81,7 +82,11 @@ jobs:
           fi
           "$RUNNER_TEMP/gitleaks" git --redact --log-opts="--no-merges $range"
 
-  mutation:
+  # The full re-test of every mutant, which the incremental run in ci.yml skips
+  # for code and tests that did not change. Weekly only: it gates nothing, so
+  # a deploy never waits for it. --force ignores the incremental report.
+  mutation-full:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -90,4 +95,4 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - run: npm ci --ignore-scripts
-      - run: npm run test:mutation
+      - run: npm run test:mutation -- --force
