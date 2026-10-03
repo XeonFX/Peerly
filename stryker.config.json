@@ -8,5 +8,6 @@
   ],
   "reporters": ["clear-text", "progress"],
   "coverageAnalysis": "perTest",
+  "incremental": true,
   "thresholds": { "high": 60, "low": 45, "break": 45 }
 }

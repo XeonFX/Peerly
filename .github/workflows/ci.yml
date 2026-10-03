@@ -5,6 +5,12 @@ on:
     branches: [main, master]
   pull_request:
 
+# A newer push to a pull request cancels its older run so runners never work
+# through stale commits; runs on main (which deploy) are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -56,7 +62,33 @@ jobs:
 
       - run: npm run test:e2e:do
 
-  # Every push to main that passes `test` goes to production (Worker `peerly`),
+  # Mutation testing is a gate like `test`: it runs on every pull request, so
+  # the automerge workflow merges only when it passes, and the deploy waits for
+  # it. Stryker's incremental report comes back from the cache, so a run
+  # re-tests only the mutants in code or tests changed since the last one; the
+  # full weekly run is in security.yml and blocks nothing.
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - run: npm ci --ignore-scripts
+
+      # Each run saves its report under a key of its own and restores the newest one.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.run_id }}
+          restore-keys: stryker-incremental-
+
+      - run: npm run test:mutation
+
+  # Every push to main that passes `test` and `mutation` goes to production (Worker `peerly`),
   # as Workers Builds did before the repository moved to codefusion-cc: the
   # same `npm run build` with the same build variables, then `wrangler deploy`
   # (whose `build` block compiles packages/core). Peerly has no D1 database
@@ -64,7 +96,7 @@ jobs:
   # the last step waits for the new entry script instead.
   deploy:
     name: deploy production
-    needs: [test]
+    needs: [test, mutation]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     environment:

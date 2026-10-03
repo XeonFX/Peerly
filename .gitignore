@@ -47,3 +47,5 @@ Thumbs.db
 dist-e2e
 
 dist-preview
+reports/
+.stryker-tmp/
