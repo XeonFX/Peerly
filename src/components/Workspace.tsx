@@ -62,6 +62,8 @@ type Props = {
   signMessage?: (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => Promise<{ senderDeviceKeyId: string; signature: string }>
   signReaction?: (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => Promise<{ actorDeviceKeyId: string; signature: string }>
   getBoundUserId?: (deviceKeyId: string) => string | undefined
+  /** Whether a peer is another tab of this browser. See useWorkspaceAuth. */
+  isSiblingTab?: (peerId: string) => boolean
   /** Needed to re-sign the allow-list when inviting; only the creator's device can. */
   authManager: WorkspaceAuthManager | null
   onSessionChange: (patch: Partial<Session>) => void
@@ -147,6 +149,7 @@ function WorkspaceShell({
     connectionError,
     relayOnline,
     rtcPeerCount,
+    siblingTabCount,
     relayUrls,
     p2pCapability,
     retryP2pCapability,
@@ -267,6 +270,7 @@ function WorkspaceShell({
         connectionStatus={connectionStatus}
         relayOnline={relayOnline}
         rtcPeerCount={rtcPeerCount}
+        siblingTabCount={siblingTabCount}
         p2pCapability={p2pCapability}
         connectionError={connectionError}
         relayUrls={relayUrls}
@@ -389,6 +393,7 @@ export function Workspace({
   signMessage,
   signReaction,
   getBoundUserId,
+  isSiblingTab,
   authManager,
   onSessionChange,
   friends,
@@ -520,6 +525,7 @@ export function Workspace({
       signMessage={signMessage}
       signReaction={signReaction}
       getBoundUserId={getBoundUserId}
+      isSiblingTab={isSiblingTab}
       onProfileChange={handleProfileChange}
       onChannelsChange={refreshChannels}
     >

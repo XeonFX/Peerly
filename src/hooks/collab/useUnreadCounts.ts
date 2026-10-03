@@ -15,7 +15,8 @@ export function useUnreadCounts(
   channelIds: string[],
   activeChannelId: string,
   activeView: 'channel' | 'profile' | 'workspace',
-  selfId: string
+  selfId: string,
+  selfUserId?: string
 ) {
   const [readState, setReadState] = useState<ReadState>(() => loadReadState(workspaceId))
   const [documentVisible, setDocumentVisible] = useState(
@@ -62,8 +63,8 @@ export function useUnreadCounts(
   }, [activeChannelId, activeView, documentVisible, messagesByChannel, workspaceId])
 
   const unreadByChannel = useMemo(
-    () => countUnreadByChannel(messagesByChannel, readState, selfId, channelSeenAt),
-    [messagesByChannel, readState, selfId, channelSeenAt]
+    () => countUnreadByChannel(messagesByChannel, readState, selfId, channelSeenAt, selfUserId),
+    [messagesByChannel, readState, selfId, channelSeenAt, selfUserId]
   )
 
   return {

@@ -40,6 +40,8 @@ type Props = {
   connectionStatus: ConnectionStatus
   relayOnline: boolean
   rtcPeerCount: number
+  /** Other tabs of this browser in this workspace; shown on your own row. */
+  siblingTabCount?: number
   p2pCapability: P2pCapability
   connectionError: string | null
   relayUrls: string[]
@@ -120,6 +122,7 @@ export function Sidebar({
   connectionStatus,
   relayOnline,
   rtcPeerCount,
+  siblingTabCount = 0,
   p2pCapability,
   connectionError,
   relayUrls,
@@ -302,7 +305,14 @@ export function Sidebar({
                 avatar={selfProfile.avatar}
               />
               <span className="min-w-0 flex-1 truncate">{selfProfile.name}</span>
-              <span className="shrink-0 text-xs text-base-content/55">{tr('you')}</span>
+              <span
+                className="shrink-0 text-xs text-base-content/55"
+                title={siblingTabCount > 0 ? tr('Open in {count} tabs of this browser', { count: siblingTabCount + 1 }) : undefined}
+                data-testid="member-self-tabs"
+                data-tab-count={siblingTabCount + 1}
+              >
+                {siblingTabCount > 0 ? tr('you · {count} tabs', { count: siblingTabCount + 1 }) : tr('you')}
+              </span>
             </button>
           </li>
           {peers.map(peer => {

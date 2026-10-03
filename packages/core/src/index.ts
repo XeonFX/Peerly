@@ -90,11 +90,26 @@ export {
   exchangeHandshakeStep,
   handshakeProofBytes,
   IDENTITY_DENIED_PREFIX,
+  OLDER_PEER_REASON,
+  olderPeer,
   PEER_HANDSHAKE_VERSION,
-  proveDeviceKeys,
+  proveTabKeys,
+  STALE_TAB_REASON,
+  UNKNOWN_SIBLING_REASON,
   type PeerIdentityAttestation,
+  type PeerIdentityClaim,
   type PeerIdentityHandshakeDeps,
 } from './peerIdentityHandshake.js'
+export {
+  parseTabCertificate,
+  tabCertificateBytes,
+  TAB_CERTIFICATE_LIFETIME_MS,
+  TAB_CERTIFICATE_SKEW_MS,
+  TabSession,
+  verifyTabCertificate,
+  type TabCertificate,
+  type TabCertificateCheck,
+} from './tabSession.js'
 export {
   DEFAULT_EMAIL_VERIFIED_CLAIM,
   extractEmailClaim,
