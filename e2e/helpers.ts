@@ -300,6 +300,18 @@ export async function sendMessage(page: Page, text: string) {
   await page.getByTestId('send-button').click({ timeout: 10_000 })
 }
 
+/**
+ * Wait until the channel history written to localStorage contains `needle`.
+ * Messages are persisted asynchronously after they render, so a reload straight
+ * after sending can race the write and come back with an empty channel.
+ */
+export async function waitForHistoryPersisted(page: Page, needle: string, channelId = 'general') {
+  const key = `peerly-history-${e2eWorkspaceId()}__${channelId}`
+  await expect
+    .poll(async () => (await page.evaluate(k => localStorage.getItem(k), key))?.includes(needle) ?? false)
+    .toBe(true)
+}
+
 export async function expectMessage(page: Page, text: string, timeout = 20_000) {
   await expect(page.locator('.message-list')).toContainText(text, { timeout })
 }
