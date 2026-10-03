@@ -1,6 +1,7 @@
 {
-  // The account budget watcher. Deployed on its own:
-  //   npx wrangler deploy -c wrangler.usage-watch.jsonc
+  // The account budget watcher. Deployed on its own, from the Mac with a
+  // Cloudflare token minted for that one command (no `wrangler login`):
+  //   codefusion-console cloudflare workers:edit -- npx wrangler deploy -c wrangler.usage-watch.jsonc
   //
   // Separate from both app Workers on purpose. The free-tier budgets it reads
   // are account-wide, so one watcher covers Peerly and HeyHubs together, and
@@ -8,15 +9,15 @@
   // user-facing route down with it.
   //
   // Needs two secrets before it can do anything:
-  //   npx wrangler secret put CF_ANALYTICS_TOKEN -c wrangler.usage-watch.jsonc
-  //   npx wrangler secret put CF_ACCOUNT_ID      -c wrangler.usage-watch.jsonc
+  //   codefusion-console cloudflare workers:edit -- npx wrangler secret put CF_ANALYTICS_TOKEN -c wrangler.usage-watch.jsonc
+  //   codefusion-console cloudflare workers:edit -- npx wrangler secret put CF_ACCOUNT_ID      -c wrangler.usage-watch.jsonc
   //
   // CF_ANALYTICS_TOKEN is a Cloudflare API token with `Account Analytics:
   // Read` — nothing else. It is read-only and account-scoped; it cannot deploy,
   // read storage, or touch a zone.
   //
   // Optionally, somewhere to shout:
-  //   npx wrangler secret put USAGE_ALERT_WEBHOOK -c wrangler.usage-watch.jsonc
+  //   codefusion-console cloudflare workers:edit -- npx wrangler secret put USAGE_ALERT_WEBHOOK -c wrangler.usage-watch.jsonc
   // Any endpoint taking `{"text": "..."}` (Slack and Discord both do). Without
   // it the watcher still logs, which Workers observability keeps queryable.
   "$schema": "./node_modules/wrangler/config-schema.json",
@@ -38,7 +39,8 @@
   // means this config deploys with no setup beyond the two secrets.
   //
   // To add it:
-  //   npx wrangler kv namespace create USAGE_STATE
+  //   codefusion-console cloudflare kv:edit -- npx wrangler kv namespace create USAGE_STATE
   // then paste the id here:
   //   "kv_namespaces": [{ "binding": "USAGE_STATE", "id": "<id>" }]
+  // and deploy with `workers:edit,kv:edit` from then on.
 }

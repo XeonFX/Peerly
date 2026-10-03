@@ -188,7 +188,13 @@ A fourth signaling mode moves *coordination* — device enrollment, session cook
 
 `VITE_SIGNALING=durable-objects` only works against a Worker that was itself deployed with `COORDINATION_BACKEND=durable-objects`, the Durable Object bindings/migrations, and its own secrets (`NETWORK_SESSION_SECRET`, `OPAQUE_USER_ID_SECRET`, `TURN_AUTH_SECRET`, …). A client pointed at an unconfigured Worker fails closed with `503`, and a stale/invalid capability fails with `400`/`401` rather than degrading silently. Production (`peerly.cc`) still runs `COORDINATION_BACKEND=legacy-relay`; only the stable preview deployment (`preview.peerly.cc`, via [`wrangler.preview.jsonc`](wrangler.preview.jsonc)) runs the Durable Objects path today, ahead of a full production cutover.
 
-`npm run deploy:preview` deploys `peerly-preview` through [`wrangler.preview.jsonc`](wrangler.preview.jsonc), whose build enables both DO signaling and DO content and writes `dist-preview/`, so a preview deploy never touches production's `dist/`.
+`npm run deploy:preview` deploys `peerly-preview` through [`wrangler.preview.jsonc`](wrangler.preview.jsonc), whose build enables both DO signaling and DO content and writes `dist-preview/`, so a preview deploy never touches production's `dist/`. It runs from the Mac through the CodeFusion Console CLI rather than `wrangler login`, whose token reaches the whole account:
+
+```bash
+cd /Users/xeon/Projects/Peerly && codefusion-console cloudflare workers:edit,domains:edit -- npm run deploy:preview
+```
+
+`codefusion-console cloudflare <scope>[,<scope>…] [--ttl 30m] -- <command>` mints a token with exactly those scopes for that one command (two hours by default), hands it over as `CLOUDFLARE_API_TOKEN` with `CLOUDFLARE_ACCOUNT_ID`, and deletes it when the command exits; a token with an `:edit` scope waits for the owner's passkey tap on Dispatch. The preview deploy needs `workers:edit` and `domains:edit` (its `preview.peerly.cc` custom domain); its secrets (`codefusion-console cloudflare workers:edit -- npx wrangler secret put <NAME> -c wrangler.preview.jsonc`) need `workers:edit`. Once per Mac: `npm install -g @codefusion-cc/console && codefusion-console relay install`.
 
 This control plane is shared code in [`packages/core/worker/realtime`](packages/core/worker/realtime) and [`packages/core/src/realtime`](packages/core/src/realtime): Peerly and HeyHubs each deploy their own Worker and Durable Object namespaces from it, with independent secrets and data. See [docs/DURABLE_OBJECTS_ARCHITECTURE.md](docs/DURABLE_OBJECTS_ARCHITECTURE.md) for the full design, or [docs/RELAY_VS_DURABLE_OBJECTS.md](docs/RELAY_VS_DURABLE_OBJECTS.md) for a comparison against the relay stack production still runs.
 
