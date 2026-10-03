@@ -238,7 +238,8 @@ Chat actions (via collab slices / `useCollab`):
 
 Unread: [`unreadStore.ts`](../src/collab/unreadStore.ts) +
 `useUnreadCounts` / `useAttention` (tab title, favicon, optional DM
-notifications and sounds).
+notifications and sounds). With several tabs open, one tab presents each chime, ringtone or notification
+(`collab/browserTabs.ts`); the channel header shows a short notice when another tab joins or closes (`TabNotice`).
 
 ### Files panel ([`FilesPanel`](../src/components/FilesPanel.tsx))
 
@@ -304,8 +305,10 @@ Path: `/workspace/settings`
 [`collab/identityHandshake.ts`](../src/collab/identityHandshake.ts) —
 `createIdentityHandshake`:
 
-- Device-key proof of possession (`proveDeviceKeys` in `@peerly/core`): each side signs a transcript bound to the
-  workspace, both device keys and both fresh challenges — never a challenge the peer chose
+- Tab-key proof of possession (`proveTabKeys` in `@peerly/core`): each tab presents a tab key its device key certified
+  for the workspace, then signs a transcript bound to the workspace, both device keys, both tab keys and both fresh
+  challenges — never a challenge the peer chose. A peer with this device's own key is admitted only as another open
+  tab of this browser ([two-tabs.md](two-tabs.md))
 - Present ID token; peer verifies JWT + email on allow-list
 - Live **key → userId** bindings for message/reaction verification
 - Deny prefix for failed verification

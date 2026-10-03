@@ -33,6 +33,8 @@ import { useRelayWorkspacePresence } from './collab/useRelayWorkspacePresence'
 import { useProfileManager } from './collab/useProfileManager'
 import { useRoomAction } from './collab/useRoomAction'
 import { useVideoCall } from './collab/useVideoCall'
+import { useSiblingTabs } from './collab/useSiblingTabs'
+import { browserTabs } from '../collab/browserTabs'
 import { wireRoomProtocol } from './collab/wireRoomProtocol'
 import { useRoom } from './useRoom'
 import { useAttention } from './useAttention'
@@ -72,6 +74,8 @@ export type UseCollabOptions = {
     signReaction?: (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => Promise<{ actorDeviceKeyId: string; signature: string }>
     /** Live-handshake key→user bindings for verifying relayed history. */
     getBoundUserId?: (deviceKeyId: string) => string | undefined
+    /** Whether a peer is another tab of this browser (see useWorkspaceAuth). */
+    isSiblingTab?: (peerId: string) => boolean
   }
 }
 
@@ -251,7 +255,13 @@ export function useCollab({
     unbindHistoryAction,
     progress: syncProgress,
   } = history
-  const video = useVideoCall(room)
+  const isSiblingTab = useCallback(
+    (peerId: string) => identityRef.current?.isSiblingTab?.(peerId) ?? false,
+    []
+  )
+  const siblingTabs = useSiblingTabs()
+  const { reset: resetSiblingTabs } = siblingTabs
+  const video = useVideoCall(room, { sharesMediaWith: peerId => !isSiblingTab(peerId) })
   const { reset: resetVideo } = video
   const chatAction = useRoomAction<ChatPayload>({
     queueWhenUnbound: CONTENT_BACKEND === 'durable-objects',
@@ -286,7 +296,8 @@ export function useCollab({
     channelIds,
     activeChannelId,
     activeView,
-    selfId
+    selfId,
+    identity?.selfUserId
   )
   const attention = useAttention(unread.totalUnread, workspaceName)
   const notifyDirectMessageRef = useLatest(attention.notifyDirectMessage)
@@ -336,7 +347,9 @@ export function useCollab({
         peerId,
         peerProfile,
         transportIdentity?.userId ??
-          identityRef.current?.resolvePeerUserId?.(peerId)
+          identityRef.current?.resolvePeerUserId?.(peerId) ??
+          // Another tab of this browser is me before the user id hash resolves, never a stranger.
+          (isSiblingTab(peerId) ? identityRef.current?.selfUserId : undefined)
       )
       connection.markConnected()
     },
@@ -388,7 +401,7 @@ export function useCollab({
           await verifyHistoryEntry(toHistoryEntry(message)) !== 'valid') return
         if (message.editedAt || message.deletedAt) applyMessageRevision(message)
         else channelStore.appendMessage(message, senderDirectoryRef.current, peersRef.current)
-        if (route.kind === 'dm') notifyDirectMessageRef.current(message)
+        if (route.kind === 'dm') void notifyDirectMessageRef.current(message)
       })()
     },
     onFileProgress: (percent, peerId, meta) => {
@@ -414,7 +427,7 @@ export function useCollab({
         senderUserId: identityRef.current?.resolvePeerUserId?.(peerId),
       }
       void files.handleFileMeta(safeMeta, peerId).then(() => {
-        if (isDmChannelId(meta.channelId)) notifyDirectMessageRef.current(messageFromFileMeta(safeMeta, ''))
+        if (isDmChannelId(meta.channelId)) void notifyDirectMessageRef.current(messageFromFileMeta(safeMeta, ''))
       })
     },
     onHistoryRequest: (channelId, peerId) => {
@@ -429,20 +442,25 @@ export function useCollab({
       void files.handleFileRequest(fileIds, peerId)
     },
     onPeerJoin: peerId => {
-      peers.upsertPeer(peerId)
+      const sibling = isSiblingTab(peerId)
+      peers.upsertPeer(peerId, undefined, sibling ? identityRef.current?.selfUserId : undefined)
       connection.markConnected()
       // History sync pulls whatever file bodies this peer is actually missing;
       // no blanket re-send of every cached file to every joiner.
       void history.syncFromPeers([peerId])
       void channelSync.broadcastAllToPeer(peerId)
-      video.onPeerJoin(peerId)
+      // Another tab of mine syncs like any peer, but is never part of a call.
+      if (sibling) siblingTabs.onJoin(peerId)
+      else video.onPeerJoin(peerId)
     },
     onPeerLeave: peerId => {
       peers.removePeer(peerId)
       history.onPeerLeave(peerId)
       video.onPeerLeave(peerId)
+      if (isSiblingTab(peerId)) siblingTabs.onLeave(peerId)
     },
     onPeerStream: (stream, peerId) => {
+      if (isSiblingTab(peerId)) return
       video.onPeerStream(stream, peerId)
     },
     onPeerCallEnd: peerId => {
@@ -513,11 +531,13 @@ export function useCollab({
     resetHistory()
     resetConnection()
     resetVideo()
+    resetSiblingTabs()
     clearPendingChatActions()
     clearPendingReactionActions()
   }, [
     workspaceId,
     fileCache,
+    resetSiblingTabs,
     resetPeers,
     resetWorkspace,
     resetFileTransfer,
@@ -867,6 +887,33 @@ export function useCollab({
       identity?.selfUserId
     )
   }, [peers.peers, relayPresencePeers, identity?.selfUserId])
+  // One incoming call reaches every tab of this browser. The key names it the same in each, so only one tab rings and
+  // answering or declining it in one tab settles it in all of them.
+  const incomingStreamId = video.incomingCallPeerId
+    ? video.peerStreams[video.incomingCallPeerId]?.id ?? ''
+    : ''
+  const incomingCallKey = video.incomingCallPeerId
+    ? `call:${video.incomingCallPeerId}:${incomingStreamId}`
+    : null
+  const incomingCallKeyRef = useLatest(incomingCallKey)
+  const { declineCall: declineCallHere, joinCall: joinCallHere } = video
+  useEffect(
+    () => browserTabs().onHandled(key => {
+      if (key === incomingCallKeyRef.current) declineCallHere()
+    }),
+    [declineCallHere, incomingCallKeyRef]
+  )
+  const joinCall = useCallback(async () => {
+    const key = incomingCallKeyRef.current
+    await joinCallHere()
+    if (key) browserTabs().announceHandled(key)
+  }, [incomingCallKeyRef, joinCallHere])
+  const declineCall = useCallback(() => {
+    const key = incomingCallKeyRef.current
+    if (key) browserTabs().announceHandled(key)
+    declineCallHere()
+  }, [declineCallHere, incomingCallKeyRef])
+
   const durableContentOnline =
     CONTENT_BACKEND === 'durable-objects' && contentRoom !== null
 
@@ -887,6 +934,9 @@ export function useCollab({
         : connection.connectionStatus,
     connectionError: outbox.error ?? channelStore.persistenceError ?? connection.connectionError,
     connectionNotice: connection.connectionNotice,
+    siblingTabCount: siblingTabs.count,
+    tabNotice: siblingTabs.notice,
+    dismissTabNotice: siblingTabs.dismissNotice,
     // The primary message path is healthy once its authenticated content
     // socket is open. P2P signaling remains independently visible through the
     // diagnostics and capability indicator for files and calls.
@@ -902,6 +952,7 @@ export function useCollab({
     inCall: video.inCall,
     callMode: video.callMode,
     incomingCallPeerId: video.incomingCallPeerId,
+    incomingCallKey,
     localStream: video.localStream,
     peerStreams: video.peerStreams,
     videoEnabled: video.videoEnabled,
@@ -931,8 +982,8 @@ export function useCollab({
     markFileNsfw: setFileNsfw,
     syncProgress,
     startCall: video.startCall,
-    joinCall: video.joinCall,
-    declineCall: video.declineCall,
+    joinCall,
+    declineCall,
     // Tell peers first: without the explicit signal, a cancelled call sits on
     // the callee's screen until the 30s incoming-call timeout (the fallback
     // for peers that crash instead of hanging up).

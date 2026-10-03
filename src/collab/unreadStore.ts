@@ -34,15 +34,21 @@ function unreadThreshold(lastReadAt: number | undefined, channelSeenAt: number |
   return Math.max(lastReadAt ?? 0, channelSeenAt ?? 0)
 }
 
+/** Mine: sent from this tab, or – by verified user id – from another tab or device of mine. */
+function isOwnMessage(message: Message, selfId: string, selfUserId?: string): boolean {
+  return message.senderId === selfId || Boolean(selfUserId && message.senderUserId === selfUserId)
+}
+
 export function countUnreadMessages(
   messages: Message[],
   lastReadAt: number | undefined,
   selfId: string,
-  channelSeenAt?: number
+  channelSeenAt?: number,
+  selfUserId?: string
 ): number {
   const threshold = unreadThreshold(lastReadAt, channelSeenAt)
   return messages.filter(
-    message => message.timestamp > threshold && message.senderId !== selfId
+    message => message.timestamp > threshold && !isOwnMessage(message, selfId, selfUserId)
   ).length
 }
 
@@ -50,7 +56,8 @@ export function countUnreadByChannel(
   messagesByChannel: Record<string, Message[]>,
   readState: ReadState,
   selfId: string,
-  channelSeenAt: Record<string, number> = {}
+  channelSeenAt: Record<string, number> = {},
+  selfUserId?: string
 ): Record<string, number> {
   const counts: Record<string, number> = {}
   for (const [channelId, messages] of Object.entries(messagesByChannel)) {
@@ -58,7 +65,8 @@ export function countUnreadByChannel(
       messages,
       readState[channelId],
       selfId,
-      channelSeenAt[channelId]
+      channelSeenAt[channelId],
+      selfUserId
     )
   }
   return counts

@@ -46,6 +46,8 @@ type CollabProviderProps = {
   signReaction?: (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => Promise<{ actorDeviceKeyId: string; signature: string }>
   /** Live-handshake key bindings; gates identity claims in relayed history. */
   getBoundUserId?: (deviceKeyId: string) => string | undefined
+  /** Whether a peer is another tab of this browser (same device key, own tab key). */
+  isSiblingTab?: (peerId: string) => boolean
   onProfileChange?: (profile: UserProfile & { avatarId?: string }) => void
   onChannelsChange?: () => void
   children: ReactNode
@@ -69,6 +71,7 @@ export function CollabProvider({
   signMessage,
   signReaction,
   getBoundUserId,
+  isSiblingTab,
   onProfileChange,
   onChannelsChange,
   children,
@@ -88,7 +91,7 @@ export function CollabProvider({
     activeView,
     peerHandshake,
     identityExpired,
-    identity: { selfUserId, resolvePeerUserId, signMessage, signReaction, getBoundUserId },
+    identity: { selfUserId, resolvePeerUserId, signMessage, signReaction, getBoundUserId, isSiblingTab },
   })
 
   const connection = useMemo<ConnectionSlice>(
@@ -96,6 +99,9 @@ export function CollabProvider({
       connectionStatus: collab.connectionStatus,
       connectionError: collab.connectionError,
       connectionNotice: collab.connectionNotice,
+      siblingTabCount: collab.siblingTabCount,
+      tabNotice: collab.tabNotice,
+      dismissTabNotice: collab.dismissTabNotice,
       relayOnline: collab.relayOnline,
       rtcPeerCount: collab.rtcPeerCount,
       p2pCapability: collab.p2pCapability,
@@ -107,6 +113,9 @@ export function CollabProvider({
       collab.connectionStatus,
       collab.connectionError,
       collab.connectionNotice,
+      collab.siblingTabCount,
+      collab.tabNotice,
+      collab.dismissTabNotice,
       collab.relayOnline,
       collab.rtcPeerCount,
       collab.p2pCapability,
@@ -188,6 +197,7 @@ export function CollabProvider({
       inCall: collab.inCall,
       callMode: collab.callMode,
       incomingCallPeerId: collab.incomingCallPeerId,
+      incomingCallKey: collab.incomingCallKey,
       localStream: collab.localStream,
       peerStreams: collab.peerStreams,
       videoEnabled: collab.videoEnabled,
@@ -216,6 +226,7 @@ export function CollabProvider({
       collab.inCall,
       collab.callMode,
       collab.incomingCallPeerId,
+      collab.incomingCallKey,
       collab.localStream,
       collab.peerStreams,
       collab.videoEnabled,

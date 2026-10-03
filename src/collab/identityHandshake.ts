@@ -1,5 +1,13 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
-import { exchangeHandshakeStep, IDENTITY_DENIED_PREFIX, proveDeviceKeys } from '@peerly/core'
+import {
+  exchangeHandshakeStep,
+  IDENTITY_DENIED_PREFIX,
+  olderPeer,
+  parseTabCertificate,
+  proveTabKeys,
+  TabSession,
+  type TabCertificate,
+} from '@peerly/core'
 import { base64UrlToUtf8 } from '../utils/base64url'
 import { DeviceIdentity, type DeviceKeyId } from './deviceIdentity'
 import {
@@ -19,8 +27,21 @@ export type Attestation = {
   allowList: SignedAllowList
 }
 
+/** What goes on the wire: the attestation plus this tab's certificate for the workspace. */
+type WireAttestation = Attestation & { tab: TabCertificate }
+
 export type IdentityHandshakeDeps = {
   identity: DeviceIdentity
+  /**
+   * This tab. Its key signs the handshake proofs and the device key certifies it per workspace, so two tabs of one
+   * browser (one device key) are still two distinct peers. Defaults to a fresh tab key for this handshake factory.
+   */
+  tab?: TabSession
+  /**
+   * Whether a tab key belongs to another open tab of this browser. A peer presenting this device's own key is admitted
+   * only if this confirms it; without it, such a peer is refused as before.
+   */
+  isSiblingTab?: (tabKeyId: DeviceKeyId) => Promise<boolean>
   getAttestation: () => Promise<Attestation>
   creatorKeyId: DeviceKeyId
   workspaceSecret?: string
@@ -28,7 +49,14 @@ export type IdentityHandshakeDeps = {
   resolveProvider?: (providerId: string) => IdentityProvider | undefined
   /** Injectable for tests; overrides JWKS fetch for the google provider. */
   fetchJwks?: JwksFetcher
-  onPeerVerified?: (peerId: string, claims: OidcIdTokenClaims, deviceKeyId: DeviceKeyId) => void
+  /** `sameDevice`: the peer is another tab of this browser (it holds this device's key, under its own tab key). */
+  onPeerVerified?: (
+    peerId: string,
+    claims: OidcIdTokenClaims,
+    deviceKeyId: DeviceKeyId,
+    tabKeyId: DeviceKeyId,
+    sameDevice: boolean
+  ) => void
   onAllowListSeen?: (list: SignedAllowList) => void
   /**
    * The newest creator-signed list this device holds. Authorization judges the
@@ -47,9 +75,11 @@ export type IdentityHandshakeDeps = {
  * `providerId` is not silently treated as Google, because that would let the
  * shape of a request decide which issuer we trust.
  */
-function isAttestationShape(data: unknown): data is Attestation {
+function isAttestationShape(data: unknown): data is WireAttestation {
   if (!data || typeof data !== 'object') return false
   const d = data as Record<string, unknown>
+  if (typeof d.idToken === 'string' && d.tab === undefined) olderPeer()
+  if (!parseTabCertificate(d.tab)) return false
 
   if (typeof d.idToken !== 'string' || !d.idToken) return false
   if (typeof d.providerId !== 'string' || !d.providerId) return false
@@ -98,8 +128,11 @@ function resolveProviderConfig(
 }
 
 export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandshake {
+  const tab = deps.tab ?? new TabSession(deps.identity)
+  // The proofs and the tab certificate are bound to this workspace: neither is worth anything in another one.
+  const context = `workspace:${deps.creatorKeyId}`
   return async (_peerId, send, receive, isInitiator) => {
-    const mine = await deps.getAttestation()
+    const mine: WireAttestation = { ...(await deps.getAttestation()), tab: await tab.certificate(context) }
     const theirsRaw = await exchangeHandshakeStep(send, receive, isInitiator, mine)
 
     if (!isAttestationShape(theirsRaw)) deny('malformed attestation')
@@ -141,13 +174,15 @@ export function createIdentityHandshake(deps: IdentityHandshakeDeps): PeerHandsh
       deny(`${claims.email} is not on this workspace's invite list`)
     }
 
-    // Bound to this workspace, both devices and both challenges: the creator's key signs nothing a peer chose.
-    await proveDeviceKeys({
-      send, receive, isInitiator, signer: deps.identity,
-      myKeyId: mine.deviceKeyId, theirKeyId: theirs.deviceKeyId, context: `workspace:${deps.creatorKeyId}`,
+    // Bound to this workspace, both devices, both tabs and both challenges. The tab key signs the proof, so the device
+    // key – the creator's, on the creator's tabs – signs nothing in a handshake, let alone something a peer chose.
+    const theirTab = parseTabCertificate(theirs.tab)!
+    await proveTabKeys({
+      send, receive, isInitiator, tab, context, isSiblingTab: deps.isSiblingTab,
+      myKeyId: mine.deviceKeyId, myTab: mine.tab, theirKeyId: theirs.deviceKeyId, theirTab,
     })
 
-    deps.onPeerVerified?.(_peerId, claims, theirs.deviceKeyId)
+    deps.onPeerVerified?.(_peerId, claims, theirs.deviceKeyId, theirTab.tabKeyId, theirs.deviceKeyId === mine.deviceKeyId)
     deps.onAllowListSeen?.(theirs.allowList)
   }
 }

@@ -14,6 +14,8 @@ import { SyncStatusBar } from '../SyncStatusBar'
 import { Icon } from '../Icon'
 import { RELAY_OFFLINE_ERROR } from '../../collab/constants'
 import { startIncomingCallRingtone } from '../../collab/attentionSound'
+import { browserTabs } from '../../collab/browserTabs'
+import { TabNotice } from './TabNotice'
 import { useEffect, useState } from 'react'
 import { useI18n } from '../../i18n'
 import type { SenderInfo } from '../../utils/senderDirectory'
@@ -48,13 +50,14 @@ export function ChannelPanel({
 }: Props) {
   const { tr } = useI18n()
   const [replyTarget, setReplyTarget] = useState<{ id: string; author: string; text: string } | null>(null)
-  const { connectionError, connectionNotice, isReady } = useConnectionSlice()
+  const { connectionError, connectionNotice, isReady, tabNotice, dismissTabNotice } = useConnectionSlice()
   const { messages, transfers, sendMessage, editMessage, deleteMessage, toggleReaction, sendFiles, requestFile, markFileNsfw, syncProgress, fileError, soundsEnabled } = useChatSlice()
   const { pendingMessages, retryPendingMessages, cancelPendingMessage, draftScope } = useChatSlice()
   const {
     inCall,
     callMode,
     incomingCallPeerId,
+    incomingCallKey,
     localStream,
     peerStreams,
     videoEnabled,
@@ -124,9 +127,18 @@ export function ChannelPanel({
   }
 
   useEffect(() => {
-    if (!soundsEnabled || !incomingCallPeerId || inCall) return
-    return startIncomingCallRingtone()
-  }, [inCall, incomingCallPeerId, soundsEnabled])
+    if (!soundsEnabled || !incomingCallKey || inCall) return
+    // Every tab of this browser sees the call; one of them – a visible one if there is one – rings.
+    let stop: (() => void) | null = null
+    let cancelled = false
+    void browserTabs().claim(incomingCallKey, { preferVisible: true }).then(claimed => {
+      if (claimed && !cancelled) stop = startIncomingCallRingtone()
+    })
+    return () => {
+      cancelled = true
+      stop?.()
+    }
+  }, [inCall, incomingCallKey, soundsEnabled])
 
   return (
     <>
@@ -259,6 +271,8 @@ export function ChannelPanel({
           {connectionNotice}
         </div>
       )}
+
+      <TabNotice notice={tabNotice} onDismiss={dismissTabNotice} />
 
       {visibleConnectionError && (
         <div

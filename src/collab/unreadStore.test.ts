@@ -38,4 +38,14 @@ describe('unreadStore', () => {
     expect(counts).toEqual({ general: 1, random: 0 })
     expect(totalUnread(counts)).toBe(1)
   })
+
+  it('never counts my own messages from another tab or device as unread', () => {
+    const messages = [
+      message({ id: '1', channelId: 'general', senderId: 'my-other-tab', senderUserId: 'me', timestamp: 2000 }),
+      message({ id: '2', channelId: 'general', senderId: 'bob-tab', senderUserId: 'bob', timestamp: 2000 }),
+    ]
+
+    expect(countUnreadMessages(messages, 1000, 'this-tab', undefined, 'me')).toBe(1)
+    expect(countUnreadByChannel({ general: messages }, { general: 1000 }, 'this-tab', {}, 'me')).toEqual({ general: 1 })
+  })
 })

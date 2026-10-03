@@ -38,6 +38,11 @@ export function useWorkspaceAuth(
   signReaction?: (fields: Omit<SignedReactionFields, 'actorDeviceKeyId'>) => Promise<{ actorDeviceKeyId: string; signature: string }>
   /** userId a device key was bound to in a live handshake — history's trust root. */
   getBoundUserId: (deviceKeyId: DeviceKeyId) => string | undefined
+  /**
+   * Whether `peerId` is another tab of this browser: its handshake presented this device's key under a different tab
+   * key, and a tab here answered for it. Such a peer is "me", not a teammate — no calls, no "new member" treatment.
+   */
+  isSiblingTab: (peerId: string) => boolean
 } {
   const onAllowListUpdatedRef = useRef(onAllowListUpdated)
   onAllowListUpdatedRef.current = onAllowListUpdated
@@ -79,6 +84,7 @@ export function useWorkspaceAuth(
     new Map<string, Omit<VerifiedPeerContact, 'peerId' | 'deviceKeyId'>>()
   )
   const keyBindingsRef = useRef<Record<string, string>>({})
+  const siblingTabsRef = useRef(new Set<string>())
 
   useEffect(() => {
     // New manager = new workspace (or re-auth): stale peer ids must not carry
@@ -86,6 +92,7 @@ export function useWorkspaceAuth(
     // per-workspace store instead of leaking across workspaces.
     peerUserIdsRef.current = new Map()
     peerContactsRef.current = new Map()
+    siblingTabsRef.current = new Set()
     keyBindingsRef.current = workspaceId ? loadKeyBindings(workspaceId) : {}
   }, [manager, workspaceId])
 
@@ -103,7 +110,10 @@ export function useWorkspaceAuth(
   const peerHandshake = useMemo(() => {
     if (!manager) return undefined
     return manager.buildPeerHandshake({
-      onPeerVerified: (peerId, claims, deviceKeyId) => {
+      onPeerVerified: (peerId, claims, deviceKeyId, _tabKeyId, sameDevice) => {
+        // Synchronous, before the room reports the peer as joined, so join handlers already know it is a sibling.
+        if (sameDevice) siblingTabsRef.current.add(peerId)
+        else siblingTabsRef.current.delete(peerId)
         void deriveUserId(claims.iss, claims.sub).then(userId => {
           peerUserIdsRef.current.set(peerId, userId)
           const contact = {
@@ -145,6 +155,8 @@ export function useWorkspaceAuth(
     []
   )
 
+  const isSiblingTab = useCallback((peerId: string) => siblingTabsRef.current.has(peerId), [])
+
   const signMessage = useMemo(() => {
     if (!manager) return undefined
     return (fields: Omit<SignedFields, 'senderDeviceKeyId'>) => manager.signMessage(fields)
@@ -163,5 +175,6 @@ export function useWorkspaceAuth(
     signMessage,
     signReaction,
     getBoundUserId,
+    isSiblingTab,
   }
 }

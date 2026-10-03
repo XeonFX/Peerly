@@ -26,6 +26,7 @@ export default defineConfig({
         'packages/core/src/oidcDeviceBinding.ts',
         'packages/core/src/peerIdentityHandshake.ts',
         'packages/core/src/signedControl.ts',
+        'packages/core/src/tabSession.ts',
         'src/collab/friendInvite.ts',
       ],
       thresholds: { lines: 70, functions: 70, statements: 70, branches: 65 },
