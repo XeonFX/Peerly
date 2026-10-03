@@ -22,6 +22,7 @@ import {
   withTwoGlobalUsers,
   withTwoUsers,
   e2eWorkspaceId,
+  waitForHistoryPersisted,
   e2eWorkspaceRouteId,
 } from './helpers'
 import path from 'path'
@@ -918,15 +919,7 @@ test.describe('Peerly P2P collaboration', () => {
     const preview = page.locator('.message-list .file-preview')
     await expect(preview).toBeVisible({ timeout: 15_000 })
     await expect(preview).toHaveAttribute('src', /^blob:/)
-    await expect
-      .poll(async () => {
-        const raw = await page.evaluate(
-          key => localStorage.getItem(key),
-          `peerly-history-${e2eWorkspaceId()}__general`
-        )
-        return raw?.includes('shared-photo.png') ?? false
-      })
-      .toBe(true)
+    await waitForHistoryPersisted(page, 'shared-photo.png')
 
     await page.reload()
     await expect(page.locator('.sidebar')).toBeVisible({ timeout: 15_000 })
@@ -952,15 +945,7 @@ test.describe('Peerly P2P collaboration', () => {
       buffer: Buffer.from('hello from a shared file'),
     })
     await expect(page.locator('.message-list .file-download')).toBeVisible({ timeout: 15_000 })
-    await expect
-      .poll(async () => {
-        const raw = await page.evaluate(
-          key => localStorage.getItem(key),
-          `peerly-history-${e2eWorkspaceId()}__general`
-        )
-        return raw?.includes('notes.txt') ?? false
-      })
-      .toBe(true)
+    await waitForHistoryPersisted(page, 'notes.txt')
 
     await page.reload()
     await expect(page.locator('.sidebar')).toBeVisible({ timeout: 15_000 })
@@ -1076,6 +1061,8 @@ test.describe('Peerly P2P collaboration', () => {
   test('own messages from before a refresh follow a rename', async ({ page }) => {
     await joinWorkspace(page, { name: 'Alice', email: 'alice@e2e.test' })
     await sendMessage(page, 'Sent before refresh')
+    await expectMessage(page, 'Sent before refresh')
+    await waitForHistoryPersisted(page, 'Sent before refresh')
 
     await page.reload()
     await waitForWorkspace(page)
