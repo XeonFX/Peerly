@@ -113,6 +113,14 @@ const plByEnglish: Record<string, string> = {
   Online: 'Online',
   'Open your profile': 'Otwórz swój profil',
   you: 'ty',
+  'you · {count} tabs': 'ty · kart: {count}',
+  'Open in {count} tabs of this browser': 'Otwarte w tej przeglądarce, liczba kart: {count}',
+  'This workspace is also open in another tab of this browser. Both tabs stay connected and in sync, and sounds and notifications play only once.':
+    'Ta przestrzeń jest otwarta także w innej karcie tej przeglądarki. Obie karty pozostają połączone i zsynchronizowane, a dźwięki i powiadomienia pojawiają się tylko raz.',
+  'Your other tab closed. This tab is still connected.':
+    'Twoja druga karta została zamknięta. Ta karta nadal jest połączona.',
+  'One of your other tabs closed. This tab is still connected.':
+    'Jedna z Twoich pozostałych kart została zamknięta. Ta karta nadal jest połączona.',
   'Your profile': 'Twój profil',
   'Customize how teammates see you in this workspace.':
     'Dostosuj sposób, w jaki widzą Cię współpracownicy w tej przestrzeni.',

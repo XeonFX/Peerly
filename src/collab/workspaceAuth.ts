@@ -1,4 +1,6 @@
 import type { PeerHandshake } from '@trystero-p2p/core'
+import { TabSession } from '@peerly/core'
+import { browserTabs, type BrowserTabs } from './browserTabs'
 import { DeviceIdentity, type DeviceKeyId } from './deviceIdentity'
 import { signAllowList, verifyAllowList, newerAllowList, workspaceAuthorityScope, type SignedAllowList } from './allowList'
 import {
@@ -18,7 +20,7 @@ import {
 import { verifyOidcIdToken, type JwksFetcher, type OidcIdTokenClaims } from './oidcIdToken'
 import { signedMessageBytes, type SignedFields } from './messageSigning'
 import { signedReactionBytes, type SignedReactionFields } from './reactionSigning'
-import { createIdentityHandshake } from './identityHandshake'
+import { createIdentityHandshake, type IdentityHandshakeDeps } from './identityHandshake'
 import { generateWorkspaceId, type WorkspaceAccess, type WorkspaceInvite } from './inviteLink'
 import { generateWorkspaceRouteId } from './workspaceRouteId'
 
@@ -30,6 +32,9 @@ export type WorkspaceAuthConfig = {
 
 export class WorkspaceAuthManager {
   private readonly identity = new DeviceIdentity()
+  /** This tab's handshake key, certified by the device key; see @peerly/core tabSession.ts. */
+  private readonly tab = new TabSession(this.identity)
+  private readonly tabs: BrowserTabs
   private readonly config: WorkspaceAuthConfig
   private allowList: SignedAllowList
   private scopeUpgrade: Promise<SignedAllowList> | null = null
@@ -37,7 +42,9 @@ export class WorkspaceAuthManager {
   private identityProvider: IdentityProviderId | null = null
   private readonly fetchJwks: JwksFetcher | undefined
 
-  constructor(config: WorkspaceAuthConfig, options?: { fetchJwks?: JwksFetcher }) {
+  constructor(config: WorkspaceAuthConfig, options?: { fetchJwks?: JwksFetcher; tabs?: BrowserTabs }) {
+    this.tabs = options?.tabs ?? browserTabs()
+    void this.tab.publicKeyId().then(tabKeyId => this.tabs.addOwnTabKey(tabKeyId))
     this.config = { ...config }
     this.allowList = config.allowList
     this.fetchJwks = options?.fetchJwks ?? (isE2eAuthBypass() ? getE2eJwksFetcher() : undefined)
@@ -141,11 +148,13 @@ export class WorkspaceAuthManager {
   }
 
   buildPeerHandshake(handlers?: {
-    onPeerVerified?: (peerId: string, claims: OidcIdTokenClaims, deviceKeyId: DeviceKeyId) => void
+    onPeerVerified?: IdentityHandshakeDeps['onPeerVerified']
     onAllowListUpdated?: (list: SignedAllowList) => void
   }): PeerHandshake {
     return createIdentityHandshake({
       identity: this.identity,
+      tab: this.tab,
+      isSiblingTab: tabKeyId => this.tabs.hasSibling(tabKeyId),
       getAttestation: async () => {
         const token = this.idToken
         const providerId = this.identityProvider

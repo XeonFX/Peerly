@@ -1,14 +1,14 @@
 # Repo map
 
 Peerly: encrypted team collaboration (workspaces, chat, files, video calls) as a React SPA. Peers talk over WebRTC; production coordinates through a self-hosted relay, `preview.peerly.cc` through a Worker with Durable Objects.
-Per-screen behavior is in [views.md](views.md); DO design in [DURABLE_OBJECTS_ARCHITECTURE.md](DURABLE_OBJECTS_ARCHITECTURE.md); relay and TURN in [relay-deployment.md](relay-deployment.md); structure, deploy and CI in [README.md](../README.md).
+Per-screen behavior is in [views.md](views.md); several tabs of one browser in [two-tabs.md](two-tabs.md); DO design in [DURABLE_OBJECTS_ARCHITECTURE.md](DURABLE_OBJECTS_ARCHITECTURE.md); relay and TURN in [relay-deployment.md](relay-deployment.md); structure, deploy and CI in [README.md](../README.md).
 
 ## Layout
 
 - `src/` the app. `App.tsx` session bootstrap and workspace routing, `routing.ts`, `config.ts` build config, `session.ts`, `i18n.tsx`.
-- `src/collab/` app policy: workspace stores, creator-signed allow-lists (`allowList.ts`), message signing, identity providers, DM and friends stores, mesh (`mesh.ts`).
+- `src/collab/` app policy: workspace stores, creator-signed allow-lists (`allowList.ts`), message signing, identity providers, DM and friends stores, mesh (`mesh.ts`), sibling tabs and once-per-browser attention (`browserTabs.ts`).
 - `src/components/` UI (join, workspace, chat, files, `VideoCall.tsx`), `src/hooks/` room, collab and auth wiring (`useCollab.ts`, `useRoom.ts`), `src/context/` collab context, `src/protocol/` message types and mappers, `src/realtime/content.ts` DO content client.
-- `packages/core/` published `@peerly/core`: generic rooms, signaling, device identity, OIDC checks, media, `worker/` (Google auth, rendezvous, `realtime/` DO runtime), `server/` (relay). The app imports it from source through an alias.
+- `packages/core/` published `@peerly/core`: generic rooms, signaling, device identity, per-tab session keys (`tabSession.ts`), peer handshake (`peerIdentityHandshake.ts`), OIDC checks, media, `worker/` (Google auth, rendezvous, `realtime/` DO runtime), `server/` (relay). The app imports it from source through an alias.
 - `worker/index.mjs` production Worker (API routes, assets); `worker/realtime/` Peerly's DO classes (`gateway.mjs`, `lobbyChannel.mjs`, `contentChannel.mjs`, `commands/`); `worker/usageWatch.mjs` with `wrangler.usage-watch.jsonc`.
 - `server/` dev and test servers and the production relay (`relay.mjs`, `relay-prod.mjs`). `infra/` coturn, nginx, systemd, firewall for the VPS.
 - `e2e/` Playwright specs, `scripts/` bundle and CSP guards, relay checks, version bump. `docs/` implementation notes.
@@ -16,7 +16,7 @@ Per-screen behavior is in [views.md](views.md); DO design in [DURABLE_OBJECTS_AR
 
 ## Main flows
 
-- Sign-in: `src/collab/providerSignIn.ts` -> provider ID token -> `/api/auth/google/*` (`packages/core/worker/googleAuth.mjs`) or verified in the browser -> device key in IndexedDB.
+- Sign-in: `src/collab/providerSignIn.ts` -> provider ID token -> `/api/auth/google/*` (`packages/core/worker/googleAuth.mjs`) or verified in the browser -> device key in IndexedDB. Each tab adds an in-memory tab key the device key certifies; workspace handshakes (`src/collab/identityHandshake.ts`) prove possession with it, so tabs of one browser are distinct peers.
 - Production chat: `src/hooks/useRoom.ts` -> `@peerly/core` `joinRoom` -> relay `wss://relay.peerly.cc` signaling -> WebRTC peers; messages signed (`src/collab/messageSigning.ts`), stored in localStorage.
 - Network credentials: `/api/network/credentials` (`worker/index.mjs`) -> relay tickets and TURN credentials.
 - Preview (DO mode): `src/realtime/content.ts` -> `/api/realtime/*` -> `handleRealtimeRoute` -> `UserGateway`, lobby and content channel DOs (`worker/realtime/`) -> DO SQLite.

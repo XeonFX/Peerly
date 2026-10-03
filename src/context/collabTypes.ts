@@ -1,4 +1,5 @@
 import type { useCollab } from '../hooks/useCollab'
+import type { SiblingTabNotice } from '../hooks/collab/useSiblingTabs'
 import type { Channel, ConnectionStatus, FileTransfer, Message, P2pCapability, Peer, SharedFile, UserProfile, WorkspaceSyncProgress } from '../types'
 
 export type CollabState = ReturnType<typeof useCollab>
@@ -7,6 +8,11 @@ export type ConnectionSlice = {
   connectionStatus: ConnectionStatus
   connectionError: string | null
   connectionNotice: string | null
+  /** Other tabs of this browser connected to this workspace. */
+  siblingTabCount: number
+  /** What to tell the user about another tab joining or closing, if anything. */
+  tabNotice: SiblingTabNotice | null
+  dismissTabNotice: () => void
   relayOnline: boolean
   rtcPeerCount: number
   p2pCapability: P2pCapability
@@ -58,6 +64,8 @@ export type MediaSlice = {
   inCall: boolean
   callMode: CallMediaMode
   incomingCallPeerId: string | null
+  /** Names the incoming call the same way in every tab of this browser, so only one of them rings. */
+  incomingCallKey: string | null
   localStream: MediaStream | null
   peerStreams: Record<string, MediaStream>
   videoEnabled: boolean

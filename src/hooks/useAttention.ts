@@ -13,6 +13,7 @@ import {
   saveAttentionSoundsEnabled,
 } from '../collab/attentionSound'
 import { useI18n } from '../i18n'
+import { browserTabs } from '../collab/browserTabs'
 
 export type NotificationPermissionState = NotificationPermission | 'unsupported'
 
@@ -99,8 +100,10 @@ export function useAttention(totalUnread: number, workspaceName: string) {
   }, [])
 
   const notifyDirectMessage = useCallback(
-    (message: Message) => {
+    async (message: Message) => {
       if (document.visibilityState === 'visible') return
+      // Every tab of this browser that receives the message gets here; one of them chimes and notifies.
+      if (!(await browserTabs().claim(`dm:${message.channelId}:${message.id}`))) return
       if (soundsEnabled) playDirectMessageChime()
       if (!enabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
       const notification = new Notification(`${message.senderName} · ${workspaceName}`, {

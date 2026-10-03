@@ -5,6 +5,8 @@ import { utf8ToBase64Url, bytesToBase64Url } from '../utils/base64url'
 import { DeviceIdentity, verifyWithDeviceKeyId } from './deviceIdentity'
 import { signAllowList, verifyAllowList, workspaceAuthorityScope, type SignedAllowList } from './allowList'
 import { resetJwksCache, type JwkWithKid, type JwksFetcher } from './googleIdToken'
+import { OLDER_PEER_REASON, STALE_TAB_REASON, TabSession, UNKNOWN_SIBLING_REASON } from '@peerly/core'
+import { fakeBrowser } from './testing/fakeBrowserTabs'
 import { createIdentityHandshake, IDENTITY_DENIED_PREFIX, type Attestation } from './identityHandshake'
 
 const AUDIENCE = 'test-client.apps.googleusercontent.com'
@@ -412,8 +414,9 @@ describe('identity handshake', () => {
   })
 
   it.each([
-    ['to another member', 'bob', 'proof-of-possession failed'],
-    ['back to its owner', 'alice', "the peer presents this device's own key"],
+    // Mallory cannot certify a tab key for Alice's device key, so her tab is refused before any challenge.
+    ['to another member', 'bob', 'tab certificate is not signed by the device key'],
+    ['back to its owner', 'alice', 'tab certificate is not signed by the device key'],
   ])('denies a replayed Google token %s: the attacker has the JWT but not the device key', async (_, target, reason) => {
     const google = await makeFakeGoogle()
     const creator = new DeviceIdentity(memoryStore())
@@ -707,7 +710,7 @@ const SECRET = 'workspace-secret'
  */
 async function creatorAgainst(
   challenge: unknown | ((workspace: { scope: string; signedAt: number }) => unknown),
-  { creatorIsInitiator = true, proof = { signature: 'AAAA' } } = {}
+  { creatorIsInitiator = true, proof = { signature: 'AAAA' }, withoutTab = false } = {}
 ) {
   const google = await makeFakeGoogle()
   const creator = new DeviceIdentity(memoryStore())
@@ -753,6 +756,7 @@ async function creatorAgainst(
     providerId: 'google',
     deviceKeyId: malloryKeyId,
     allowList,
+    ...(withoutTab ? {} : { tab: await new TabSession(mallory).certificate(`workspace:${creatorKeyId}`) }),
   }
   // Each phase: the initiator sends first, the responder answers.
   const exchange = async (message: unknown) => {
@@ -783,7 +787,7 @@ describe('the handshake is not a signing oracle for the creator key', () => {
     async creatorIsInitiator => {
       // The exact bytes the creator signs for a newer member list, adding an account of the attacker's choice.
       const forged = ({ scope, signedAt }: { scope: string; signedAt: number }) => ({
-        v: 2,
+        v: 3,
         nonce: JSON.stringify(['peerly-workspace-members-v2', scope, ['creator@example.com', 'eve@example.com', 'mallory@example.com'], signedAt + 1]),
       })
       const attack = await creatorAgainst(forged, { creatorIsInitiator })
@@ -793,15 +797,16 @@ describe('the handshake is not a signing oracle for the creator key', () => {
   )
 
   it.each([
-    ['the legacy member list', { v: 2, nonce: 'eve@example.com,mallory@example.com|1790000000000' }],
-    ['a 42-character challenge', { v: 2, nonce: 'A'.repeat(42) }],
-    ['a 44-character challenge', { v: 2, nonce: 'A'.repeat(44) }],
-    ['a challenge with characters outside base64url', { v: 2, nonce: `${'A'.repeat(42)}+` }],
-    ['a padded challenge', { v: 2, nonce: `${'A'.repeat(42)}=` }],
-    ['a very long challenge', { v: 2, nonce: 'A'.repeat(100_000) }],
-    ['a number', { v: 2, nonce: 123 }],
-    ['no challenge', { v: 2 }],
-    ['a challenge from another protocol version', { v: 3, nonce: 'A'.repeat(43) }],
+    ['the legacy member list', { v: 3, nonce: 'eve@example.com,mallory@example.com|1790000000000' }],
+    ['a 42-character challenge', { v: 3, nonce: 'A'.repeat(42) }],
+    ['a 44-character challenge', { v: 3, nonce: 'A'.repeat(44) }],
+    ['a challenge with characters outside base64url', { v: 3, nonce: `${'A'.repeat(42)}+` }],
+    ['a padded challenge', { v: 3, nonce: `${'A'.repeat(42)}=` }],
+    ['a very long challenge', { v: 3, nonce: 'A'.repeat(100_000) }],
+    ['a number', { v: 3, nonce: 123 }],
+    ['no challenge', { v: 3 }],
+    ['a challenge from a newer protocol version', { v: 4, nonce: 'A'.repeat(43) }],
+    ['a challenge from the protocol before tab keys', { v: 2, nonce: 'A'.repeat(43) }],
   ])('refuses %s before signing anything', async (_, challenge) => {
     const { outcome, sentByCreator } = await creatorAgainst(challenge)
     expect(outcome).toContain(IDENTITY_DENIED_PREFIX)
@@ -816,7 +821,7 @@ describe('the handshake is not a signing oracle for the creator key', () => {
 
   it('a proof for a well-formed challenge is no signature over the challenge or a member list', async () => {
     const nonce = 'Q'.repeat(43)
-    const { outcome, sentByCreator, creatorKeyId, scope, signedAt } = await creatorAgainst({ v: 2, nonce })
+    const { outcome, sentByCreator, creatorKeyId, scope, signedAt } = await creatorAgainst({ v: 3, nonce })
     // The bogus proof sent back is refused; the creator had signed its proof first (it is the initiator).
     expect(outcome).toContain('proof-of-possession failed')
     const [signature] = signaturesIn(sentByCreator)
@@ -825,5 +830,223 @@ describe('the handshake is not a signing oracle for the creator key', () => {
     expect(await verifyWithDeviceKeyId(creatorKeyId, encode(nonce), signature)).toBe(false)
     const list = { emails: [nonce], signedAt, scope, signature }
     expect(await verifyAllowList(list, creatorKeyId, SECRET)).toBe(false)
+  })
+})
+
+// ---- Two tabs of one browser: one device key, one sign-in, two tab keys ----
+
+type Verified = { peerId: string; deviceKeyId: string; tabKeyId: string; sameDevice: boolean }
+
+/**
+ * Alice's browser profile (one IndexedDB store, so one device key and one ID token) opening tabs, and Bob on his own
+ * device. Each tab is wired as WorkspaceAuthManager wires it: its own TabSession, and `isSiblingTab` asking the other
+ * tabs of the same browser.
+ */
+async function twoTabWorkspace() {
+  const google = await makeFakeGoogle()
+  const creator = new DeviceIdentity(memoryStore())
+  const creatorKeyId = await creator.publicKeyId()
+  const allowList = await signAllowList(creator, ['alice@example.com', 'bob@example.com', 'mallory@example.com'])
+  const aliceStore = memoryStore()
+  const aliceKeyId = await new DeviceIdentity(aliceStore).publicKeyId()
+  const aliceToken = await google.issueToken('alice@example.com', aliceKeyId)
+  const aliceBrowser = fakeBrowser()
+
+  const openTab = async (options: {
+    store?: KvStore<CryptoKeyPair>
+    email?: string
+    browser?: ReturnType<typeof fakeBrowser>
+    tab?: (identity: DeviceIdentity) => TabSession
+    idToken?: string
+    deviceKeyId?: string
+  } = {}) => {
+    const identity = new DeviceIdentity(options.store ?? aliceStore)
+    const deviceKeyId = options.deviceKeyId ?? await identity.publicKeyId()
+    const idToken = options.idToken ?? (options.store
+      ? await google.issueToken(options.email ?? 'bob@example.com', deviceKeyId)
+      : aliceToken)
+    const tab = options.tab?.(identity) ?? new TabSession(identity)
+    const tabs = (options.browser ?? aliceBrowser).tab()
+    tabs.addOwnTabKey(await tab.publicKeyId())
+    const verified: Verified[] = []
+    const deps: Parameters<typeof createIdentityHandshake>[0] = {
+      identity,
+      tab,
+      isSiblingTab: tabKeyId => tabs.hasSibling(tabKeyId),
+      getAttestation: async () => ({ idToken, providerId: 'google', deviceKeyId, allowList }),
+      resolveProvider: resolveFakeGoogle(google),
+      fetchJwks: google.fetchJwks,
+      creatorKeyId,
+      onPeerVerified: (peerId, _claims, peerDeviceKeyId, tabKeyId, sameDevice) =>
+        verified.push({ peerId, deviceKeyId: peerDeviceKeyId, tabKeyId, sameDevice }),
+    }
+    return { deps, tab, tabs, verified, tabKeyId: await tab.publicKeyId() }
+  }
+  const openBob = () => openTab({ store: memoryStore(), browser: fakeBrowser() })
+  return { google, creatorKeyId, aliceKeyId, aliceToken, openTab, openBob }
+}
+
+describe('two tabs of one browser', () => {
+  it('two tabs join: each admits the other as a distinct peer of the same device', async () => {
+    const ws = await twoTabWorkspace()
+    const first = await ws.openTab()
+    const second = await ws.openTab()
+
+    const { a, b } = await runHandshake(first.deps, second.deps)
+
+    expect(a).toEqual({ ok: true })
+    expect(b).toEqual({ ok: true })
+    expect(first.tabKeyId).not.toBe(second.tabKeyId)
+    expect(first.verified).toEqual([{ peerId: 'peer-b', deviceKeyId: ws.aliceKeyId, tabKeyId: second.tabKeyId, sameDevice: true }])
+    expect(second.verified).toEqual([{ peerId: 'peer-a', deviceKeyId: ws.aliceKeyId, tabKeyId: first.tabKeyId, sameDevice: true }])
+  })
+
+  it('another member admits both tabs, each under its own tab key, as one person on one device', async () => {
+    const ws = await twoTabWorkspace()
+    const first = await ws.openTab()
+    const second = await ws.openTab()
+    const bob = await ws.openBob()
+
+    const one = await runHandshake(bob.deps, first.deps)
+    const two = await runHandshake(bob.deps, second.deps)
+
+    expect([one.a.ok, one.b.ok, two.a.ok, two.b.ok]).toEqual([true, true, true, true])
+    expect(bob.verified.map(v => [v.deviceKeyId, v.tabKeyId, v.sameDevice])).toEqual([
+      [ws.aliceKeyId, first.tabKeyId, false],
+      [ws.aliceKeyId, second.tabKeyId, false],
+    ])
+  })
+
+  it('one closes: a tab that closed no longer vouches, so its tab key is refused here afterwards', async () => {
+    const ws = await twoTabWorkspace()
+    const first = await ws.openTab()
+    const second = await ws.openTab()
+    expect((await runHandshake(first.deps, second.deps)).a.ok).toBe(true)
+
+    second.tabs.close()
+    const { a } = await runHandshake(first.deps, second.deps)
+
+    expect(a.ok).toBe(false)
+    expect(a.ok ? '' : a.error).toContain(UNKNOWN_SIBLING_REASON)
+  })
+
+  it('both reconnect: the same two tabs handshake again and are admitted under the same tab keys', async () => {
+    const ws = await twoTabWorkspace()
+    const first = await ws.openTab()
+    const second = await ws.openTab()
+    const bob = await ws.openBob()
+
+    for (let round = 0; round < 2; round += 1) {
+      const siblings = await runHandshake(first.deps, second.deps)
+      const withBob = await runHandshake(bob.deps, second.deps)
+      expect([siblings.a.ok, siblings.b.ok, withBob.a.ok, withBob.b.ok]).toEqual([true, true, true, true])
+    }
+    expect(new Set(first.verified.map(v => v.tabKeyId))).toEqual(new Set([second.tabKeyId]))
+    expect(new Set(bob.verified.map(v => v.tabKeyId))).toEqual(new Set([second.tabKeyId]))
+  })
+
+  it('a stale tab: an expired tab certificate is refused, and the same tab is admitted once it renews', async () => {
+    const ws = await twoTabWorkspace()
+    const bob = await ws.openBob()
+    let asleepFor = 3 * 60 * 60_000
+    // Its clock reads the moment it fell asleep until it wakes; a sleeping tab issues nothing new.
+    const stale = await ws.openTab({ tab: identity => new TabSession(identity, { now: () => Date.now() - asleepFor }) })
+
+    const refused = await runHandshake(bob.deps, stale.deps)
+    expect(refused.a.ok).toBe(false)
+    expect(refused.a.ok ? '' : refused.a.error).toContain(STALE_TAB_REASON)
+
+    asleepFor = 0
+    const admitted = await runHandshake(bob.deps, stale.deps)
+    expect([admitted.a.ok, admitted.b.ok]).toEqual([true, true])
+    expect(bob.verified.at(-1)?.tabKeyId).toBe(stale.tabKeyId)
+  })
+
+  describe('a forged tab identity is refused', () => {
+    it("a tab with this device's key that no open tab of this browser vouches for", async () => {
+      const ws = await twoTabWorkspace()
+      const first = await ws.openTab()
+      // The same device key and sign-in, from a tab that belongs to no browser this one can see.
+      const outsider = await ws.openTab({ browser: fakeBrowser() })
+
+      const { a } = await runHandshake(first.deps, outsider.deps)
+
+      expect(a.ok).toBe(false)
+      expect(a.ok ? '' : a.error).toContain(UNKNOWN_SIBLING_REASON)
+      expect(first.verified).toEqual([])
+    })
+
+    it("a member presenting Alice's token and Alice's tab certificate, without Alice's tab key", async () => {
+      const ws = await twoTabWorkspace()
+      const alice = await ws.openTab()
+      const aliceCert = await alice.tab.certificate(`workspace:${ws.creatorKeyId}`)
+      const bob = await ws.openBob()
+      // Mallory recorded both from an earlier session; she signs with a tab key of her own.
+      const mallory = await ws.openTab({
+        store: memoryStore(),
+        browser: fakeBrowser(),
+        idToken: ws.aliceToken,
+        deviceKeyId: ws.aliceKeyId,
+        tab: identity => Object.assign(new TabSession(identity), { certificate: async () => aliceCert }),
+      })
+
+      const { a } = await runHandshake(bob.deps, mallory.deps)
+
+      expect(a.ok).toBe(false)
+      expect(a.ok ? '' : a.error).toContain('proof-of-possession failed')
+      expect(bob.verified).toEqual([])
+    })
+
+    it("a member presenting her own valid sign-in with another member's tab certificate", async () => {
+      const ws = await twoTabWorkspace()
+      const alice = await ws.openTab()
+      const aliceCert = await alice.tab.certificate(`workspace:${ws.creatorKeyId}`)
+      const bob = await ws.openBob()
+      const mallory = await ws.openTab({
+        store: memoryStore(),
+        email: 'mallory@example.com',
+        browser: fakeBrowser(),
+        tab: identity => Object.assign(new TabSession(identity), { certificate: async () => aliceCert }),
+      })
+
+      const { a } = await runHandshake(bob.deps, mallory.deps)
+
+      expect(a.ok).toBe(false)
+      expect(a.ok ? '' : a.error).toContain('tab certificate is not signed by the device key')
+    })
+
+    it('a tab presenting a certificate for another workspace', async () => {
+      const ws = await twoTabWorkspace()
+      const bob = await ws.openBob()
+      const elsewhere = await ws.openTab({
+        tab: identity => {
+          const tab = new TabSession(identity)
+          const issue = tab.certificate.bind(tab)
+          return Object.assign(tab, { certificate: () => issue('workspace:some-other-creator') })
+        },
+      })
+
+      const { a } = await runHandshake(bob.deps, elsewhere.deps)
+
+      expect(a.ok).toBe(false)
+      expect(a.ok ? '' : a.error).toContain('tab certificate is not signed by the device key')
+    })
+  })
+})
+
+describe('the device key signs only the tab certificate', () => {
+  it('which is issued before any peer input, is the same whatever the peer sends, and is no member list', async () => {
+    const first = await creatorAgainst({ v: 3, nonce: 'Q'.repeat(43) })
+    const attestation = (sent: unknown[]) => sent[0] as { tab: { signature: string; tabKeyId: string } }
+    const cert = attestation(first.sentByCreator).tab
+    expect(cert.signature).toBeTruthy()
+    const list = { emails: [cert.tabKeyId], signedAt: first.signedAt, scope: first.scope, signature: cert.signature }
+    expect(await verifyAllowList(list, first.creatorKeyId, SECRET)).toBe(false)
+  })
+
+  it('a peer from before tab keys is told to reload, and nothing is signed for it', async () => {
+    const { outcome, sentByCreator } = await creatorAgainst({ v: 3, nonce: 'Q'.repeat(43) }, { withoutTab: true })
+    expect(outcome).toContain(OLDER_PEER_REASON)
+    expect(signaturesIn(sentByCreator)).toEqual([])
   })
 })

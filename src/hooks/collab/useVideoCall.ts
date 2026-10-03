@@ -26,7 +26,16 @@ function stopStream(stream: MediaStream | null): void {
  */
 const INCOMING_CALL_TIMEOUT_MS = 30_000
 
-export function useVideoCall(room: Room | null) {
+export function useVideoCall(
+  room: Room | null,
+  options: {
+    /**
+     * Which connected peers a call's media goes to. Another tab of this browser is connected like any peer, but it is
+     * the same person on the same device: calling it would ring yourself and loop your own microphone back.
+     */
+    sharesMediaWith?: (peerId: string) => boolean
+  } = {}
+) {
   const [inCall, setInCall] = useState(false)
   const [callMode, setCallMode] = useState<CallMediaMode>('video')
   const [incomingCallPeerId, setIncomingCallPeerId] = useState<string | null>(null)
@@ -52,6 +61,14 @@ export function useVideoCall(room: Room | null) {
   callModeRef.current = callMode
   const roomRef = useRef(room)
   roomRef.current = room
+  const sharesMediaWithRef = useRef(options.sharesMediaWith)
+  sharesMediaWithRef.current = options.sharesMediaWith
+  /** Every connected peer a call's media may go to; undefined (all peers) when nothing is excluded. */
+  const mediaTarget = useCallback((activeRoom: Room) => {
+    const sharesWith = sharesMediaWithRef.current
+    if (!sharesWith) return undefined
+    return { target: Object.keys(activeRoom.getPeers()).filter(sharesWith) }
+  }, [])
 
   /**
    * Stream ids that are residue of a call WE already ended or declined.
@@ -183,7 +200,7 @@ export function useVideoCall(room: Room | null) {
         setIncomingCallPeerId(null)
         setVideoEnabled(stream.getVideoTracks().some(track => track.enabled))
         setAudioEnabled(stream.getAudioTracks().some(track => track.enabled))
-        activeRoom.addStream(stream)
+        activeRoom.addStream(stream, mediaTarget(activeRoom))
         await refreshDevices()
         const audioId = stream.getAudioTracks()[0]?.getSettings().deviceId ?? ''
         const videoId = stream.getVideoTracks()[0]?.getSettings().deviceId ?? ''
@@ -204,7 +221,7 @@ export function useVideoCall(room: Room | null) {
         )
       }
     },
-    [acquireLocalStream, refreshDevices]
+    [acquireLocalStream, mediaTarget, refreshDevices]
   )
 
   /** Join an incoming call, matching the caller's audio vs video tracks. */
@@ -268,8 +285,8 @@ export function useVideoCall(room: Room | null) {
     setLocalStream(camera)
     setScreenSharing(false)
     screenSharingRef.current = false
-    activeRoom.addStream(camera)
-  }, [])
+    activeRoom.addStream(camera, mediaTarget(activeRoom))
+  }, [mediaTarget])
 
   const startScreenShare = useCallback(async () => {
     const activeRoom = roomRef.current
@@ -288,14 +305,14 @@ export function useVideoCall(room: Room | null) {
       setLocalStream(shared)
       setScreenSharing(true)
       screenSharingRef.current = true
-      activeRoom.addStream(shared)
+      activeRoom.addStream(shared, mediaTarget(activeRoom))
       displayTrack.addEventListener('ended', () => stopScreenShare(), { once: true })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'NotAllowedError') return
       console.error('Failed to share screen:', err)
       setMediaError('Could not start screen sharing.')
     }
-  }, [stopScreenShare])
+  }, [mediaTarget, stopScreenShare])
 
   const switchDevices = useCallback(
     async (audioId: string, videoId: string) => {
@@ -316,13 +333,13 @@ export function useVideoCall(room: Room | null) {
         setLocalStream(next)
         setVideoEnabled(next.getVideoTracks().some(track => track.enabled))
         setAudioEnabled(next.getAudioTracks().some(track => track.enabled))
-        if (activeRoom) activeRoom.addStream(next)
+        if (activeRoom) activeRoom.addStream(next, mediaTarget(activeRoom))
       } catch (err) {
         console.error('Failed to switch media device:', err)
         setMediaError('Could not switch camera or microphone.')
       }
     },
-    [acquireLocalStream, screenSharing]
+    [acquireLocalStream, mediaTarget, screenSharing]
   )
 
   const setAudioOutput = useCallback((deviceId: string) => {
@@ -349,7 +366,7 @@ export function useVideoCall(room: Room | null) {
       setCallMode('video')
       setVideoEnabled(true)
       setAudioEnabled(next.getAudioTracks().some(track => track.enabled))
-      if (activeRoom) activeRoom.addStream(next)
+      if (activeRoom) activeRoom.addStream(next, mediaTarget(activeRoom))
       const videoId = next.getVideoTracks()[0]?.getSettings().deviceId ?? ''
       if (videoId) {
         setSelectedVideoInput(videoId)
@@ -360,7 +377,7 @@ export function useVideoCall(room: Room | null) {
       console.error('Failed to enable camera:', err)
       setMediaError('Could not access camera. Please check permissions.')
     }
-  }, [acquireLocalStream, refreshDevices, toggleVideo])
+  }, [acquireLocalStream, mediaTarget, refreshDevices, toggleVideo])
 
   useEffect(() => () => removeAndStopLocalStreams(), [removeAndStopLocalStreams])
 

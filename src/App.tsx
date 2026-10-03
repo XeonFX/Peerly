@@ -42,6 +42,7 @@ import type { UserProfile } from './types'
 import type { IncomingWorkspaceInvite } from './collab/workspaceInviteStore'
 import { resolveAvatarPreview } from './collab/avatarService'
 import { AppVersionBadge } from './components/AppVersionBadge'
+import { browserTabs } from './collab/browserTabs'
 
 const MyDevicesPage = lazy(() => import('./components/MyDevicesPage').then(module => ({ default: module.MyDevicesPage })))
 const SyncActivityPage = lazy(() => import('./components/SyncActivityPage').then(module => ({ default: module.SyncActivityPage })))
@@ -135,7 +136,13 @@ function AppContent() {
       supported,
       permission: supported ? Notification.permission : 'denied',
     })) return
+    // Every open tab hears the same invite; one of them raises the notification.
+    void browserTabs().claim(`friend-invite:${invite.inviteId}`).then(claimed => {
+      if (claimed) raiseFriendInviteNotification(invite)
+    })
+  }
 
+  const raiseFriendInviteNotification = (invite: IncomingFriendInvite) => {
     const notification = new Notification('New Peerly friend request', {
       body: `${invite.fromName} sent you a friend request.`,
       icon: '/icon-192.png',
@@ -156,7 +163,12 @@ function AppContent() {
       supported,
       permission: supported ? Notification.permission : 'denied',
     })) return
+    void browserTabs().claim(`workspace-invite:${invite.payload.invite.workspaceId}:${invite.fromName}`).then(claimed => {
+      if (claimed) raiseWorkspaceInviteNotification(invite)
+    })
+  }
 
+  const raiseWorkspaceInviteNotification = (invite: IncomingWorkspaceInvite) => {
     const notification = new Notification('Peerly workspace invitation', {
       body: `${invite.fromName} invited you to ${invite.payload.invite.workspaceName}.`,
       icon: '/icon-192.png',
@@ -182,7 +194,7 @@ function AppContent() {
     onWorkspaceInvite: notifyWorkspaceInvite,
   })
 
-  const { manager, peerHandshake, resolvePeerUserId, resolvePeerContact, signMessage, signReaction, getBoundUserId } =
+  const { manager, peerHandshake, resolvePeerUserId, resolvePeerContact, signMessage, signReaction, getBoundUserId, isSiblingTab } =
     useWorkspaceAuth(session, allowList => {
       setSession(prev => {
         if (!prev) return prev
@@ -306,6 +318,7 @@ function AppContent() {
       signMessage={signMessage}
       signReaction={signReaction}
       getBoundUserId={getBoundUserId}
+      isSiblingTab={isSiblingTab}
       authManager={manager}
       onSessionChange={updateSession}
       friends={friendsApi.friends}
